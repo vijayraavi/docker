@@ -61,15 +61,15 @@ type mockFiProvider struct{}
 
 func (mockFiProvider) fileInfo(path string) (exists, isDir bool, err error) {
 	dirs := map[string]struct{}{
-		`c:\`:                    struct{}{},
-		`c:\windows\`:            struct{}{},
-		`c:\windows`:             struct{}{},
-		`c:\program files`:       struct{}{},
-		`c:\Windows`:             struct{}{},
-		`c:\Program Files (x86)`: struct{}{},
+		`c:\`:                    {},
+		`c:\windows\`:            {},
+		`c:\windows`:             {},
+		`c:\program files`:       {},
+		`c:\Windows`:             {},
+		`c:\Program Files (x86)`: {},
 	}
 	files := map[string]struct{}{
-		`c:\windows\system32\ntdll.dll`: struct{}{},
+		`c:\windows\system32\ntdll.dll`: {},
 	}
 	if _, ok := dirs[path]; ok {
 		return true, true, nil

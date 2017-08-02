@@ -7,7 +7,9 @@ import (
 )
 
 const (
-	PlatformLinux   = "linux"
+	// PlatformLinux is the same as runtime.GOOS on linux
+	PlatformLinux = "linux"
+	// PlatformWindows is the same as runtime.GOOS on windows
 	PlatformWindows = "windows"
 )
 
@@ -28,6 +30,7 @@ type Parser interface {
 	validateMountConfig(mt *mount.Mount) error
 }
 
+// NewParser creates a parser for a given container platform, depending on the current host OS (linux on a windows host will resolve to an lcowParser)
 func NewParser(containerPlatform string) Parser {
 	switch containerPlatform {
 	case PlatformWindows:
