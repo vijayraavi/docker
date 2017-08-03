@@ -59,7 +59,7 @@ func TestValidateMount(t *testing.T) {
 			continue
 		}
 		if (err == nil && x.expected != nil) || (x.expected == nil && err != nil) || !strings.Contains(err.Error(), x.expected.Error()) {
-			t.Fatalf("expected %q, got %q, case: %d", x.expected, err, i)
+			t.Errorf("expected %q, got %q, case: %d", x.expected, err, i)
 		}
 	}
 	if runtime.GOOS == "windows" {
@@ -70,7 +70,7 @@ func TestValidateMount(t *testing.T) {
 				continue
 			}
 			if (err == nil && x.expected != nil) || (x.expected == nil && err != nil) || !strings.Contains(err.Error(), x.expected.Error()) {
-				t.Fatalf("expected %q, got %q, case: %d", x.expected, err, i)
+				t.Errorf("expected %q, got %q, case: %d", x.expected, err, i)
 			}
 		}
 	}

@@ -41,6 +41,12 @@ func linuxValidateAbsolute(p string) error {
 	return fmt.Errorf("invalid mount path: '%s' mount path must be absolute", p)
 }
 func (p *linuxParser) validateMountConfig(mnt *mount.Mount) error {
+	// there was something looking like a bug in existing codebase:
+	// - validateMountConfig on linux was called with options skipping bind source existance when calling ParseMountRaw
+	// - but not when calling ParseMountSpec directly... nor when the unit test called it directly
+	return p.validateMountConfigImpl(mnt, true)
+}
+func (p *linuxParser) validateMountConfigImpl(mnt *mount.Mount, validateBindSourceExists bool) error {
 	if len(mnt.Target) == 0 {
 		return &errMountConfig{mnt, errMissingField("Target")}
 	}
@@ -73,6 +79,14 @@ func (p *linuxParser) validateMountConfig(mnt *mount.Mount) error {
 		if err := linuxValidateAbsolute(mnt.Source); err != nil {
 			return &errMountConfig{mnt, err}
 		}
+
+		if validateBindSourceExists {
+			exists, _, _ := currentFileInfoProvider.fileInfo(mnt.Source)
+			if !exists {
+				return &errMountConfig{mnt, errBindNotExist}
+			}
+		}
+
 	case mount.TypeVolume:
 		if mnt.BindOptions != nil {
 			return &errMountConfig{mnt, errExtraField("BindOptions")}
@@ -251,7 +265,7 @@ func (p *linuxParser) ParseMountRaw(raw, volumeDriver string) (*MountPoint, erro
 		}
 	}
 
-	mp, err := p.ParseMountSpec(spec)
+	mp, err := p.parseMountSpec(spec, false)
 	if mp != nil {
 		mp.Mode = mode
 	}
@@ -260,9 +274,11 @@ func (p *linuxParser) ParseMountRaw(raw, volumeDriver string) (*MountPoint, erro
 	}
 	return mp, err
 }
-
 func (p *linuxParser) ParseMountSpec(cfg mount.Mount) (*MountPoint, error) {
-	if err := p.validateMountConfig(&cfg); err != nil {
+	return p.parseMountSpec(cfg, true)
+}
+func (p *linuxParser) parseMountSpec(cfg mount.Mount, validateBindSourceExists bool) (*MountPoint, error) {
+	if err := p.validateMountConfigImpl(&cfg, validateBindSourceExists); err != nil {
 		return nil, err
 	}
 	mp := &MountPoint{

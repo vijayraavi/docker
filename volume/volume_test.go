@@ -294,16 +294,16 @@ func TestParseMountRaw(t *testing.T) {
 		for _, path := range set.valid {
 
 			if _, err := parser.ParseMountRaw(path, "local"); err != nil {
-				t.Fatalf("ParseMountRaw(`%q`) should succeed: error %q", path, err)
+				t.Errorf("ParseMountRaw(`%q`) should succeed: error %q", path, err)
 			}
 		}
 
 		for path, expectedError := range set.invalid {
 			if mp, err := parser.ParseMountRaw(path, "local"); err == nil {
-				t.Fatalf("ParseMountRaw(`%q`) should have failed validation. Err '%v' - MP: %v", path, err, mp)
+				t.Errorf("ParseMountRaw(`%q`) should have failed validation. Err '%v' - MP: %v", path, err, mp)
 			} else {
 				if !strings.Contains(err.Error(), expectedError) {
-					t.Fatalf("ParseMountRaw(`%q`) error should contain %q, got %v", path, expectedError, err.Error())
+					t.Errorf("ParseMountRaw(`%q`) error should contain %q, got %v", path, expectedError, err.Error())
 				}
 			}
 		}
@@ -374,34 +374,34 @@ func TestParseMountRawSplit(t *testing.T) {
 			m, err := parser.ParseMountRaw(c.bind, c.driver)
 			if c.fail {
 				if err == nil {
-					t.Fatalf("Expected error, was nil, for spec %s\n", c.bind)
+					t.Errorf("Expected error, was nil, for spec %s\n", c.bind)
 				}
 				continue
 			}
 
 			if m == nil || err != nil {
-				t.Fatalf("ParseMountRaw failed for spec '%s', driver '%s', error '%v'", c.bind, c.driver, err.Error())
+				t.Errorf("ParseMountRaw failed for spec '%s', driver '%s', error '%v'", c.bind, c.driver, err.Error())
 				continue
 			}
 
 			if m.Destination != c.expDest {
-				t.Fatalf("Expected destination '%s, was %s', for spec '%s'", c.expDest, m.Destination, c.bind)
+				t.Errorf("Expected destination '%s, was %s', for spec '%s'", c.expDest, m.Destination, c.bind)
 			}
 
 			if m.Source != c.expSource {
-				t.Fatalf("Expected source '%s', was '%s', for spec '%s'", c.expSource, m.Source, c.bind)
+				t.Errorf("Expected source '%s', was '%s', for spec '%s'", c.expSource, m.Source, c.bind)
 			}
 
 			if m.Name != c.expName {
-				t.Fatalf("Expected name '%s', was '%s' for spec '%s'", c.expName, m.Name, c.bind)
+				t.Errorf("Expected name '%s', was '%s' for spec '%s'", c.expName, m.Name, c.bind)
 			}
 
 			if m.Driver != c.expDriver {
-				t.Fatalf("Expected driver '%s', was '%s', for spec '%s'", c.expDriver, m.Driver, c.bind)
+				t.Errorf("Expected driver '%s', was '%s', for spec '%s'", c.expDriver, m.Driver, c.bind)
 			}
 
 			if m.RW != c.expRW {
-				t.Fatalf("Expected RW '%v', was '%v' for spec '%s'", c.expRW, m.RW, c.bind)
+				t.Errorf("Expected RW '%v', was '%v' for spec '%s'", c.expRW, m.RW, c.bind)
 			}
 		}
 	}
@@ -435,29 +435,29 @@ func TestParseMountSpec(t *testing.T) {
 		t.Logf("case %d", i)
 		mp, err := parser.ParseMountSpec(c.input)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
 		}
 
 		if c.expected.Type != mp.Type {
-			t.Fatalf("Expected mount types to match. Expected: '%s', Actual: '%s'", c.expected.Type, mp.Type)
+			t.Errorf("Expected mount types to match. Expected: '%s', Actual: '%s'", c.expected.Type, mp.Type)
 		}
 		if c.expected.Destination != mp.Destination {
-			t.Fatalf("Expected mount destination to match. Expected: '%s', Actual: '%s'", c.expected.Destination, mp.Destination)
+			t.Errorf("Expected mount destination to match. Expected: '%s', Actual: '%s'", c.expected.Destination, mp.Destination)
 		}
 		if c.expected.Source != mp.Source {
-			t.Fatalf("Expected mount source to match. Expected: '%s', Actual: '%s'", c.expected.Source, mp.Source)
+			t.Errorf("Expected mount source to match. Expected: '%s', Actual: '%s'", c.expected.Source, mp.Source)
 		}
 		if c.expected.RW != mp.RW {
-			t.Fatalf("Expected mount writable to match. Expected: '%v', Actual: '%v'", c.expected.RW, mp.RW)
+			t.Errorf("Expected mount writable to match. Expected: '%v', Actual: '%v'", c.expected.RW, mp.RW)
 		}
 		if c.expected.Propagation != mp.Propagation {
-			t.Fatalf("Expected mount propagation to match. Expected: '%v', Actual: '%s'", c.expected.Propagation, mp.Propagation)
+			t.Errorf("Expected mount propagation to match. Expected: '%v', Actual: '%s'", c.expected.Propagation, mp.Propagation)
 		}
 		if c.expected.Driver != mp.Driver {
-			t.Fatalf("Expected mount driver to match. Expected: '%v', Actual: '%s'", c.expected.Driver, mp.Driver)
+			t.Errorf("Expected mount driver to match. Expected: '%v', Actual: '%s'", c.expected.Driver, mp.Driver)
 		}
 		if c.expected.CopyData != mp.CopyData {
-			t.Fatalf("Expected mount copy data to match. Expected: '%v', Actual: '%v'", c.expected.CopyData, mp.CopyData)
+			t.Errorf("Expected mount copy data to match. Expected: '%v', Actual: '%v'", c.expected.CopyData, mp.CopyData)
 		}
 	}
 }
