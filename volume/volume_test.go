@@ -67,6 +67,7 @@ func (mockFiProvider) fileInfo(path string) (exists, isDir bool, err error) {
 		`c:\program files`:       {},
 		`c:\Windows`:             {},
 		`c:\Program Files (x86)`: {},
+		`\\?\c:\windows\`:        {},
 	}
 	files := map[string]struct{}{
 		`c:\windows\system32\ntdll.dll`: {},
@@ -106,6 +107,8 @@ func TestParseMountRaw(t *testing.T) {
 			`c:/:d:/including with/spaces:ro`,
 			`c:\Windows`,             // With capital
 			`c:\Program Files (x86)`, // With capitals and brackets
+			`\\?\c:\windows\:d:`,     // Long path handling (source)
+			`c:\windows\:\\?\d:\`,    // Long path handling (target)
 		},
 		invalid: map[string]string{
 			``:                                 "invalid volume specification: ",
