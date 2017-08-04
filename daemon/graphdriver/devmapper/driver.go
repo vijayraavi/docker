@@ -16,6 +16,7 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/locker"
 	"github.com/docker/docker/pkg/mount"
+	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/system"
 	units "github.com/docker/go-units"
 )
@@ -169,7 +170,11 @@ func (d *Driver) Remove(id string) error {
 }
 
 // Get mounts a device with given id into the root filesystem
-func (d *Driver) Get(id, mountLabel string) (string, error) {
+func (d *Driver) Get(id, mountLabel string) (rootfs.RootFS, error) {
+	return graphdriver.WrapLocalGetFunc(id, mountLabel, d.get)
+}
+
+func (d *Driver) get(id, mountLabel string) (string, error) {
 	d.locker.Lock(id)
 	defer d.locker.Unlock(id)
 	mp := path.Join(d.home, "mnt", id)

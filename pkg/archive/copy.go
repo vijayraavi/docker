@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/containerd/continuity/pathdriver"
 	"github.com/docker/docker/pkg/system"
 	"github.com/sirupsen/logrus"
 )
@@ -28,22 +29,23 @@ var (
 // filepath stdlib packages) ends with a trailing `/.` or `/`. If the cleaned
 // path already ends in a `.` path segment, then another is not added. If the
 // clean path already ends in a path separator, then another is not added.
-func PreserveTrailingDotOrSeparator(cleanedPath, originalPath string) string {
+func PreserveTrailingDotOrSeparator(cleanedPath string, originalPath string, driver pathdriver.PathDriver) string {
 	// Ensure paths are in platform semantics
-	cleanedPath = normalizePath(cleanedPath)
-	originalPath = normalizePath(originalPath)
+	cleanedPath = driver.FromSlash(cleanedPath)
+	originalPath = driver.FromSlash(originalPath)
+	sep := driver.Separator()
 
-	if !specifiesCurrentDir(cleanedPath) && specifiesCurrentDir(originalPath) {
-		if !hasTrailingPathSeparator(cleanedPath) {
+	if !specifiesCurrentDir(cleanedPath, driver) && specifiesCurrentDir(originalPath, driver) {
+		if !hasTrailingPathSeparator(cleanedPath, driver) {
 			// Add a separator if it doesn't already end with one (a cleaned
 			// path would only end in a separator if it is the root).
-			cleanedPath += string(filepath.Separator)
+			cleanedPath += string(sep)
 		}
 		cleanedPath += "."
 	}
 
-	if !hasTrailingPathSeparator(cleanedPath) && hasTrailingPathSeparator(originalPath) {
-		cleanedPath += string(filepath.Separator)
+	if !hasTrailingPathSeparator(cleanedPath, driver) && hasTrailingPathSeparator(originalPath, driver) {
+		cleanedPath += string(sep)
 	}
 
 	return cleanedPath
@@ -52,33 +54,34 @@ func PreserveTrailingDotOrSeparator(cleanedPath, originalPath string) string {
 // assertsDirectory returns whether the given path is
 // asserted to be a directory, i.e., the path ends with
 // a trailing '/' or `/.`, assuming a path separator of `/`.
-func assertsDirectory(path string) bool {
-	return hasTrailingPathSeparator(path) || specifiesCurrentDir(path)
+func assertsDirectory(path string, driver pathdriver.PathDriver) bool {
+	return hasTrailingPathSeparator(path, driver) || specifiesCurrentDir(path, driver)
 }
 
 // hasTrailingPathSeparator returns whether the given
 // path ends with the system's path separator character.
-func hasTrailingPathSeparator(path string) bool {
-	return len(path) > 0 && os.IsPathSeparator(path[len(path)-1])
+func hasTrailingPathSeparator(path string, driver pathdriver.PathDriver) bool {
+	separator := driver.Separator()
+	return len(path) > 0 && path[len(path)-1] == separator
 }
 
 // specifiesCurrentDir returns whether the given path specifies
 // a "current directory", i.e., the last path segment is `.`.
-func specifiesCurrentDir(path string) bool {
-	return filepath.Base(path) == "."
+func specifiesCurrentDir(path string, driver pathdriver.PathDriver) bool {
+	return driver.Base(path) == "."
 }
 
 // SplitPathDirEntry splits the given path between its directory name and its
 // basename by first cleaning the path but preserves a trailing "." if the
 // original path specified the current directory.
-func SplitPathDirEntry(path string) (dir, base string) {
-	cleanedPath := filepath.Clean(normalizePath(path))
+func SplitPathDirEntry(path string, driver pathdriver.PathDriver) (dir, base string) {
+	cleanedPath := driver.Clean(driver.FromSlash(path))
 
-	if specifiesCurrentDir(path) {
-		cleanedPath += string(filepath.Separator) + "."
+	if specifiesCurrentDir(path, driver) {
+		cleanedPath += string(driver.Separator()) + "."
 	}
 
-	return filepath.Dir(cleanedPath), filepath.Base(cleanedPath)
+	return driver.Dir(cleanedPath), driver.Base(cleanedPath)
 }
 
 // TarResource archives the resource described by the given CopyInfo to a Tar
@@ -103,22 +106,34 @@ func TarResourceRebase(sourcePath, rebaseName string) (content io.ReadCloser, er
 		return
 	}
 
+	sourceDir, opts := TarResourceRebaseOpts(sourcePath, rebaseName, pathdriver.LocalPathDriver)
+
+	logrus.Debugf("copying %v from %q", opts.IncludeFiles, sourceDir)
+
+	return TarWithOptions(sourceDir, opts)
+}
+
+// TarResourceRebaseOpts does not preform the Tar, but instead just creates the parameters
+// to be sent to TarWithOptions (the source directory and the TarOptions struct)
+func TarResourceRebaseOpts(sourcePath string, rebaseName string, driver pathdriver.PathDriver) (string, *TarOptions) {
+	sourcePath = driver.FromSlash(sourcePath)
+
 	// Separate the source path between its directory and
 	// the entry in that directory which we are archiving.
-	sourceDir, sourceBase := SplitPathDirEntry(sourcePath)
+	sourceDir, sourceBase := SplitPathDirEntry(sourcePath, driver)
 
 	filter := []string{sourceBase}
 
 	logrus.Debugf("copying %q from %q", sourceBase, sourceDir)
 
-	return TarWithOptions(sourceDir, &TarOptions{
+	return sourceDir, &TarOptions{
 		Compression:      Uncompressed,
 		IncludeFiles:     filter,
 		IncludeSourceDir: true,
 		RebaseNames: map[string]string{
 			sourceBase: rebaseName,
 		},
-	})
+	}
 }
 
 // CopyInfo holds basic info about the source
@@ -200,7 +215,7 @@ func CopyInfoDestinationPath(path string) (info CopyInfo, err error) {
 
 		if !system.IsAbs(linkTarget) {
 			// Join with the parent directory.
-			dstParent, _ := SplitPathDirEntry(path)
+			dstParent, _ := SplitPathDirEntry(path, pathdriver.LocalPathDriver)
 			linkTarget = filepath.Join(dstParent, linkTarget)
 		}
 
@@ -216,7 +231,7 @@ func CopyInfoDestinationPath(path string) (info CopyInfo, err error) {
 		}
 
 		// Ensure destination parent dir exists.
-		dstParent, _ := SplitPathDirEntry(path)
+		dstParent, _ := SplitPathDirEntry(path, pathdriver.LocalPathDriver)
 
 		parentDirStat, err := os.Lstat(dstParent)
 		if err != nil {
@@ -245,11 +260,12 @@ func PrepareArchiveCopy(srcContent io.Reader, srcInfo, dstInfo CopyInfo) (dstDir
 	// Ensure in platform semantics
 	srcInfo.Path = normalizePath(srcInfo.Path)
 	dstInfo.Path = normalizePath(dstInfo.Path)
+	driver := pathdriver.LocalPathDriver
 
 	// Separate the destination path between its directory and base
 	// components in case the source archive contents need to be rebased.
-	dstDir, dstBase := SplitPathDirEntry(dstInfo.Path)
-	_, srcBase := SplitPathDirEntry(srcInfo.Path)
+	dstDir, dstBase := SplitPathDirEntry(dstInfo.Path, driver)
+	_, srcBase := SplitPathDirEntry(srcInfo.Path, driver)
 
 	switch {
 	case dstInfo.Exists && dstInfo.IsDir:
@@ -281,7 +297,7 @@ func PrepareArchiveCopy(srcContent io.Reader, srcInfo, dstInfo CopyInfo) (dstDir
 			srcBase = srcInfo.RebaseName
 		}
 		return dstDir, RebaseArchiveEntries(srcContent, srcBase, dstBase), nil
-	case assertsDirectory(dstInfo.Path):
+	case assertsDirectory(dstInfo.Path, driver):
 		// The destination does not exist and is asserted to be created as a
 		// directory, but the source content is not a directory. This is an
 		// error condition since you cannot create a directory from a file
@@ -351,6 +367,9 @@ func RebaseArchiveEntries(srcContent io.Reader, oldBase, newBase string) io.Read
 	return rebased
 }
 
+// TODO @gupta-ak. These might have to be changed in the future to be
+// continuity driver aware as well to support LCOW.
+
 // CopyResource performs an archive copy from the given source path to the
 // given destination path. The source path MUST exist and the destination
 // path's parent directory must exist.
@@ -365,8 +384,8 @@ func CopyResource(srcPath, dstPath string, followLink bool) error {
 	dstPath = normalizePath(dstPath)
 
 	// Clean the source and destination paths.
-	srcPath = PreserveTrailingDotOrSeparator(filepath.Clean(srcPath), srcPath)
-	dstPath = PreserveTrailingDotOrSeparator(filepath.Clean(dstPath), dstPath)
+	srcPath = PreserveTrailingDotOrSeparator(filepath.Clean(srcPath), srcPath, pathdriver.LocalPathDriver)
+	dstPath = PreserveTrailingDotOrSeparator(filepath.Clean(dstPath), dstPath, pathdriver.LocalPathDriver)
 
 	if srcInfo, err = CopyInfoSourcePath(srcPath, followLink); err != nil {
 		return err
@@ -429,7 +448,8 @@ func ResolveHostSourcePath(path string, followLink bool) (resolvedPath, rebaseNa
 		// resolvedDirPath will have been cleaned (no trailing path separators) so
 		// we can manually join it with the base path element.
 		resolvedPath = resolvedDirPath + string(filepath.Separator) + basePath
-		if hasTrailingPathSeparator(path) && filepath.Base(path) != filepath.Base(resolvedPath) {
+		if hasTrailingPathSeparator(path, pathdriver.LocalPathDriver) &&
+			filepath.Base(path) != filepath.Base(resolvedPath) {
 			rebaseName = filepath.Base(path)
 		}
 	}
@@ -442,11 +462,14 @@ func GetRebaseName(path, resolvedPath string) (string, string) {
 	// linkTarget will have been cleaned (no trailing path separators and dot) so
 	// we can manually join it with them
 	var rebaseName string
-	if specifiesCurrentDir(path) && !specifiesCurrentDir(resolvedPath) {
+	driver := pathdriver.LocalPathDriver
+	if specifiesCurrentDir(path, driver) &&
+		!specifiesCurrentDir(resolvedPath, driver) {
 		resolvedPath += string(filepath.Separator) + "."
 	}
 
-	if hasTrailingPathSeparator(path) && !hasTrailingPathSeparator(resolvedPath) {
+	if hasTrailingPathSeparator(path, driver) &&
+		!hasTrailingPathSeparator(resolvedPath, driver) {
 		resolvedPath += string(filepath.Separator)
 	}
 

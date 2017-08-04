@@ -13,7 +13,6 @@ import (
 	"github.com/docker/docker/pkg/chrootarchive"
 	"github.com/docker/docker/pkg/mount"
 	"github.com/docker/docker/pkg/stringid"
-	"github.com/docker/docker/pkg/symlink"
 	"github.com/docker/docker/pkg/system"
 	"github.com/docker/docker/volume"
 	"github.com/opencontainers/selinux/go-selinux/label"
@@ -130,7 +129,7 @@ func (container *Container) NetworkMounts() []Mount {
 
 // CopyImagePathContent copies files in destination to the volume.
 func (container *Container) CopyImagePathContent(v volume.Volume, destination string) error {
-	rootfs, err := symlink.FollowSymlinkInScope(filepath.Join(container.BaseFS, destination), container.BaseFS)
+	rootfs, err := container.GetResourcePath(destination)
 	if err != nil {
 		return err
 	}

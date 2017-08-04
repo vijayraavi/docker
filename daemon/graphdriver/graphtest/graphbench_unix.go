@@ -6,9 +6,9 @@ import (
 	"bytes"
 	"io"
 	"io/ioutil"
-	"path/filepath"
 	"testing"
 
+	contdriver "github.com/containerd/continuity/driver"
 	"github.com/docker/docker/pkg/stringid"
 )
 
@@ -245,7 +245,7 @@ func DriverBenchDeepLayerRead(b *testing.B, layerCount int, drivername string, d
 	for i := 0; i < b.N; i++ {
 
 		// Read content
-		c, err := ioutil.ReadFile(filepath.Join(root, "testfile.txt"))
+		c, err := contdriver.ReadFile(root, root.Join(root.Path(), "testfile.txt"))
 		if err != nil {
 			b.Fatal(err)
 		}

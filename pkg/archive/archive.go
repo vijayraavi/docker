@@ -16,11 +16,12 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/containerd/continuity/pathdriver"
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/pools"
-	"github.com/docker/docker/pkg/promise"
+	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/system"
 	"github.com/sirupsen/logrus"
 )
@@ -55,18 +56,14 @@ type (
 	}
 )
 
-// Archiver allows the reuse of most utility functions of this package
-// with a pluggable Untar function. Also, to facilitate the passing of
-// specific id mappings for untar, an archiver can be created with maps
-// which will then be passed to Untar operations
-type Archiver struct {
-	Untar      func(io.Reader, string, *TarOptions) error
-	IDMappings *idtools.IDMappings
-}
-
-// NewDefaultArchiver returns a new Archiver without any IDMappings
-func NewDefaultArchiver() *Archiver {
-	return &Archiver{Untar: Untar, IDMappings: &idtools.IDMappings{}}
+// Archiver defines an interface for copying files from one destination to
+// another using Tar/Untar.
+type Archiver interface {
+	TarUntar(src, dst string) error
+	UntarPath(src, dst string) error
+	CopyWithTar(src, dst string) error
+	CopyFileWithTar(src, dst string) error
+	IDMappings() *idtools.IDMappings
 }
 
 // breakoutError is used to differentiate errors related to breaking out
@@ -105,8 +102,8 @@ const (
 
 // IsArchivePath checks if the (possibly compressed) file at the given path
 // starts with a tar file header.
-func IsArchivePath(path string) bool {
-	file, err := os.Open(path)
+func IsArchivePath(driver rootfs.Driver, path string) bool {
+	file, err := driver.Open(path)
 	if err != nil {
 		return false
 	}
@@ -739,7 +736,7 @@ func TarWithOptions(srcPath string, options *TarOptions) (io.ReadCloser, error) 
 				logrus.Warn("Tar: Can't archive a file with includes")
 			}
 
-			dir, base := SplitPathDirEntry(srcPath)
+			dir, base := SplitPathDirEntry(srcPath, pathdriver.LocalPathDriver)
 			srcPath = dir
 			options.IncludeFiles = []string{base}
 		}
@@ -1013,136 +1010,6 @@ func untarHandler(tarArchive io.Reader, dest string, options *TarOptions, decomp
 	}
 
 	return Unpack(r, dest, options)
-}
-
-// TarUntar is a convenience function which calls Tar and Untar, with the output of one piped into the other.
-// If either Tar or Untar fails, TarUntar aborts and returns the error.
-func (archiver *Archiver) TarUntar(src, dst string) error {
-	logrus.Debugf("TarUntar(%s %s)", src, dst)
-	archive, err := TarWithOptions(src, &TarOptions{Compression: Uncompressed})
-	if err != nil {
-		return err
-	}
-	defer archive.Close()
-	options := &TarOptions{
-		UIDMaps: archiver.IDMappings.UIDs(),
-		GIDMaps: archiver.IDMappings.GIDs(),
-	}
-	return archiver.Untar(archive, dst, options)
-}
-
-// UntarPath untar a file from path to a destination, src is the source tar file path.
-func (archiver *Archiver) UntarPath(src, dst string) error {
-	archive, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer archive.Close()
-	options := &TarOptions{
-		UIDMaps: archiver.IDMappings.UIDs(),
-		GIDMaps: archiver.IDMappings.GIDs(),
-	}
-	return archiver.Untar(archive, dst, options)
-}
-
-// CopyWithTar creates a tar archive of filesystem path `src`, and
-// unpacks it at filesystem path `dst`.
-// The archive is streamed directly with fixed buffering and no
-// intermediary disk IO.
-func (archiver *Archiver) CopyWithTar(src, dst string) error {
-	srcSt, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if !srcSt.IsDir() {
-		return archiver.CopyFileWithTar(src, dst)
-	}
-
-	// if this archiver is set up with ID mapping we need to create
-	// the new destination directory with the remapped root UID/GID pair
-	// as owner
-	rootIDs := archiver.IDMappings.RootPair()
-	// Create dst, copy src's content into it
-	logrus.Debugf("Creating dest directory: %s", dst)
-	if err := idtools.MkdirAllAndChownNew(dst, 0755, rootIDs); err != nil {
-		return err
-	}
-	logrus.Debugf("Calling TarUntar(%s, %s)", src, dst)
-	return archiver.TarUntar(src, dst)
-}
-
-// CopyFileWithTar emulates the behavior of the 'cp' command-line
-// for a single file. It copies a regular file from path `src` to
-// path `dst`, and preserves all its metadata.
-func (archiver *Archiver) CopyFileWithTar(src, dst string) (err error) {
-	logrus.Debugf("CopyFileWithTar(%s, %s)", src, dst)
-	srcSt, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-
-	if srcSt.IsDir() {
-		return fmt.Errorf("Can't copy a directory")
-	}
-
-	// Clean up the trailing slash. This must be done in an operating
-	// system specific manner.
-	if dst[len(dst)-1] == os.PathSeparator {
-		dst = filepath.Join(dst, filepath.Base(src))
-	}
-	// Create the holding directory if necessary
-	if err := system.MkdirAll(filepath.Dir(dst), 0700, ""); err != nil {
-		return err
-	}
-
-	r, w := io.Pipe()
-	errC := promise.Go(func() error {
-		defer w.Close()
-
-		srcF, err := os.Open(src)
-		if err != nil {
-			return err
-		}
-		defer srcF.Close()
-
-		hdr, err := tar.FileInfoHeader(srcSt, "")
-		if err != nil {
-			return err
-		}
-		hdr.Name = filepath.Base(dst)
-		hdr.Mode = int64(chmodTarEntry(os.FileMode(hdr.Mode)))
-
-		if err := remapIDs(archiver.IDMappings, hdr); err != nil {
-			return err
-		}
-
-		tw := tar.NewWriter(w)
-		defer tw.Close()
-		if err := tw.WriteHeader(hdr); err != nil {
-			return err
-		}
-		if _, err := io.Copy(tw, srcF); err != nil {
-			return err
-		}
-		return nil
-	})
-	defer func() {
-		if er := <-errC; err == nil && er != nil {
-			err = er
-		}
-	}()
-
-	err = archiver.Untar(r, filepath.Dir(dst), nil)
-	if err != nil {
-		r.CloseWithError(err)
-	}
-	return err
-}
-
-func remapIDs(idMappings *idtools.IDMappings, hdr *tar.Header) error {
-	ids, err := idMappings.ToHost(idtools.IDPair{UID: hdr.Uid, GID: hdr.Gid})
-	hdr.Uid, hdr.Gid = ids.UID, ids.GID
-	return err
 }
 
 // cmdStream executes a command, and returns its stdout as a stream.

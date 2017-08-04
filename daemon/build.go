@@ -11,6 +11,7 @@ import (
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/layer"
 	"github.com/docker/docker/pkg/idtools"
+	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/registry"
 	"github.com/pkg/errors"
@@ -25,9 +26,9 @@ type releaseableLayer struct {
 	rwLayer    layer.RWLayer
 }
 
-func (rl *releaseableLayer) Mount() (string, error) {
+func (rl *releaseableLayer) Mount() (rootfs.RootFS, error) {
 	var err error
-	var mountPath string
+	var mountPath rootfs.RootFS
 	var chainID layer.ChainID
 	if rl.roLayer != nil {
 		chainID = rl.roLayer.ChainID()
@@ -36,7 +37,7 @@ func (rl *releaseableLayer) Mount() (string, error) {
 	mountID := stringid.GenerateRandomID()
 	rl.rwLayer, err = rl.layerStore.CreateRWLayer(mountID, chainID, nil)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to create rwlayer")
+		return nil, errors.Wrap(err, "failed to create rwlayer")
 	}
 
 	mountPath, err = rl.rwLayer.Mount("")
@@ -48,7 +49,7 @@ func (rl *releaseableLayer) Mount() (string, error) {
 			logrus.Errorf("Failed to release RWLayer: %s", err)
 		}
 		rl.rwLayer = nil
-		return "", err
+		return nil, err
 	}
 
 	return mountPath, nil
