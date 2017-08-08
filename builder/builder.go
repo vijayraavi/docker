@@ -94,6 +94,7 @@ type Image interface {
 	ImageID() string
 	RunConfig() *container.Config
 	MarshalJSON() ([]byte, error)
+	OperatingSystem() string
 }
 
 // ReleaseableLayer is an image layer that can be mounted and released

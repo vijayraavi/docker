@@ -79,7 +79,7 @@ type Container struct {
 	LogPath         string
 	Name            string
 	Driver          string
-	Platform        string
+	OS              string
 	// MountLabel contains the options for the 'mount' command
 	MountLabel             string
 	ProcessLabel           string
@@ -146,11 +146,11 @@ func (container *Container) FromDisk() error {
 		return err
 	}
 
-	// Ensure the platform is set if blank. Assume it is the platform of the
-	// host OS if not, to ensure containers created before multiple-platform
+	// Ensure the operating system is set if blank. Assume it is the OS of the
+	// host OS if not, to ensure containers created before multiple-OS
 	// support are migrated
-	if container.Platform == "" {
-		container.Platform = runtime.GOOS
+	if container.OS == "" {
+		container.OS = runtime.GOOS
 	}
 
 	return container.readHostConfig()
@@ -263,7 +263,7 @@ func (container *Container) WriteHostConfig() (*containertypes.HostConfig, error
 func (container *Container) SetupWorkingDirectory(rootIDs idtools.IDPair) error {
 	// TODO @jhowardmsft, @gupta-ak LCOW Support. This will need revisiting.
 	// We will need to do remote filesystem operations here.
-	if container.Platform != runtime.GOOS {
+	if container.OS != runtime.GOOS {
 		return nil
 	}
 
@@ -1043,15 +1043,14 @@ func (container *Container) ConfigFilePath(configRef swarmtypes.ConfigReference)
 // CreateDaemonEnvironment creates a new environment variable slice for this container.
 func (container *Container) CreateDaemonEnvironment(tty bool, linkedEnv []string) []string {
 	// Setup environment
-	// TODO @jhowardmsft LCOW Support. This will need revisiting later.
-	platform := container.Platform
-	if platform == "" {
-		platform = runtime.GOOS
+	os := container.OS
+	if os == "" {
+		os = runtime.GOOS
 	}
 	env := []string{}
-	if runtime.GOOS != "windows" || (system.LCOWSupported() && platform == "linux") {
+	if runtime.GOOS != "windows" || (runtime.GOOS == "windows" && os == "linux") {
 		env = []string{
-			"PATH=" + system.DefaultPathEnv(platform),
+			"PATH=" + system.DefaultPathEnv(os),
 			"HOSTNAME=" + container.Config.Hostname,
 		}
 		if tty {

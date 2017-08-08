@@ -259,9 +259,6 @@ func parseBuildStageName(args []string) (string, error) {
 	return stageName, nil
 }
 
-// scratchImage is used as a token for the empty base image.
-var scratchImage builder.Image = &image.Image{}
-
 func (b *Builder) getFromImage(shlex *ShellLex, name string) (builder.Image, error) {
 	substitutionArgs := []string{}
 	for key, value := range b.buildArgs.GetAllMeta() {
@@ -281,12 +278,22 @@ func (b *Builder) getFromImage(shlex *ShellLex, name string) (builder.Image, err
 
 	// Windows cannot support a container with no base image unless it is LCOW.
 	if name == api.NoBaseImageSpecifier {
+		imageImage := &image.Image{}
+		imageImage.OS = runtime.GOOS
 		if runtime.GOOS == "windows" {
-			if b.platform == "windows" || (b.platform != "windows" && !system.LCOWSupported()) {
+			switch b.options.Platform.OS {
+			case "windows":
 				return nil, errors.New("Windows does not support FROM scratch")
+			case "linux":
+				if !system.LCOWSupported() {
+					return nil, errors.New("Linux containers are not supported on this system")
+				}
+				imageImage.OS = "linux"
+			default:
+				return nil, errors.Errorf("operating system %s is not supported", b.options.Platform.OS)
 			}
 		}
-		return scratchImage, nil
+		return builder.Image(imageImage), nil
 	}
 	imageMount, err := b.imageSources.Get(name, localOnly)
 	if err != nil {
@@ -391,7 +398,7 @@ func workdir(req dispatchRequest) error {
 	runConfig := req.state.runConfig
 	// This is from the Dockerfile and will not necessarily be in platform
 	// specific semantics, hence ensure it is converted.
-	runConfig.WorkingDir, err = normalizeWorkdir(req.builder.platform, runConfig.WorkingDir, req.args[0])
+	runConfig.WorkingDir, err = normalizeWorkdir(req.builder.options.Platform.OS, runConfig.WorkingDir, req.args[0])
 	if err != nil {
 		return err
 	}
@@ -407,7 +414,7 @@ func workdir(req dispatchRequest) error {
 	}
 
 	comment := "WORKDIR " + runConfig.WorkingDir
-	runConfigWithCommentCmd := copyRunConfig(runConfig, withCmdCommentString(comment, req.builder.platform))
+	runConfigWithCommentCmd := copyRunConfig(runConfig, withCmdCommentString(comment, req.builder.options.Platform.OS))
 	containerID, err := req.builder.probeAndCreate(req.state, runConfigWithCommentCmd)
 	if err != nil || containerID == "" {
 		return err
@@ -441,7 +448,7 @@ func run(req dispatchRequest) error {
 	stateRunConfig := req.state.runConfig
 	args := handleJSONArgs(req.args, req.attributes)
 	if !req.attributes["json"] {
-		args = append(getShell(stateRunConfig, req.builder.platform), args...)
+		args = append(getShell(stateRunConfig, req.builder.options.Platform.OS), args...)
 	}
 	cmdFromArgs := strslice.StrSlice(args)
 	buildArgs := req.builder.buildArgs.FilterAllowed(stateRunConfig.Env)
@@ -526,7 +533,7 @@ func cmd(req dispatchRequest) error {
 	runConfig := req.state.runConfig
 	cmdSlice := handleJSONArgs(req.args, req.attributes)
 	if !req.attributes["json"] {
-		cmdSlice = append(getShell(runConfig, req.builder.platform), cmdSlice...)
+		cmdSlice = append(getShell(runConfig, req.builder.options.Platform.OS), cmdSlice...)
 	}
 
 	runConfig.Cmd = strslice.StrSlice(cmdSlice)
@@ -678,7 +685,7 @@ func entrypoint(req dispatchRequest) error {
 		runConfig.Entrypoint = nil
 	default:
 		// ENTRYPOINT echo hi
-		runConfig.Entrypoint = strslice.StrSlice(append(getShell(runConfig, req.builder.platform), parsed[0]))
+		runConfig.Entrypoint = strslice.StrSlice(append(getShell(runConfig, req.builder.options.Platform.OS), parsed[0]))
 	}
 
 	// when setting the entrypoint if a CMD was not explicitly set then

@@ -18,8 +18,8 @@ func (daemon *Daemon) ContainerExport(name string, out io.Writer) error {
 		return err
 	}
 
-	if runtime.GOOS == "windows" && container.Platform == "windows" {
-		return fmt.Errorf("the daemon on this platform does not support exporting Windows containers")
+	if runtime.GOOS == "windows" && container.OS == "windows" {
+		return fmt.Errorf("the daemon on this operating system does not support exporting Windows containers")
 	}
 
 	data, err := daemon.containerExport(container)
