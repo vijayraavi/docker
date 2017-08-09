@@ -105,10 +105,12 @@ func TestParseMountRaw(t *testing.T) {
 			`name:D::RO`,
 			`c:/:d:/forward/slashes/are/good/too`,
 			`c:/:d:/including with/spaces:ro`,
-			`c:\Windows`,             // With capital
-			`c:\Program Files (x86)`, // With capitals and brackets
-			`\\?\c:\windows\:d:`,     // Long path handling (source)
-			`c:\windows\:\\?\d:\`,    // Long path handling (target)
+			`c:\Windows`,                // With capital
+			`c:\Program Files (x86)`,    // With capitals and brackets
+			`\\?\c:\windows\:d:`,        // Long path handling (source)
+			`c:\windows\:\\?\d:\`,       // Long path handling (target)
+			`\\.\pipe\foo:\\.\pipe\foo`, // named pipe
+			`//./pipe/foo://./pipe/foo`, // named pipe forward slashes
 		},
 		invalid: map[string]string{
 			``:                                 "invalid volume specification: ",
@@ -154,6 +156,7 @@ func TestParseMountRaw(t *testing.T) {
 			`lpt8:d:`:                          `cannot be a reserved word for Windows filenames`,
 			`lpt9:d:`:                          `cannot be a reserved word for Windows filenames`,
 			`c:\windows\system32\ntdll.dll`:    `Only directories can be mapped on this platform`,
+			`\\.\pipe\foo:c:\pipe`:             `'c:\pipe' is not a valid pipe path`,
 		},
 	}
 	lcowSet := parseMountRawTestSet{
@@ -221,6 +224,7 @@ func TestParseMountRaw(t *testing.T) {
 			`lpt7:/foo`:                          `cannot be a reserved word for Windows filenames`,
 			`lpt8:/foo`:                          `cannot be a reserved word for Windows filenames`,
 			`lpt9:/foo`:                          `cannot be a reserved word for Windows filenames`,
+			`\\.\pipe\foo:/foo`:                  `lcow does not support named pipe mounts`,
 		},
 	}
 	linuxSet := parseMountRawTestSet{
@@ -322,6 +326,7 @@ func TestParseMountRaw(t *testing.T) {
 type testParseMountRaw struct {
 	bind      string
 	driver    string
+	expType   mount.Type
 	expDest   string
 	expSource string
 	expName   string
@@ -335,38 +340,44 @@ func TestParseMountRawSplit(t *testing.T) {
 	defer func() { currentFileInfoProvider = previousProvider }()
 	currentFileInfoProvider = mockFiProvider{}
 	windowsCases := []testParseMountRaw{
-		{`c:\:d:`, "local", `d:`, `c:\`, ``, "", true, false},
-		{`c:\:d:\`, "local", `d:\`, `c:\`, ``, "", true, false},
-		{`c:\:d:\:ro`, "local", `d:\`, `c:\`, ``, "", false, false},
-		{`c:\:d:\:rw`, "local", `d:\`, `c:\`, ``, "", true, false},
-		{`c:\:d:\:foo`, "local", `d:\`, `c:\`, ``, "", false, true},
-		{`name:d::rw`, "local", `d:`, ``, `name`, "local", true, false},
-		{`name:d:`, "local", `d:`, ``, `name`, "local", true, false},
-		{`name:d::ro`, "local", `d:`, ``, `name`, "local", false, false},
-		{`name:c:`, "", ``, ``, ``, "", true, true},
-		{`driver/name:c:`, "", ``, ``, ``, "", true, true},
+		{`c:\:d:`, "local", mount.TypeBind, `d:`, `c:\`, ``, "", true, false},
+		{`c:\:d:\`, "local", mount.TypeBind, `d:\`, `c:\`, ``, "", true, false},
+		{`c:\:d:\:ro`, "local", mount.TypeBind, `d:\`, `c:\`, ``, "", false, false},
+		{`c:\:d:\:rw`, "local", mount.TypeBind, `d:\`, `c:\`, ``, "", true, false},
+		{`c:\:d:\:foo`, "local", mount.TypeBind, `d:\`, `c:\`, ``, "", false, true},
+		{`name:d::rw`, "local", mount.TypeVolume, `d:`, ``, `name`, "local", true, false},
+		{`name:d:`, "local", mount.TypeVolume, `d:`, ``, `name`, "local", true, false},
+		{`name:d::ro`, "local", mount.TypeVolume, `d:`, ``, `name`, "local", false, false},
+		{`name:c:`, "", mount.TypeVolume, ``, ``, ``, "", true, true},
+		{`driver/name:c:`, "", mount.TypeVolume, ``, ``, ``, "", true, true},
+		{`\\.\pipe\foo:\\.\pipe\bar`, "local", mount.TypeNamedPipe, `\\.\pipe\bar`, `\\.\pipe\foo`, "", "", true, false},
+		{`\\.\pipe\foo:c:\foo\bar`, "local", mount.TypeNamedPipe, ``, ``, "", "", true, true},
+		{`c:\foo\bar:\\.\pipe\foo`, "local", mount.TypeNamedPipe, ``, ``, "", "", true, true},
 	}
 	lcowCases := []testParseMountRaw{
-		{`c:\:/foo`, "local", `/foo`, `c:\`, ``, "", true, false},
-		{`c:\:/foo:ro`, "local", `/foo`, `c:\`, ``, "", false, false},
-		{`c:\:/foo:rw`, "local", `/foo`, `c:\`, ``, "", true, false},
-		{`c:\:/foo:foo`, "local", `/foo`, `c:\`, ``, "", false, true},
-		{`name:/foo:rw`, "local", `/foo`, ``, `name`, "local", true, false},
-		{`name:/foo`, "local", `/foo`, ``, `name`, "local", true, false},
-		{`name:/foo:ro`, "local", `/foo`, ``, `name`, "local", false, false},
-		{`name:/`, "", ``, ``, ``, "", true, true},
-		{`driver/name:/`, "", ``, ``, ``, "", true, true},
+		{`c:\:/foo`, "local", mount.TypeBind, `/foo`, `c:\`, ``, "", true, false},
+		{`c:\:/foo:ro`, "local", mount.TypeBind, `/foo`, `c:\`, ``, "", false, false},
+		{`c:\:/foo:rw`, "local", mount.TypeBind, `/foo`, `c:\`, ``, "", true, false},
+		{`c:\:/foo:foo`, "local", mount.TypeBind, `/foo`, `c:\`, ``, "", false, true},
+		{`name:/foo:rw`, "local", mount.TypeVolume, `/foo`, ``, `name`, "local", true, false},
+		{`name:/foo`, "local", mount.TypeVolume, `/foo`, ``, `name`, "local", true, false},
+		{`name:/foo:ro`, "local", mount.TypeVolume, `/foo`, ``, `name`, "local", false, false},
+		{`name:/`, "", mount.TypeVolume, ``, ``, ``, "", true, true},
+		{`driver/name:/`, "", mount.TypeVolume, ``, ``, ``, "", true, true},
+		{`\\.\pipe\foo:\\.\pipe\bar`, "local", mount.TypeNamedPipe, `\\.\pipe\bar`, `\\.\pipe\foo`, "", "", true, true},
+		{`\\.\pipe\foo:/data`, "local", mount.TypeNamedPipe, ``, ``, "", "", true, true},
+		{`c:\foo\bar:\\.\pipe\foo`, "local", mount.TypeNamedPipe, ``, ``, "", "", true, true},
 	}
 	linuxCases := []testParseMountRaw{
-		{"/tmp:/tmp1", "", "/tmp1", "/tmp", "", "", true, false},
-		{"/tmp:/tmp2:ro", "", "/tmp2", "/tmp", "", "", false, false},
-		{"/tmp:/tmp3:rw", "", "/tmp3", "/tmp", "", "", true, false},
-		{"/tmp:/tmp4:foo", "", "", "", "", "", false, true},
-		{"name:/named1", "", "/named1", "", "name", "", true, false},
-		{"name:/named2", "external", "/named2", "", "name", "external", true, false},
-		{"name:/named3:ro", "local", "/named3", "", "name", "local", false, false},
-		{"local/name:/tmp:rw", "", "/tmp", "", "local/name", "", true, false},
-		{"/tmp:tmp", "", "", "", "", "", true, true},
+		{"/tmp:/tmp1", "", mount.TypeBind, "/tmp1", "/tmp", "", "", true, false},
+		{"/tmp:/tmp2:ro", "", mount.TypeBind, "/tmp2", "/tmp", "", "", false, false},
+		{"/tmp:/tmp3:rw", "", mount.TypeBind, "/tmp3", "/tmp", "", "", true, false},
+		{"/tmp:/tmp4:foo", "", mount.TypeBind, "", "", "", "", false, true},
+		{"name:/named1", "", mount.TypeVolume, "/named1", "", "name", "", true, false},
+		{"name:/named2", "external", mount.TypeVolume, "/named2", "", "name", "external", true, false},
+		{"name:/named3:ro", "local", mount.TypeVolume, "/named3", "", "name", "local", false, false},
+		{"local/name:/tmp:rw", "", mount.TypeVolume, "/tmp", "", "local/name", "", true, false},
+		{"/tmp:tmp", "", mount.TypeBind, "", "", "", "", true, true},
 	}
 	linParser := &linuxParser{}
 	winParser := &windowsParser{}
@@ -405,6 +416,9 @@ func TestParseMountRawSplit(t *testing.T) {
 
 			if m.RW != c.expRW {
 				t.Errorf("Expected RW '%v', was '%v' for spec '%s'", c.expRW, m.RW, c.bind)
+			}
+			if m.Type != c.expType {
+				t.Fatalf("Expected type '%s', was '%s', for spec '%s'", c.expType, m.Type, c.bind)
 			}
 		}
 	}

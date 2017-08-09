@@ -37,11 +37,14 @@ const (
 	rxHostDir = `(?:\\\\\?\\)?[a-z]:[\\/](?:[^\\/:*?"<>|\r\n]+[\\/]?)*`
 	// rxName is the second option of a source
 	rxName = `[^\\/:*?"<>|\r\n]+`
+
 	// RXReservedNames are reserved names not possible on Windows
 	rxReservedNames = `(con)|(prn)|(nul)|(aux)|(com[1-9])|(lpt[1-9])`
 
+	// rxPipe is a named path pipe (starts with `\\.\pipe\`, possibly with / instead of \)
+	rxPipe = `[/\\]{2}.[/\\]pipe[/\\][^:*?"<>|\r\n]+`
 	// rxSource is the combined possibilities for a source
-	rxSource = `((?P<source>((` + rxHostDir + `)|(` + rxName + `))):)?`
+	rxSource = `((?P<source>((` + rxHostDir + `)|(` + rxName + `)|(` + rxPipe + `))):)?`
 
 	// Source. Can be either a host directory, a name, or omitted:
 	//  HostDir:
@@ -58,7 +61,7 @@ const (
 	//    -  And can be optional
 
 	// rxDestination is the regex expression for the mount destination
-	rxDestination = `(?P<destination>(?:\\\\\?\\)?([a-z]):((?:[\\/][^\\/:*?"<>\r\n]+)*[\\/]?))`
+	rxDestination = `(?P<destination>((?:\\\\\?\\)?([a-z]):((?:[\\/][^\\/:*?"<>\r\n]+)*[\\/]?))|(` + rxPipe + `))`
 
 	rxLCOWDestination = `(?P<destination>/(?:[^\\/:*?"<>\r\n]+[/]?)*)`
 	// Destination (aka container path):
@@ -143,6 +146,10 @@ func windowsValidateNotRoot(p string) error {
 	return nil
 }
 
+var windowsSpecificValidators mountValidator = func(mnt *mount.Mount) error {
+	return windowsValidateNotRoot(mnt.Target)
+}
+
 func windowsValidateRegex(p, r string) error {
 	if regexp.MustCompile(`^` + r + `$`).MatchString(strings.ToLower(p)) {
 		return nil
@@ -154,6 +161,16 @@ func windowsValidateAbsolute(p string) error {
 		return fmt.Errorf("invalid mount path: '%s' mount path must be absolute", p)
 	}
 	return nil
+}
+
+func windowsDetectMountType(p string) mount.Type {
+	if strings.HasPrefix(p, `\\.\pipe\`) {
+		return mount.TypeNamedPipe
+	} else if regexp.MustCompile(`^` + rxHostDir + `$`).MatchString(p) {
+		return mount.TypeBind
+	} else {
+		return mount.TypeVolume
+	}
 }
 
 func (p *windowsParser) ReadWrite(mode string) bool {
@@ -173,9 +190,7 @@ func (p *windowsParser) IsVolumeNameValid(name string) (bool, error) {
 	return true, nil
 }
 func (p *windowsParser) validateMountConfig(mnt *mount.Mount) error {
-	return p.validateMountConfigReg(mnt, rxDestination, func(m *mount.Mount) error {
-		return windowsValidateNotRoot(m.Target)
-	})
+	return p.validateMountConfigReg(mnt, rxDestination, windowsSpecificValidators)
 }
 
 type fileInfoProvider interface {
@@ -260,15 +275,33 @@ func (p *windowsParser) validateMountConfigReg(mnt *mount.Mount, destRegex strin
 				return &errMountConfig{mnt, err}
 			}
 		}
+	case mount.TypeNamedPipe:
+		if len(mnt.Source) == 0 {
+			return &errMountConfig{mnt, errMissingField("Source")}
+		}
+
+		if mnt.BindOptions != nil {
+			return &errMountConfig{mnt, errExtraField("BindOptions")}
+		}
+
+		if mnt.ReadOnly {
+			return &errMountConfig{mnt, errExtraField("ReadOnly")}
+		}
+
+		if windowsDetectMountType(mnt.Source) != mount.TypeNamedPipe {
+			return &errMountConfig{mnt, fmt.Errorf("'%s' is not a valid pipe path", mnt.Source)}
+		}
+
+		if windowsDetectMountType(mnt.Target) != mount.TypeNamedPipe {
+			return &errMountConfig{mnt, fmt.Errorf("'%s' is not a valid pipe path", mnt.Target)}
+		}
 	default:
 		return &errMountConfig{mnt, errors.New("mount type unknown")}
 	}
 	return nil
 }
 func (p *windowsParser) ParseMountRaw(raw, volumeDriver string) (*MountPoint, error) {
-	return p.parseMountRaw(raw, volumeDriver, rxDestination, true, func(m *mount.Mount) error {
-		return windowsValidateNotRoot(m.Target)
-	})
+	return p.parseMountRaw(raw, volumeDriver, rxDestination, true, windowsSpecificValidators)
 }
 
 func (p *windowsParser) parseMountRaw(raw, volumeDriver, destRegex string, convertTargetToBackslash bool, additionalValidators ...mountValidator) (*MountPoint, error) {
@@ -308,12 +341,7 @@ func (p *windowsParser) parseMountRaw(raw, volumeDriver, destRegex string, conve
 		return nil, errInvalidMode(mode)
 	}
 
-	if regexp.MustCompile(`^` + rxHostDir + `$`).MatchString(spec.Source) {
-		spec.Type = mount.TypeBind
-	} else {
-		spec.Type = mount.TypeVolume
-	}
-
+	spec.Type = windowsDetectMountType(spec.Source)
 	spec.ReadOnly = !p.ReadWrite(mode)
 
 	// cannot assume that if a volume driver is passed in that we should set it
@@ -341,9 +369,7 @@ func (p *windowsParser) parseMountRaw(raw, volumeDriver, destRegex string, conve
 }
 
 func (p *windowsParser) ParseMountSpec(cfg mount.Mount) (*MountPoint, error) {
-	return p.parseMountSpec(cfg, rxDestination, true, func(m *mount.Mount) error {
-		return windowsValidateNotRoot(m.Target)
-	})
+	return p.parseMountSpec(cfg, rxDestination, true, windowsSpecificValidators)
 }
 func (p *windowsParser) parseMountSpec(cfg mount.Mount, destRegex string, convertTargetToBackslash bool, additionalValidators ...mountValidator) (*MountPoint, error) {
 	if err := p.validateMountConfigReg(&cfg, destRegex, additionalValidators...); err != nil {
@@ -377,6 +403,8 @@ func (p *windowsParser) parseMountSpec(cfg mount.Mount, destRegex string, conver
 			}
 		}
 	case mount.TypeBind:
+		mp.Source = strings.Replace(cfg.Source, `/`, `\`, -1)
+	case mount.TypeNamedPipe:
 		mp.Source = strings.Replace(cfg.Source, `/`, `\`, -1)
 	}
 	// cleanup trailing `\` except for paths like `c:\`
