@@ -21,7 +21,7 @@ type Parser interface {
 	DefaultPropagationMode() mount.Propagation
 	ConvertTmpfsOptions(opt *mount.TmpfsOptions, readOnly bool) (string, error)
 	DefaultCopyMode() bool
-	IsVolumeNameValid(name string) (bool, error)
+	ValidateVolumeName(name string) error
 	ReadWrite(mode string) bool
 	IsBackwardCompatible(m *MountPoint) bool
 	HasResource(m *MountPoint, absPath string) bool

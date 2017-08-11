@@ -178,16 +178,16 @@ func (p *windowsParser) ReadWrite(mode string) bool {
 }
 
 // IsVolumeNameValid checks a volume name in a platform specific manner.
-func (p *windowsParser) IsVolumeNameValid(name string) (bool, error) {
+func (p *windowsParser) ValidateVolumeName(name string) error {
 	nameExp := regexp.MustCompile(`^` + rxName + `$`)
 	if !nameExp.MatchString(name) {
-		return false, nil
+		return errors.New("invalid volume name")
 	}
 	nameExp = regexp.MustCompile(`^` + rxReservedNames + `$`)
 	if nameExp.MatchString(name) {
-		return false, fmt.Errorf("volume name %q cannot be a reserved word for Windows filenames", name)
+		return fmt.Errorf("volume name %q cannot be a reserved word for Windows filenames", name)
 	}
-	return true, nil
+	return nil
 }
 func (p *windowsParser) validateMountConfig(mnt *mount.Mount) error {
 	return p.validateMountConfigReg(mnt, rxDestination, windowsSpecificValidators)
@@ -268,10 +268,7 @@ func (p *windowsParser) validateMountConfigReg(mnt *mount.Mount, destRegex strin
 		}
 
 		if len(mnt.Source) != 0 {
-			if valid, err := p.IsVolumeNameValid(mnt.Source); !valid {
-				if err == nil {
-					err = errors.New("invalid volume name")
-				}
+			if err := p.ValidateVolumeName(mnt.Source); err != nil {
 				return &errMountConfig{mnt, err}
 			}
 		}

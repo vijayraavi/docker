@@ -55,11 +55,6 @@ func decodeContainerConfig(src io.Reader) (*container.Config, *container.HostCon
 
 		// With LCOW, we now can't validate mounts before knowing the image platform.
 		// Validation will be done on container creationt
-
-		// // Now validate all the volumes and binds
-		// if err := validateMountSettings(w.Config, hc); err != nil {
-		// 	return nil, nil, nil, err
-		// }
 	}
 
 	// Certain parameters need daemon-side validation that cannot be done

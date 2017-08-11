@@ -400,8 +400,8 @@ func (p *linuxParser) ConvertTmpfsOptions(opt *mount.TmpfsOptions, readOnly bool
 func (p *linuxParser) DefaultCopyMode() bool {
 	return true
 }
-func (p *linuxParser) IsVolumeNameValid(name string) (bool, error) {
-	return true, nil
+func (p *linuxParser) ValidateVolumeName(name string) error {
+	return nil
 }
 
 func (p *linuxParser) IsBackwardCompatible(m *MountPoint) bool {
