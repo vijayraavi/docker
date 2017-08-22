@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/docker/docker/pkg/idtools"
-	"github.com/docker/docker/pkg/rootfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -53,7 +52,7 @@ func TestIsArchivePathDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fail to create an archive file for test : %s.", output)
 	}
-	if IsArchivePath(rootfs.NewLocalDriver(), tmp+"archivedir") {
+	if IsArchivePath(tmp + "archivedir") {
 		t.Fatalf("Incorrectly recognised directory as an archive")
 	}
 }
@@ -64,10 +63,10 @@ func TestIsArchivePathInvalidFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fail to create an archive file for test : %s.", output)
 	}
-	if IsArchivePath(rootfs.NewLocalDriver(), tmp+"archive") {
+	if IsArchivePath(tmp + "archive") {
 		t.Fatalf("Incorrectly recognised invalid tar path as archive")
 	}
-	if IsArchivePath(rootfs.NewLocalDriver(), tmp+"archive.gz") {
+	if IsArchivePath(tmp + "archive.gz") {
 		t.Fatalf("Incorrectly recognised invalid compressed tar path as archive")
 	}
 }
@@ -85,10 +84,10 @@ func TestIsArchivePathTar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fail to create an archive file for test : %s.", output)
 	}
-	if !IsArchivePath(rootfs.NewLocalDriver(), tmp+"/archive") {
+	if !IsArchivePath(tmp + "/archive") {
 		t.Fatalf("Did not recognise valid tar path as archive")
 	}
-	if !IsArchivePath(rootfs.NewLocalDriver(), tmp+"archive.gz") {
+	if !IsArchivePath(tmp + "archive.gz") {
 		t.Fatalf("Did not recognise valid compressed tar path as archive")
 	}
 }

@@ -12,11 +12,14 @@ import (
 )
 
 // NewArchiver returns a new Archiver which uses chrootarchive.Untar
-func NewArchiver(idMappings *idtools.IDMappings) archive.Archiver {
+func NewArchiver(idMappings *idtools.IDMappings) *archive.Archiver {
 	if idMappings == nil {
 		idMappings = &idtools.IDMappings{}
 	}
-	return archive.NewLocalArchiver(archive.TarWithOptions, Untar, idMappings)
+	return &archive.Archiver{
+		Untar:         Untar,
+		IDMappingsVar: idMappings,
+	}
 }
 
 // Untar reads a stream of bytes from `archive`, parses it as a tar archive,

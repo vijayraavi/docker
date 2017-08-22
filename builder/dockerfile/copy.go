@@ -1,6 +1,7 @@
 package dockerfile
 
 import (
+	"archive/tar"
 	"fmt"
 	"io"
 	"net/http"
@@ -414,8 +415,8 @@ func downloadSource(output io.Writer, stdout io.Writer, srcURL string) (remote b
 
 type copyFileOptions struct {
 	decompress bool
-	archiver   archive.Archiver
 	chownPair  idtools.IDPair
+	archiver   Archiver
 }
 
 type copyEndpoint struct {
@@ -446,7 +447,7 @@ func performCopyForInfo(dest copyInfo, source copyInfo, options copyFileOptions)
 	if src.IsDir() {
 		return copyDirectory(archiver, srcEndpoint, destEndpoint, options.chownPair)
 	}
-	if options.decompress && archive.IsArchivePath(source.root, srcPath) && !source.noDecompress {
+	if options.decompress && isArchivePath(source.root, srcPath) && !source.noDecompress {
 		return archiver.UntarPath(srcPath, destPath)
 	}
 
@@ -465,7 +466,22 @@ func performCopyForInfo(dest copyInfo, source copyInfo, options copyFileOptions)
 	return copyFile(archiver, srcEndpoint, destEndpoint, options.chownPair)
 }
 
-func copyDirectory(archiver archive.Archiver, source, dest *copyEndpoint, chownPair idtools.IDPair) error {
+func isArchivePath(driver rootfs.RootFS, path string) bool {
+	file, err := driver.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	rdr, err := archive.DecompressStream(file)
+	if err != nil {
+		return false
+	}
+	r := tar.NewReader(rdr)
+	_, err = r.Next()
+	return err == nil
+}
+
+func copyDirectory(archiver Archiver, source, dest *copyEndpoint, chownPair idtools.IDPair) error {
 	destExists, err := isExistingDirectory(dest)
 	if err != nil {
 		return errors.Wrapf(err, "failed to query destination path")
@@ -478,7 +494,7 @@ func copyDirectory(archiver archive.Archiver, source, dest *copyEndpoint, chownP
 	return fixPermissions(source.path, dest.path, chownPair, !destExists)
 }
 
-func copyFile(archiver archive.Archiver, source, dest *copyEndpoint, chownPair idtools.IDPair) error {
+func copyFile(archiver Archiver, source, dest *copyEndpoint, chownPair idtools.IDPair) error {
 	if runtime.GOOS == "windows" && dest.driver.Platform() == "linux" {
 		// LCOW
 		if err := dest.driver.MkdirAll(dest.driver.Dir(dest.path), 0755); err != nil {

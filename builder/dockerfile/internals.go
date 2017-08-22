@@ -35,6 +35,16 @@ var pathBlacklist = map[string]bool{
 	"c:\\windows": true,
 }
 
+// Archiver defines an interface for copying files from one destination to
+// another using Tar/Untar.
+type Archiver interface {
+	TarUntar(src, dst string) error
+	UntarPath(src, dst string) error
+	CopyWithTar(src, dst string) error
+	CopyFileWithTar(src, dst string) error
+	IDMappings() *idtools.IDMappings
+}
+
 // The builder will use the following interfaces if the container fs implements
 // these for optimized copies to and from the container.
 type extractor interface {
@@ -46,23 +56,29 @@ type archiver interface {
 }
 
 // helper functions to get tar/untar func
-func untarFunc(i interface{}) archive.UntarFunc {
+func untarFunc(i interface{}) rootfs.UntarFunc {
 	if ea, ok := i.(extractor); ok {
 		return ea.ExtractArchive
 	}
 	return chrootarchive.Untar
 }
 
-func tarFunc(i interface{}) archive.TarFunc {
+func tarFunc(i interface{}) rootfs.TarFunc {
 	if ap, ok := i.(archiver); ok {
 		return ap.ArchivePath
 	}
 	return archive.TarWithOptions
 }
 
-func (b *Builder) getArchiver(src, dst rootfs.Driver) archive.Archiver {
+func (b *Builder) getArchiver(src, dst rootfs.Driver) Archiver {
 	t, u := tarFunc(src), untarFunc(dst)
-	return archive.NewCustomArchiver(src, dst, t, u, b.idMappings)
+	return &rootfs.Archiver{
+		SrcDriver:     src,
+		DstDriver:     dst,
+		Tar:           t,
+		Untar:         u,
+		IDMappingsVar: b.idMappings,
+	}
 }
 
 func (b *Builder) commit(dispatchState *dispatchState, comment string) error {
