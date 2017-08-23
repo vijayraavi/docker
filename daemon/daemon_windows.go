@@ -12,11 +12,11 @@ import (
 	"github.com/docker/docker/container"
 	"github.com/docker/docker/daemon/config"
 	"github.com/docker/docker/image"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/parsers"
 	"github.com/docker/docker/pkg/platform"
-	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/sysinfo"
 	"github.com/docker/docker/pkg/system"
 	"github.com/docker/docker/runconfig"
@@ -57,7 +57,7 @@ func parseSecurityOpt(container *container.Container, config *containertypes.Hos
 	return nil
 }
 
-func (daemon *Daemon) getLayerInit() func(rootfs.RootFS) error {
+func (daemon *Daemon) getLayerInit() func(containerfs.ContainerFS) error {
 	return nil
 }
 

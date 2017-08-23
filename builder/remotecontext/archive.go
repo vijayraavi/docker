@@ -8,14 +8,14 @@ import (
 	"github.com/docker/docker/builder"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/ioutils"
-	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/tarsum"
 	"github.com/pkg/errors"
 )
 
 type archiveContext struct {
-	root rootfs.RootFS
+	root containerfs.ContainerFS
 	sums tarsum.FileInfoSums
 }
 
@@ -53,7 +53,7 @@ func FromArchive(tarStream io.Reader) (builder.Source, error) {
 	}
 
 	// Assume local file system. Since it's coming from a tar file.
-	tsc := &archiveContext{root: rootfs.NewLocalRootFS(root)}
+	tsc := &archiveContext{root: containerfs.NewLocalContainerFS(root)}
 
 	// Make sure we clean-up upon error.  In the happy case the caller
 	// is expected to manage the clean-up
@@ -83,7 +83,7 @@ func FromArchive(tarStream io.Reader) (builder.Source, error) {
 	return tsc, nil
 }
 
-func (c *archiveContext) Root() rootfs.RootFS {
+func (c *archiveContext) Root() containerfs.ContainerFS {
 	return c.root
 }
 
@@ -116,7 +116,7 @@ func (c *archiveContext) Hash(path string) (string, error) {
 	return path, nil // backwards compat TODO: see if really needed
 }
 
-func normalize(path string, root rootfs.RootFS) (cleanPath, fullPath string, err error) {
+func normalize(path string, root containerfs.ContainerFS) (cleanPath, fullPath string, err error) {
 	cleanPath = root.Clean(string(root.Separator()) + path)[1:]
 	fullPath, err = root.ResolveScopedPath(path, true)
 	if err != nil {

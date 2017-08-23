@@ -24,10 +24,10 @@ import (
 	"github.com/docker/docker/daemon/config"
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/opts"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/parsers"
 	"github.com/docker/docker/pkg/parsers/kernel"
-	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/sysinfo"
 	"github.com/docker/docker/runconfig"
 	"github.com/docker/docker/volume"
@@ -988,7 +988,7 @@ func removeDefaultBridgeInterface() {
 	}
 }
 
-func (daemon *Daemon) getLayerInit() func(rootfs.RootFS) error {
+func (daemon *Daemon) getLayerInit() func(containerfs.ContainerFS) error {
 	return daemon.setupInitLayer
 }
 

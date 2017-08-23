@@ -16,10 +16,10 @@ import (
 	"github.com/docker/docker/builder"
 	"github.com/docker/docker/builder/remotecontext"
 	"github.com/docker/docker/pkg/archive"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/progress"
-	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/streamformatter"
 	"github.com/docker/docker/pkg/system"
 	"github.com/docker/docker/pkg/urlutil"
@@ -34,7 +34,7 @@ type pathCache interface {
 // copyInfo is a data object which stores the metadata about each source file in
 // a copyInstruction
 type copyInfo struct {
-	root         rootfs.RootFS
+	root         containerfs.ContainerFS
 	path         string
 	hash         string
 	noDecompress bool
@@ -166,7 +166,7 @@ func (o *copier) calcCopyInfo(origPath string, allowWildcards bool) ([]copyInfo,
 
 	root := o.source.Root()
 
-	if err := validateCopySourcePath(imageSource, origPath, root.Platform()); err != nil {
+	if err := validateCopySourcePath(imageSource, origPath, root.OS()); err != nil {
 		return nil, err
 	}
 
@@ -177,7 +177,7 @@ func (o *copier) calcCopyInfo(origPath string, allowWildcards bool) ([]copyInfo,
 	origPath = strings.TrimPrefix(origPath, "."+string(root.Separator()))
 
 	// Deal with wildcards
-	if allowWildcards && containsWildcards(origPath, root.Platform()) {
+	if allowWildcards && containsWildcards(origPath, root.OS()) {
 		return o.copyWithWildcards(origPath)
 	}
 
@@ -409,7 +409,7 @@ func downloadSource(output io.Writer, stdout io.Writer, srcURL string) (remote b
 		return
 	}
 
-	lc, err := remotecontext.NewLazySource(rootfs.NewLocalRootFS(tmpDir))
+	lc, err := remotecontext.NewLazySource(containerfs.NewLocalContainerFS(tmpDir))
 	return lc, filename, err
 }
 
@@ -420,7 +420,7 @@ type copyFileOptions struct {
 }
 
 type copyEndpoint struct {
-	driver rootfs.Driver
+	driver containerfs.Driver
 	path   string
 }
 
@@ -466,7 +466,7 @@ func performCopyForInfo(dest copyInfo, source copyInfo, options copyFileOptions)
 	return copyFile(archiver, srcEndpoint, destEndpoint, options.chownPair)
 }
 
-func isArchivePath(driver rootfs.RootFS, path string) bool {
+func isArchivePath(driver containerfs.ContainerFS, path string) bool {
 	file, err := driver.Open(path)
 	if err != nil {
 		return false
@@ -495,7 +495,7 @@ func copyDirectory(archiver Archiver, source, dest *copyEndpoint, chownPair idto
 }
 
 func copyFile(archiver Archiver, source, dest *copyEndpoint, chownPair idtools.IDPair) error {
-	if runtime.GOOS == "windows" && dest.driver.Platform() == "linux" {
+	if runtime.GOOS == "windows" && dest.driver.OS() == "linux" {
 		// LCOW
 		if err := dest.driver.MkdirAll(dest.driver.Dir(dest.path), 0755); err != nil {
 			return errors.Wrapf(err, "failed to create new directory")
@@ -514,7 +514,7 @@ func copyFile(archiver Archiver, source, dest *copyEndpoint, chownPair idtools.I
 	return fixPermissions(source.path, dest.path, chownPair, false)
 }
 
-func endsInSlash(driver rootfs.Driver, path string) bool {
+func endsInSlash(driver containerfs.Driver, path string) bool {
 	return strings.HasSuffix(path, string(driver.Separator()))
 }
 

@@ -8,7 +8,7 @@ import (
 
 	"github.com/containerd/continuity/driver"
 	"github.com/docker/docker/pkg/archive"
-	"github.com/docker/docker/pkg/rootfs"
+	"github.com/docker/docker/pkg/containerfs"
 )
 
 func TestMountInit(t *testing.T) {
@@ -28,7 +28,7 @@ func TestMountInit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mountInit := func(root rootfs.RootFS) error {
+	mountInit := func(root containerfs.ContainerFS) error {
 		return initfile.ApplyFile(root)
 	}
 
@@ -88,7 +88,7 @@ func TestMountSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mountInit := func(root rootfs.RootFS) error {
+	mountInit := func(root containerfs.ContainerFS) error {
 		return newTestFile("file-init", contentInit, 0777).ApplyFile(root)
 	}
 	rwLayerOpts := &CreateRWLayerOpts{
@@ -140,7 +140,7 @@ func TestMountChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mountInit := func(root rootfs.RootFS) error {
+	mountInit := func(root containerfs.ContainerFS) error {
 		return initfile.ApplyFile(root)
 	}
 	rwLayerOpts := &CreateRWLayerOpts{

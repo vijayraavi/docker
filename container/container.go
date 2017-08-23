@@ -28,9 +28,9 @@ import (
 	"github.com/docker/docker/layer"
 	"github.com/docker/docker/libcontainerd"
 	"github.com/docker/docker/opts"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/ioutils"
-	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/signal"
 	"github.com/docker/docker/pkg/symlink"
 	"github.com/docker/docker/pkg/system"
@@ -65,10 +65,10 @@ var (
 type Container struct {
 	StreamConfig *stream.Config
 	// embed for Container to support states directly.
-	*State          `json:"State"` // Needed for Engine API version <= 1.11
-	Root            string         `json:"-"` // Path to the "home" of the container, including metadata.
-	BaseFS          rootfs.RootFS  `json:"-"` // interface containing graphdriver mount
-	RWLayer         layer.RWLayer  `json:"-"`
+	*State          `json:"State"`          // Needed for Engine API version <= 1.11
+	Root            string                  `json:"-"` // Path to the "home" of the container, including metadata.
+	BaseFS          containerfs.ContainerFS `json:"-"` // interface containing graphdriver mount
+	RWLayer         layer.RWLayer           `json:"-"`
 	ID              string
 	Created         time.Time
 	Managed         bool

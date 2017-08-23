@@ -5,7 +5,6 @@ package container
 import (
 	"io/ioutil"
 	"os"
-	"path/filepath"
 
 	"github.com/docker/docker/api/types"
 	containertypes "github.com/docker/docker/api/types/container"
@@ -450,11 +449,6 @@ func (container *Container) TmpfsMounts() ([]Mount, error) {
 		}
 	}
 	return mounts, nil
-}
-
-// cleanResourcePath cleans a resource path and prepares to combine with mnt path
-func cleanResourcePath(path string) string {
-	return filepath.Join(string(os.PathSeparator), path)
 }
 
 // EnableServiceDiscoveryOnDefaultNetwork Enable service discovery on default network

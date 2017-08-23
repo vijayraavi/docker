@@ -7,7 +7,7 @@ import (
 
 	iradix "github.com/hashicorp/go-immutable-radix"
 
-	"github.com/docker/docker/pkg/rootfs"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil"
 )
@@ -19,7 +19,7 @@ type hashed interface {
 // CachableSource is a source that contains cache records for its contents
 type CachableSource struct {
 	mu   sync.Mutex
-	root rootfs.RootFS
+	root containerfs.ContainerFS
 	tree *iradix.Tree
 	txn  *iradix.Txn
 }
@@ -28,7 +28,7 @@ type CachableSource struct {
 func NewCachableSource(root string) *CachableSource {
 	ts := &CachableSource{
 		tree: iradix.New(),
-		root: rootfs.NewLocalRootFS(root),
+		root: containerfs.NewLocalContainerFS(root),
 	}
 	return ts
 }
@@ -161,7 +161,7 @@ func (cs *CachableSource) Hash(path string) (string, error) {
 }
 
 // Root returns a root directory for the source
-func (cs *CachableSource) Root() rootfs.RootFS {
+func (cs *CachableSource) Root() containerfs.ContainerFS {
 	return cs.root
 }
 

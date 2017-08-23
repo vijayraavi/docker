@@ -10,8 +10,8 @@ import (
 	"github.com/docker/docker/builder"
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/layer"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/idtools"
-	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/registry"
 	"github.com/pkg/errors"
@@ -26,9 +26,9 @@ type releaseableLayer struct {
 	rwLayer    layer.RWLayer
 }
 
-func (rl *releaseableLayer) Mount() (rootfs.RootFS, error) {
+func (rl *releaseableLayer) Mount() (containerfs.ContainerFS, error) {
 	var err error
-	var mountPath rootfs.RootFS
+	var mountPath containerfs.ContainerFS
 	var chainID layer.ChainID
 	if rl.roLayer != nil {
 		chainID = rl.roLayer.ChainID()

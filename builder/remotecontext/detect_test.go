@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/docker/docker/builder"
-	"github.com/docker/docker/pkg/rootfs"
+	"github.com/docker/docker/pkg/containerfs"
 )
 
 const (
@@ -53,7 +53,7 @@ func checkDirectory(t *testing.T, dir string, expectedFiles []string) {
 }
 
 func executeProcess(t *testing.T, contextDir string) {
-	modifiableCtx := &stubRemote{root: rootfs.NewLocalRootFS(contextDir)}
+	modifiableCtx := &stubRemote{root: containerfs.NewLocalContainerFS(contextDir)}
 
 	err := removeDockerfile(modifiableCtx, builder.DefaultDockerfileName)
 
@@ -105,14 +105,14 @@ func TestProcessShouldLeaveAllFiles(t *testing.T) {
 
 // TODO: remove after moving to a separate pkg
 type stubRemote struct {
-	root rootfs.RootFS
+	root containerfs.ContainerFS
 }
 
 func (r *stubRemote) Hash(path string) (string, error) {
 	return "", errors.New("not implemented")
 }
 
-func (r *stubRemote) Root() rootfs.RootFS {
+func (r *stubRemote) Root() containerfs.ContainerFS {
 	return r.root
 }
 func (r *stubRemote) Close() error {

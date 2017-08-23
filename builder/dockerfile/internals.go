@@ -20,8 +20,8 @@ import (
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/idtools"
-	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/pkg/symlink"
 	"github.com/docker/docker/pkg/system"
@@ -56,23 +56,23 @@ type archiver interface {
 }
 
 // helper functions to get tar/untar func
-func untarFunc(i interface{}) rootfs.UntarFunc {
+func untarFunc(i interface{}) containerfs.UntarFunc {
 	if ea, ok := i.(extractor); ok {
 		return ea.ExtractArchive
 	}
 	return chrootarchive.Untar
 }
 
-func tarFunc(i interface{}) rootfs.TarFunc {
+func tarFunc(i interface{}) containerfs.TarFunc {
 	if ap, ok := i.(archiver); ok {
 		return ap.ArchivePath
 	}
 	return archive.TarWithOptions
 }
 
-func (b *Builder) getArchiver(src, dst rootfs.Driver) Archiver {
+func (b *Builder) getArchiver(src, dst containerfs.Driver) Archiver {
 	t, u := tarFunc(src), untarFunc(dst)
-	return &rootfs.Archiver{
+	return &containerfs.Archiver{
 		SrcDriver:     src,
 		DstDriver:     dst,
 		Tar:           t,

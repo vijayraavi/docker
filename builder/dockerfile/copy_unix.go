@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/idtools"
-	"github.com/docker/docker/pkg/rootfs"
 )
 
 func fixPermissions(source, destination string, rootIDs idtools.IDPair, overrideSkip bool) error {
@@ -16,7 +16,7 @@ func fixPermissions(source, destination string, rootIDs idtools.IDPair, override
 		err           error
 	)
 	if !overrideSkip {
-		destEndpoint := &copyEndpoint{driver: rootfs.NewLocalDriver(), path: destination}
+		destEndpoint := &copyEndpoint{driver: containerfs.NewLocalDriver(), path: destination}
 		skipChownRoot, err = isExistingDirectory(destEndpoint)
 		if err != nil {
 			return err

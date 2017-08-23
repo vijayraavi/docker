@@ -7,8 +7,8 @@ import (
 
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/chrootarchive"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/idtools"
-	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/system"
 	"github.com/opencontainers/selinux/go-selinux/label"
 )
@@ -111,7 +111,7 @@ func (d *Driver) Remove(id string) error {
 }
 
 // Get returns the directory for the given id.
-func (d *Driver) Get(id, mountLabel string) (rootfs.RootFS, error) {
+func (d *Driver) Get(id, mountLabel string) (containerfs.ContainerFS, error) {
 	return graphdriver.WrapLocalGetFunc(id, mountLabel, d.get)
 }
 

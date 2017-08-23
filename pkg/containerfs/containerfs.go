@@ -1,4 +1,4 @@
-package rootfs
+package containerfs
 
 import (
 	"path/filepath"
@@ -9,8 +9,8 @@ import (
 	"github.com/docker/docker/pkg/symlink"
 )
 
-// RootFS is that represents a root file system
-type RootFS interface {
+// ContainerFS is that represents a root file system
+type ContainerFS interface {
 	// Path returns the path to the root. Note that this may not exist
 	// on the local system, so the continuity operations must be used
 	Path() string
@@ -28,18 +28,22 @@ type RootFS interface {
 // Driver combines both continuity's Driver and PathDriver interfaces with a Platform
 // field to determine the OS.
 type Driver interface {
-	// Platform returns the OS where the rootfs is located. Essentially,
+	// OS returns the OS where the rootfs is located. Essentially,
 	// runtime.GOOS for everything aside from LCOW, which is "linux"
-	Platform() string
+	OS() string
+
+	// Architecture returns the hardware architecture where the
+	// container is located.
+	Architecture() string
 
 	// Driver & PathDriver provide methods to manipulate files & paths
 	driver.Driver
 	pathdriver.PathDriver
 }
 
-// NewLocalRootFS is a helper function to implement daemon's Mount interface
+// NewLocalContainerFS is a helper function to implement daemon's Mount interface
 // when the graphdriver mount point is a local path on the machine.
-func NewLocalRootFS(path string) RootFS {
+func NewLocalContainerFS(path string) ContainerFS {
 	return &local{
 		path:       path,
 		Driver:     driver.LocalDriver,
@@ -74,6 +78,10 @@ func (l *local) ResolveScopedPath(path string, rawPath bool) (string, error) {
 	return symlink.FollowSymlinkInScope(filepath.Join(l.path, cleanedPath), l.path)
 }
 
-func (l *local) Platform() string {
+func (l *local) OS() string {
 	return runtime.GOOS
+}
+
+func (l *local) Architecture() string {
+	return runtime.GOARCH
 }

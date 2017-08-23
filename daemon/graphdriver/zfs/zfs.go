@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/docker/docker/daemon/graphdriver"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/mount"
 	"github.com/docker/docker/pkg/parsers"
-	"github.com/docker/docker/pkg/rootfs"
 	zfs "github.com/mistifyio/go-zfs"
 	"github.com/opencontainers/selinux/go-selinux/label"
 	"github.com/sirupsen/logrus"
@@ -357,7 +357,7 @@ func (d *Driver) Remove(id string) error {
 }
 
 // Get returns the mountpoint for the given id after creating the target directories if necessary.
-func (d *Driver) Get(id, mountLabel string) (rootfs.RootFS, error) {
+func (d *Driver) Get(id, mountLabel string) (containerfs.ContainerFS, error) {
 	return graphdriver.WrapLocalGetFunc(id, mountLabel, d.get)
 }
 

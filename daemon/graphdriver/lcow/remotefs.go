@@ -6,13 +6,14 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"runtime"
 	"strings"
 	"sync"
 
 	"github.com/Microsoft/hcsshim"
 	"github.com/Microsoft/opengcs/service/gcsutils/remotefs"
 	"github.com/docker/docker/pkg/archive"
-	"github.com/docker/docker/pkg/rootfs"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/sirupsen/logrus"
 )
 
@@ -25,7 +26,7 @@ type lcowfs struct {
 	sync.Mutex
 }
 
-var _ rootfs.RootFS = &lcowfs{}
+var _ containerfs.ContainerFS = &lcowfs{}
 
 // ErrNotSupported is an error for unsupported operations in the remotefs
 var ErrNotSupported = fmt.Errorf("not supported")
@@ -55,8 +56,12 @@ func (l *lcowfs) ResolveScopedPath(path string, rawPath bool) (string, error) {
 	return output.String(), nil
 }
 
-func (l *lcowfs) Platform() string {
+func (l *lcowfs) OS() string {
 	return "linux"
+}
+
+func (l *lcowfs) Architecture() string {
+	return runtime.GOARCH
 }
 
 // Other functions that are used by docker like the daemon Archiver/Extractor

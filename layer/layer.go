@@ -15,7 +15,7 @@ import (
 
 	"github.com/docker/distribution"
 	"github.com/docker/docker/pkg/archive"
-	"github.com/docker/docker/pkg/rootfs"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 )
@@ -138,7 +138,7 @@ type RWLayer interface {
 
 	// Mount mounts the RWLayer and returns the filesystem path
 	// the to the writable layer.
-	Mount(mountLabel string) (rootfs.RootFS, error)
+	Mount(mountLabel string) (containerfs.ContainerFS, error)
 
 	// Unmount unmounts the RWLayer. This should be called
 	// for every mount. If there are multiple mount calls
@@ -179,7 +179,7 @@ type Metadata struct {
 // writable mount. Changes made here will
 // not be included in the Tar stream of the
 // RWLayer.
-type MountInit func(root rootfs.RootFS) error
+type MountInit func(root containerfs.ContainerFS) error
 
 // CreateRWLayerOpts contains optional arguments to be passed to CreateRWLayer
 type CreateRWLayerOpts struct {

@@ -12,9 +12,9 @@ import (
 	"github.com/vbatts/tar-split/tar/storage"
 
 	"github.com/docker/docker/pkg/archive"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/plugingetter"
-	"github.com/docker/docker/pkg/rootfs"
 )
 
 // FsMagic unsigned id of the filesystem in use.
@@ -69,7 +69,7 @@ type ProtoDriver interface {
 	// Get returns the mountpoint for the layered filesystem referred
 	// to by this id. You can optionally specify a mountLabel or "".
 	// Returns the absolute path to the mounted layered filesystem.
-	Get(id, mountLabel string) (fs rootfs.RootFS, err error)
+	Get(id, mountLabel string) (fs containerfs.ContainerFS, err error)
 	// Put releases the system resources for the specified id,
 	// e.g, unmounting layered filesystem.
 	Put(id string) error
@@ -159,12 +159,12 @@ type LocalGetFunc func(string, string) (string, error)
 
 // WrapLocalGetFunc wraps the old graphdriver Get() interface (LocalGetFunc)
 // with the current graphdriver.Get() interface
-func WrapLocalGetFunc(id, mountLabel string, f LocalGetFunc) (rootfs.RootFS, error) {
+func WrapLocalGetFunc(id, mountLabel string, f LocalGetFunc) (containerfs.ContainerFS, error) {
 	mnt, err := f(id, mountLabel)
 	if err != nil {
 		return nil, err
 	}
-	return rootfs.NewLocalRootFS(mnt), nil
+	return containerfs.NewLocalContainerFS(mnt), nil
 }
 
 func init() {

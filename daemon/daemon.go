@@ -41,9 +41,9 @@ import (
 	"github.com/docker/docker/layer"
 	"github.com/docker/docker/libcontainerd"
 	"github.com/docker/docker/migrate/v1"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/plugingetter"
-	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/sysinfo"
 	"github.com/docker/docker/pkg/system"
 	"github.com/docker/docker/pkg/truncindex"
@@ -1047,7 +1047,7 @@ func prepareTempDir(rootDir string, rootIDs idtools.IDPair) (string, error) {
 	return tmpDir, idtools.MkdirAllAndChown(tmpDir, 0700, rootIDs)
 }
 
-func (daemon *Daemon) setupInitLayer(initPath rootfs.RootFS) error {
+func (daemon *Daemon) setupInitLayer(initPath containerfs.ContainerFS) error {
 	rootIDs := daemon.idMappings.RootPair()
 	return initlayer.Setup(initPath, rootIDs)
 }

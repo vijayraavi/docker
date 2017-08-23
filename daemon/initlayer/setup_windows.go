@@ -3,8 +3,8 @@
 package initlayer
 
 import (
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/idtools"
-	"github.com/docker/docker/pkg/rootfs"
 )
 
 // Setup populates a directory with mountpoints suitable
@@ -13,6 +13,6 @@ import (
 //
 // This extra layer is used by all containers as the top-most ro layer. It protects
 // the container from unwanted side-effects on the rw layer.
-func Setup(initLayer rootfs.RootFS, rootIDs idtools.IDPair) error {
+func Setup(initLayer containerfs.ContainerFS, rootIDs idtools.IDPair) error {
 	return nil
 }

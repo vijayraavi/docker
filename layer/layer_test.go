@@ -14,8 +14,8 @@ import (
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/daemon/graphdriver/vfs"
 	"github.com/docker/docker/pkg/archive"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/idtools"
-	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/opencontainers/go-digest"
 )
@@ -84,7 +84,7 @@ func newTestStore(t *testing.T) (Store, string, func()) {
 	}
 }
 
-type layerInit func(root rootfs.RootFS) error
+type layerInit func(root containerfs.ContainerFS) error
 
 func createLayer(ls Store, parent ChainID, layerFunc layerInit) (Layer, error) {
 	containerID := stringid.GenerateRandomID()
@@ -125,7 +125,7 @@ func createLayer(ls Store, parent ChainID, layerFunc layerInit) (Layer, error) {
 }
 
 type FileApplier interface {
-	ApplyFile(root rootfs.RootFS) error
+	ApplyFile(root containerfs.ContainerFS) error
 }
 
 type testFile struct {
@@ -142,7 +142,7 @@ func newTestFile(name string, content []byte, perm os.FileMode) FileApplier {
 	}
 }
 
-func (tf *testFile) ApplyFile(root rootfs.RootFS) error {
+func (tf *testFile) ApplyFile(root containerfs.ContainerFS) error {
 	fullPath := root.Join(root.Path(), tf.name)
 	if err := root.MkdirAll(root.Dir(fullPath), 0755); err != nil {
 		return err
@@ -160,7 +160,7 @@ func (tf *testFile) ApplyFile(root rootfs.RootFS) error {
 }
 
 func initWithFiles(files ...FileApplier) layerInit {
-	return func(root rootfs.RootFS) error {
+	return func(root containerfs.ContainerFS) error {
 		for _, f := range files {
 			if err := f.ApplyFile(root); err != nil {
 				return err
@@ -620,7 +620,7 @@ func tarFromFiles(files ...FileApplier) ([]byte, error) {
 	defer os.RemoveAll(td)
 
 	for _, f := range files {
-		if err := f.ApplyFile(rootfs.NewLocalRootFS(td)); err != nil {
+		if err := f.ApplyFile(containerfs.NewLocalContainerFS(td)); err != nil {
 			return nil, err
 		}
 	}

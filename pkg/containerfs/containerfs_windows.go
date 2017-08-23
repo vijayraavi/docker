@@ -1,8 +1,8 @@
-package rootfs
+package containerfs
 
 import "path/filepath"
 
-// cleanResourcePath removes the C:\ syntax, and prepares to combine
+// cleanScopedPath removes the C:\ syntax, and prepares to combine
 // with a volume path
 func cleanScopedPath(path string) string {
 	if len(path) >= 2 {

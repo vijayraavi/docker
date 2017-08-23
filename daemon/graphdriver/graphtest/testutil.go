@@ -10,7 +10,7 @@ import (
 	"github.com/containerd/continuity/driver"
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/archive"
-	"github.com/docker/docker/pkg/rootfs"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/stringid"
 )
 
@@ -325,7 +325,7 @@ func checkManyLayers(drv graphdriver.Driver, layer string, count int) error {
 // readDir reads a directory just like driver.ReadDir()
 // then hides specific files (currently "lost+found")
 // so the tests don't "see" it
-func readDir(r rootfs.RootFS, dir string) ([]os.FileInfo, error) {
+func readDir(r containerfs.ContainerFS, dir string) ([]os.FileInfo, error) {
 	a, err := driver.ReadDir(r, dir)
 	if err != nil {
 		return nil, err

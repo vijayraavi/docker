@@ -12,10 +12,10 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/daemon/initlayer"
 	"github.com/docker/docker/libcontainerd"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/mount"
 	"github.com/docker/docker/pkg/plugins"
-	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/plugin/v2"
 	"github.com/opencontainers/go-digest"
@@ -58,7 +58,7 @@ func (pm *Manager) enable(p *v2.Plugin, c *controller, force bool) error {
 		}
 	}
 
-	rootFS := rootfs.NewLocalRootFS(filepath.Join(pm.config.Root, p.PluginObj.ID, rootFSFileName))
+	rootFS := containerfs.NewLocalContainerFS(filepath.Join(pm.config.Root, p.PluginObj.ID, rootFSFileName))
 	if err := initlayer.Setup(rootFS, idtools.IDPair{0, 0}); err != nil {
 		return errors.WithStack(err)
 	}

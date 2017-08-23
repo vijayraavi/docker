@@ -3,7 +3,7 @@ package dockerfile
 import (
 	"testing"
 
-	"github.com/docker/docker/pkg/rootfs"
+	"github.com/docker/docker/pkg/containerfs"
 	"github.com/gotestyourself/gotestyourself/fs"
 	"github.com/stretchr/testify/assert"
 )
@@ -37,7 +37,7 @@ func TestIsExistingDirectory(t *testing.T) {
 	}
 
 	for _, testcase := range testcases {
-		result, err := isExistingDirectory(&copyEndpoint{driver: rootfs.NewLocalDriver(), path: testcase.path})
+		result, err := isExistingDirectory(&copyEndpoint{driver: containerfs.NewLocalDriver(), path: testcase.path})
 		if !assert.NoError(t, err) {
 			continue
 		}
