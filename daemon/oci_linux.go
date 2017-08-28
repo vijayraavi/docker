@@ -497,7 +497,6 @@ func setMounts(daemon *Daemon, s *specs.Spec, c *container.Container, mounts []c
 
 	// Filter out mounts from spec
 	noIpc := c.HostConfig.IpcMode.IsNone()
-	parser := volume.NewParser("linux")
 	// Filter out mounts that are overridden by user supplied mounts
 	var defaultMounts []specs.Mount
 	_, mountDev := userMounts["/dev"]
@@ -525,6 +524,7 @@ func setMounts(daemon *Daemon, s *specs.Spec, c *container.Container, mounts []c
 
 		if m.Source == "tmpfs" {
 			data := m.Data
+			parser := volume.NewParser("linux")
 			options := []string{"noexec", "nosuid", "nodev", string(parser.DefaultPropagationMode())}
 			if data != "" {
 				options = append(options, strings.Split(data, ",")...)

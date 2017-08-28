@@ -7,10 +7,10 @@ import (
 )
 
 const (
-	// PlatformLinux is the same as runtime.GOOS on linux
-	PlatformLinux = "linux"
-	// PlatformWindows is the same as runtime.GOOS on windows
-	PlatformWindows = "windows"
+	// OSLinux is the same as runtime.GOOS on linux
+	OSLinux = "linux"
+	// OSWindows is the same as runtime.GOOS on windows
+	OSWindows = "windows"
 )
 
 // Parser represents a platform specific parser for mount expressions
@@ -30,13 +30,13 @@ type Parser interface {
 	validateMountConfig(mt *mount.Mount) error
 }
 
-// NewParser creates a parser for a given container platform, depending on the current host OS (linux on a windows host will resolve to an lcowParser)
-func NewParser(containerPlatform string) Parser {
-	switch containerPlatform {
-	case PlatformWindows:
+// NewParser creates a parser for a given container OS, depending on the current host OS (linux on a windows host will resolve to an lcowParser)
+func NewParser(containerOS string) Parser {
+	switch containerOS {
+	case OSWindows:
 		return &windowsParser{}
 	}
-	if runtime.GOOS == PlatformWindows {
+	if runtime.GOOS == OSWindows {
 		return &lcowParser{}
 	}
 	return &linuxParser{}

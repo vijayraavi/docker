@@ -52,9 +52,6 @@ func decodeContainerConfig(src io.Reader) (*container.Config, *container.HostCon
 		if w.Config.Volumes == nil {
 			w.Config.Volumes = make(map[string]struct{})
 		}
-
-		// With LCOW, we now can't validate mounts before knowing the image platform.
-		// Validation will be done on container creationt
 	}
 
 	// Certain parameters need daemon-side validation that cannot be done
