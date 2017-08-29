@@ -23,7 +23,7 @@ func (container *Container) ResolvePath(path string) (resolvedPath, absPath stri
 	absPath = archive.PreserveTrailingDotOrSeparator(
 		container.BaseFS.Join(string(container.BaseFS.Separator()), path),
 		path,
-		container.BaseFS)
+		container.BaseFS.Separator())
 
 	// Split the absPath into its Directory and Base components. We will
 	// resolve the dir in the scope of the container then append the base.

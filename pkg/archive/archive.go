@@ -16,7 +16,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/containerd/continuity/pathdriver"
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/ioutils"
@@ -739,7 +738,7 @@ func TarWithOptions(srcPath string, options *TarOptions) (io.ReadCloser, error) 
 				logrus.Warn("Tar: Can't archive a file with includes")
 			}
 
-			dir, base := SplitPathDirEntry(srcPath, pathdriver.LocalPathDriver)
+			dir, base := SplitPathDirEntry(srcPath)
 			srcPath = dir
 			options.IncludeFiles = []string{base}
 		}

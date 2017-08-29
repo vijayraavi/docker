@@ -12,8 +12,6 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/containerd/continuity/pathdriver"
-
 	"github.com/docker/docker/pkg/system"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -145,8 +143,8 @@ func TestTarWithHardLinkAndRebase(t *testing.T) {
 	bRdr, err := TarResourceRebase(origin, "origin")
 	require.NoError(t, err)
 
-	dstDir, srcBase := SplitPathDirEntry(origin, pathdriver.LocalPathDriver)
-	_, dstBase := SplitPathDirEntry(dest, pathdriver.LocalPathDriver)
+	dstDir, srcBase := SplitPathDirEntry(origin)
+	_, dstBase := SplitPathDirEntry(dest)
 	content := RebaseArchiveEntries(bRdr, srcBase, dstBase)
 	err = Untar(content, dstDir, &TarOptions{Compression: Uncompressed, NoLchown: true, NoOverwriteDirNonDir: true})
 	require.NoError(t, err)

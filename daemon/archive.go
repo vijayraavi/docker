@@ -227,7 +227,16 @@ func (daemon *Daemon) containerArchivePath(container *container.Container, path 
 	// requested: we want the archive entries to start with "/" and not the
 	// container ID.
 	driver := container.BaseFS
-	sourceDir, opts := archive.TarResourceRebaseOpts(resolvedPath, driver.Base(absPath), driver)
+
+	// Get the source and the base paths of the container resolved path in order
+	// to get the proper tar options for the rebase tar.
+	resolvedPath = driver.Clean(resolvedPath)
+	if driver.Base(resolvedPath) == "." {
+		resolvedPath += string(driver.Separator()) + "."
+	}
+	sourceDir, sourceBase := driver.Dir(resolvedPath), driver.Base(resolvedPath)
+	opts := archive.TarResourceRebaseOpts(sourceBase, driver.Base(absPath))
+
 	data, err := archivePath(driver, sourceDir, opts)
 	if err != nil {
 		return nil, nil, err
@@ -287,7 +296,7 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 	absPath := archive.PreserveTrailingDotOrSeparator(
 		driver.Join(string(driver.Separator()), path),
 		path,
-		driver)
+		driver.Separator())
 
 	// This will evaluate the last path element if it is a symlink.
 	resolvedPath, err := container.GetResourcePath(absPath)
