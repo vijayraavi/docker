@@ -87,8 +87,8 @@ func (o *copier) createCopyInstruction(args []string, cmdName string) (copyInstr
 	inst := copyInstruction{cmdName: cmdName}
 	last := len(args) - 1
 
-	inst.dest = system.FromSlash(args[last], o.platform)
-	separator := string(system.Separator(o.platform))
+	inst.dest = fromSlash(args[last], o.platform)
+	separator := string(separator(o.platform))
 
 	infos, err := o.getCopyInfosForSourcePaths(args[0:last])
 	if err != nil {
@@ -209,34 +209,11 @@ func (o *copier) calcCopyInfo(origPath string, allowWildcards bool) ([]copyInfo,
 	return newCopyInfos(newCopyInfoFromSource(o.source, origPath, hash)), nil
 }
 
-func validateCopySourcePath(imageSource *imageMount, origPath, platform string) error {
-	// validate windows paths from other images
-	if imageSource == nil || platform != "windows" {
-		return nil
-	}
-
-	origPath = filepath.FromSlash(origPath)
-	p := strings.ToLower(filepath.Clean(origPath))
-	if !filepath.IsAbs(p) {
-		if filepath.VolumeName(p) != "" {
-			if p[len(p)-2:] == ":." { // case where clean returns weird c:. paths
-				p = p[:len(p)-1]
-			}
-			p += "\\"
-		} else {
-			p = filepath.Join("c:\\", p)
-		}
-	}
-	if _, blacklisted := pathBlacklist[p]; blacklisted {
-		return errors.New("copy from c:\\ or c:\\windows is not allowed on windows")
-	}
-	return nil
-}
-
 func containsWildcards(name, platform string) bool {
+	isWindows := platform == "windows"
 	for i := 0; i < len(name); i++ {
 		ch := name[i]
-		if ch == '\\' && platform != "windows" {
+		if ch == '\\' && !isWindows {
 			i++
 		} else if ch == '*' || ch == '?' || ch == '[' {
 			return true

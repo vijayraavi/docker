@@ -131,23 +131,19 @@ func (d *graphDriverProxy) Remove(id string) error {
 }
 
 func (d *graphDriverProxy) Get(id, mountLabel string) (containerfs.ContainerFS, error) {
-	return WrapLocalGetFunc(id, mountLabel, d.get)
-}
-
-func (d *graphDriverProxy) get(id, mountLabel string) (string, error) {
 	args := &graphDriverRequest{
 		ID:         id,
 		MountLabel: mountLabel,
 	}
 	var ret graphDriverResponse
 	if err := d.p.Client().Call("GraphDriver.Get", args, &ret); err != nil {
-		return "", err
+		return nil, err
 	}
 	var err error
 	if ret.Err != "" {
 		err = errors.New(ret.Err)
 	}
-	return filepath.Join(d.p.BasePath(), ret.Dir), err
+	return containerfs.NewLocalContainerFS(filepath.Join(d.p.BasePath(), ret.Dir)), err
 }
 
 func (d *graphDriverProxy) Put(id string) error {

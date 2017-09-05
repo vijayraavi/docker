@@ -321,8 +321,8 @@ func createDestInfo(workingDir string, inst copyInstruction, imageMount *imageMo
 // normalizeDest normalises the destination of a COPY/ADD command in a
 // platform semantically consistent way.
 func normalizeDest(workingDir, requested string, platform string) (string, error) {
-	dest := system.FromSlash(requested, platform)
-	endsInSlash := strings.HasSuffix(dest, string(system.Separator(platform)))
+	dest := fromSlash(requested, platform)
+	endsInSlash := strings.HasSuffix(dest, string(separator(platform)))
 
 	if platform != "windows" {
 		if !path.IsAbs(requested) {
@@ -519,4 +519,20 @@ func hostConfigFromOptions(options *types.ImageBuildOptions) *container.HostConf
 		LogConfig:  defaultLogConfig,
 		ExtraHosts: options.ExtraHosts,
 	}
+}
+
+// fromSlash works like filepath.FromSlash but with a given OS platform field
+func fromSlash(path, platform string) string {
+	if platform == "windows" {
+		return strings.Replace(path, "/", "\\", -1)
+	}
+	return path
+}
+
+// separator returns a OS path separator for the given OS platform
+func separator(platform string) byte {
+	if platform == "windows" {
+		return '\\'
+	}
+	return '/'
 }

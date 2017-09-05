@@ -42,3 +42,7 @@ func fixPermissions(source, destination string, rootIDs idtools.IDPair, override
 		return os.Lchown(fullpath, rootIDs.UID, rootIDs.GID)
 	})
 }
+
+func validateCopySourcePath(imageSource *imageMount, origPath, platform string) error {
+	return nil
+}

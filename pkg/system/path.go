@@ -58,19 +58,3 @@ func CheckSystemDriveAndRemoveDriveLetter(path string, driver pathdriver.PathDri
 	}
 	return filepath.FromSlash(path[2:]), nil
 }
-
-// FromSlash works like filepath.FromSlash but with a given OS platform field
-func FromSlash(path, platform string) string {
-	if platform == "windows" {
-		return strings.Replace(path, "/", "\\", -1)
-	}
-	return path
-}
-
-// Separator returns a OS path separator for the given OS platform
-func Separator(platform string) byte {
-	if platform == "windows" {
-		return '\\'
-	}
-	return '/'
-}

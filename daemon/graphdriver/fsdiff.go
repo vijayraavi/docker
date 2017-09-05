@@ -18,9 +18,9 @@ var (
 )
 
 // NaiveDiffDriver takes a ProtoDriver and adds the
-// capability of the Diffing methods which it may or may not
-// support on its own. See the comment on the exported
-// NewNaiveDiffDriver function below.
+// capability of the Diffing methods on the local file system,
+// which it may or may not support on its own. See the comment
+// on the exported NewNaiveDiffDriver function below.
 // Notably, the AUFS driver doesn't need to be wrapped like this.
 type NaiveDiffDriver struct {
 	ProtoDriver
@@ -35,7 +35,6 @@ type NaiveDiffDriver struct {
 //     Changes(id, parent string) ([]archive.Change, error)
 //     ApplyDiff(id, parent string, diff archive.Reader) (size int64, err error)
 //     DiffSize(id, parent string) (size int64, err error)
-// Note that these assume a local file system for the graph driver (does not support LCOW)
 func NewNaiveDiffDriver(driver ProtoDriver, uidMaps, gidMaps []idtools.IDMap) Driver {
 	return &NaiveDiffDriver{ProtoDriver: driver,
 		uidMaps: uidMaps,

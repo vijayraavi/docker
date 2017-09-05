@@ -153,20 +153,6 @@ type Checker interface {
 	IsMounted(path string) bool
 }
 
-// LocalGetFunc is a function definition that is identical if the file system
-// exists locally on the host.
-type LocalGetFunc func(string, string) (string, error)
-
-// WrapLocalGetFunc wraps the old graphdriver Get() interface (LocalGetFunc)
-// with the current graphdriver.Get() interface
-func WrapLocalGetFunc(id, mountLabel string, f LocalGetFunc) (containerfs.ContainerFS, error) {
-	mnt, err := f(id, mountLabel)
-	if err != nil {
-		return nil, err
-	}
-	return containerfs.NewLocalContainerFS(mnt), nil
-}
-
 func init() {
 	drivers = make(map[string]InitFunc)
 }

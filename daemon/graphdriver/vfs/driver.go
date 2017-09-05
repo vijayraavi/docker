@@ -112,17 +112,13 @@ func (d *Driver) Remove(id string) error {
 
 // Get returns the directory for the given id.
 func (d *Driver) Get(id, mountLabel string) (containerfs.ContainerFS, error) {
-	return graphdriver.WrapLocalGetFunc(id, mountLabel, d.get)
-}
-
-func (d *Driver) get(id, mountLabel string) (string, error) {
 	dir := d.dir(id)
 	if st, err := os.Stat(dir); err != nil {
-		return "", err
+		return nil, err
 	} else if !st.IsDir() {
-		return "", fmt.Errorf("%s: not a directory", dir)
+		return nil, fmt.Errorf("%s: not a directory", dir)
 	}
-	return dir, nil
+	return containerfs.NewLocalContainerFS(dir), nil
 }
 
 // Put is a noop for vfs that return nil for the error, since this driver has no runtime resources to clean up.

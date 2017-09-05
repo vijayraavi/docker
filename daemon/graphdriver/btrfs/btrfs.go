@@ -633,32 +633,28 @@ func (d *Driver) Remove(id string) error {
 
 // Get the requested filesystem id.
 func (d *Driver) Get(id, mountLabel string) (containerfs.ContainerFS, error) {
-	return graphdriver.WrapLocalGetFunc(id, mountLabel, d.get)
-}
-
-func (d *Driver) get(id, mountLabel string) (string, error) {
 	dir := d.subvolumesDirID(id)
 	st, err := os.Stat(dir)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if !st.IsDir() {
-		return "", fmt.Errorf("%s: not a directory", dir)
+		return nil, fmt.Errorf("%s: not a directory", dir)
 	}
 
 	if quota, err := ioutil.ReadFile(d.quotasDirID(id)); err == nil {
 		if size, err := strconv.ParseUint(string(quota), 10, 64); err == nil && size >= d.options.minSpace {
 			if err := d.subvolEnableQuota(); err != nil {
-				return "", err
+				return nil, err
 			}
 			if err := subvolLimitQgroup(dir, size); err != nil {
-				return "", err
+				return nil, err
 			}
 		}
 	}
 
-	return dir, nil
+	return containerfs.NewLocalContainerFS(dir), nil
 }
 
 // Put is not implemented for BTRFS as there is no cleanup required for the id.
