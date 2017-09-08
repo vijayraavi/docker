@@ -25,8 +25,9 @@ type ProcessConfig struct {
 }
 
 type Layer struct {
-	ID   string
-	Path string
+	ID    string
+	Path  string
+	Cache string
 }
 
 type MappedDir struct {
@@ -50,6 +51,7 @@ type HvRuntime struct {
 	LinuxBootParameters string `json:",omitempty"` // Additional boot parameters for starting a Linux Utility VM in initrd mode
 	BootSource          string `json:",omitempty"` // "Vhd" for Linux Utility VM booting from VHD
 	WritableBootSource  bool   `json:",omitempty"` // Linux Utility VM booting from VHD
+	EnableConsole       bool   `json:",omitempty"`
 }
 
 type MappedVirtualDisk struct {
