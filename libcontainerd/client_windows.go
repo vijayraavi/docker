@@ -235,9 +235,8 @@ func (clnt *client) createWindows(containerID string, checkpoint string, checkpo
 			return err
 		}
 		configuration.Layers = append(configuration.Layers, hcsshim.Layer{
-			ID:    g.ToString(),
-			Path:  layerPath,
-			Cache: "Disabled",
+			ID:   g.ToString(),
+			Path: layerPath,
 		})
 	}
 
@@ -342,10 +341,9 @@ func (clnt *client) createLinux(containerID string, checkpoint string, checkpoin
 
 	if lcowOpt.Config.ActualMode == opengcs.ModeActualVhdx {
 		configuration.HvRuntime = &hcsshim.HvRuntime{
-			ImagePath:          "C:\\Program Files\\Linux Containers\\uvm2.vhdx",
+			ImagePath:          lcowOpt.Config.Vhdx,
 			BootSource:         "Vhd",
-			WritableBootSource: true,
-			EnableConsole:      true,
+			WritableBootSource: false,
 		}
 	} else {
 		configuration.HvRuntime = &hcsshim.HvRuntime{
@@ -376,9 +374,8 @@ func (clnt *client) createLinux(containerID string, checkpoint string, checkpoin
 			return err
 		}
 		configuration.Layers = append(configuration.Layers, hcsshim.Layer{
-			ID:    g.ToString(),
-			Path:  filepath.Join(layerPath, "layer.vhd"),
-			Cache: "Disabled",
+			ID:   g.ToString(),
+			Path: filepath.Join(layerPath, "layer.vhd"),
 		})
 	}
 

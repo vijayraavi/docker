@@ -242,8 +242,7 @@ func (config *Config) StartUtilityVM() error {
 		configuration.HvRuntime = &hcsshim.HvRuntime{
 			ImagePath:          config.Vhdx,
 			BootSource:         "Vhd",
-			WritableBootSource: true,
-			EnableConsole:      true,
+			WritableBootSource: false,
 		}
 	} else {
 		configuration.HvRuntime = &hcsshim.HvRuntime{
