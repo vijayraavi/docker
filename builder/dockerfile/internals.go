@@ -18,6 +18,7 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/pkg/symlink"
+	"github.com/docker/docker/pkg/system"
 	lcUser "github.com/opencontainers/runc/libcontainer/user"
 	"github.com/pkg/errors"
 )
@@ -30,7 +31,8 @@ func (b *Builder) commit(dispatchState *dispatchState, comment string) error {
 		return errors.New("Please provide a source image with `from` prior to commit")
 	}
 
-	runConfigWithCommentCmd := copyRunConfig(dispatchState.runConfig, withCmdComment(comment, b.options.Platform.OS))
+	optionsPlatform := system.ParsePlatform(b.options.Platform)
+	runConfigWithCommentCmd := copyRunConfig(dispatchState.runConfig, withCmdComment(comment, optionsPlatform.OS))
 	hit, err := b.probeCache(dispatchState, runConfigWithCommentCmd)
 	if err != nil || hit {
 		return err
@@ -70,7 +72,8 @@ func (b *Builder) commitContainer(dispatchState *dispatchState, id string, conta
 }
 
 func (b *Builder) exportImage(state *dispatchState, imageMount *imageMount, runConfig *container.Config) error {
-	newLayer, err := imageMount.Layer().Commit(b.options.Platform.OS)
+	optionsPlatform := system.ParsePlatform(b.options.Platform)
+	newLayer, err := imageMount.Layer().Commit(optionsPlatform.OS)
 	if err != nil {
 		return err
 	}
@@ -119,9 +122,10 @@ func (b *Builder) performCopy(state *dispatchState, inst copyInstruction) error 
 	commentStr := fmt.Sprintf("%s %s%s in %s ", inst.cmdName, chownComment, srcHash, inst.dest)
 
 	// TODO: should this have been using origPaths instead of srcHash in the comment?
+	optionsPlatform := system.ParsePlatform(b.options.Platform)
 	runConfigWithCommentCmd := copyRunConfig(
 		state.runConfig,
-		withCmdCommentString(commentStr, b.options.Platform.OS))
+		withCmdCommentString(commentStr, optionsPlatform.OS))
 	hit, err := b.probeCache(state, runConfigWithCommentCmd)
 	if err != nil || hit {
 		return err
@@ -355,13 +359,15 @@ func (b *Builder) probeAndCreate(dispatchState *dispatchState, runConfig *contai
 	}
 	// Set a log config to override any default value set on the daemon
 	hostConfig := &container.HostConfig{LogConfig: defaultLogConfig}
-	container, err := b.containerManager.Create(runConfig, hostConfig, b.options.Platform.OS)
+	optionsPlatform := system.ParsePlatform(b.options.Platform)
+	container, err := b.containerManager.Create(runConfig, hostConfig, optionsPlatform.OS)
 	return container.ID, err
 }
 
 func (b *Builder) create(runConfig *container.Config) (string, error) {
 	hostConfig := hostConfigFromOptions(b.options)
-	container, err := b.containerManager.Create(runConfig, hostConfig, b.options.Platform.OS)
+	optionsPlatform := system.ParsePlatform(b.options.Platform)
+	container, err := b.containerManager.Create(runConfig, hostConfig, optionsPlatform.OS)
 	if err != nil {
 		return "", err
 	}

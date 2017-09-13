@@ -3,6 +3,7 @@ package image
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"github.com/docker/docker/api/types/versions"
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/streamformatter"
+	"github.com/docker/docker/pkg/system"
 	"github.com/docker/docker/registry"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -70,6 +72,7 @@ func (s *imageRouter) postCommit(ctx context.Context, w http.ResponseWriter, r *
 
 // Creates an image from Pull or from Import
 func (s *imageRouter) postImagesCreate(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
+
 	if err := httputils.ParseForm(r); err != nil {
 		return err
 	}
@@ -87,7 +90,14 @@ func (s *imageRouter) postImagesCreate(ctx context.Context, w http.ResponseWrite
 
 	w.Header().Set("Content-Type", "application/json")
 
-	platform, err = httputils.GetRequestedPlatform(ctx, r)
+	version := httputils.VersionFromContext(ctx)
+	if versions.GreaterThanOrEqualTo(version, "1.32") {
+		platform = system.ParsePlatform(r.FormValue("platform"))
+		if err := system.ValidatePlatform(platform); err != nil {
+			return fmt.Errorf("invalid platform: %s", err)
+		}
+	}
+
 	if err == nil {
 		if image != "" { //pull
 			metaHeaders := map[string][]string{}

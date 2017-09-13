@@ -8,21 +8,6 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-// IsPlatformEmpty determines if an OCI image-spec platform structure is not populated.
-// TODO This is a temporary function - can be replaced by parsing from
-// https://github.com/containerd/containerd/pull/1403/files at a later date.
-// @jhowardmsft
-func IsPlatformEmpty(platform specs.Platform) bool {
-	if platform.Architecture == "" &&
-		platform.OS == "" &&
-		len(platform.OSFeatures) == 0 &&
-		platform.OSVersion == "" &&
-		platform.Variant == "" {
-		return true
-	}
-	return false
-}
-
 // ValidatePlatform determines if a platform structure is valid.
 // TODO This is a temporary function - can be replaced by parsing from
 // https://github.com/containerd/containerd/pull/1403/files at a later date.

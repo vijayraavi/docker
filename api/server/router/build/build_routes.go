@@ -20,6 +20,7 @@ import (
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/progress"
 	"github.com/docker/docker/pkg/streamformatter"
+	"github.com/docker/docker/pkg/system"
 	units "github.com/docker/go-units"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -67,6 +68,13 @@ func newImageBuildOptions(ctx context.Context, r *http.Request) (*types.ImageBui
 	options.Squash = httputils.BoolValue(r, "squash")
 	options.Target = r.FormValue("target")
 	options.RemoteContext = r.FormValue("remote")
+	if versions.GreaterThanOrEqualTo(version, "1.32") {
+		p := system.ParsePlatform(r.FormValue("platform"))
+		if err := system.ValidatePlatform(p); err != nil {
+			return nil, validationError{fmt.Errorf("invalid platform: %s", err)}
+		}
+		options.Platform = p.OS
+	}
 
 	if r.Form.Get("shmsize") != "" {
 		shmSize, err := strconv.ParseInt(r.Form.Get("shmsize"), 10, 64)
@@ -86,12 +94,6 @@ func newImageBuildOptions(ctx context.Context, r *http.Request) (*types.ImageBui
 	if runtime.GOOS != "windows" && options.SecurityOpt != nil {
 		return nil, validationError{fmt.Errorf("The daemon on this platform does not support setting security options on build")}
 	}
-
-	platform, err := httputils.GetRequestedPlatform(ctx, r)
-	if err != nil {
-		return nil, err
-	}
-	options.Platform = *platform
 
 	var buildUlimits = []*units.Ulimit{}
 	ulimitsJSON := r.FormValue("ulimits")
