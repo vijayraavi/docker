@@ -3,7 +3,6 @@ package image
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -93,9 +92,7 @@ func (s *imageRouter) postImagesCreate(ctx context.Context, w http.ResponseWrite
 	version := httputils.VersionFromContext(ctx)
 	if versions.GreaterThanOrEqualTo(version, "1.32") {
 		platform = system.ParsePlatform(r.FormValue("platform"))
-		if err := system.ValidatePlatform(platform); err != nil {
-			return fmt.Errorf("invalid platform: %s", err)
-		}
+		err = system.ValidatePlatform(platform) // Fall through so output flushed/written
 	}
 
 	if err == nil {
