@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"fmt"
-	"runtime"
 
 	"github.com/docker/distribution/reference"
 	"github.com/docker/docker/image"
@@ -57,11 +56,7 @@ func (daemon *Daemon) GetImageIDAndOS(refOrID string) (image.ID, string, error) 
 		if err != nil {
 			return "", "", errImageDoesNotExist{ref}
 		}
-		imageOS := img.OperatingSystem()
-		if imageOS == "" {
-			imageOS = runtime.GOOS
-		}
-		return id, imageOS, nil
+		return id, img.OperatingSystem(), nil
 	}
 
 	return "", "", errImageDoesNotExist{ref}

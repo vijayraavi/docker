@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/docker/distribution/manifest/schema2"
@@ -439,7 +440,8 @@ func (pm *Manager) Push(ctx context.Context, name string, metaHeader http.Header
 		pm:     pm,
 		plugin: p,
 	}
-	ls := &pluginLayerProvider{
+	lss := make(map[string]distribution.PushLayerProvider)
+	lss[runtime.GOOS] = &pluginLayerProvider{
 		pm:     pm,
 		plugin: p,
 	}
@@ -462,7 +464,7 @@ func (pm *Manager) Push(ctx context.Context, name string, metaHeader http.Header
 			RequireSchema2:   true,
 		},
 		ConfigMediaType: schema2.MediaTypePluginConfig,
-		LayerStore:      ls,
+		LayerStores:     lss,
 		UploadManager:   uploadManager,
 	}
 
