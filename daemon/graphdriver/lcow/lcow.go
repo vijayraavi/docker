@@ -56,6 +56,7 @@
 package lcow
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -845,8 +846,44 @@ func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 // The layer should not be mounted when calling this function.
 func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 	logrus.Debugf("lcowdriver: changes: id %s parent %s", id, parent)
-	// TODO @gupta-ak. Needs implementation with assistance from service VM
-	return nil, nil
+
+	// Get all layer mounts for hot-add
+	mounts, err := d.getAllMounts(id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start service VM and hot-add all the mount points.
+	svm, err := d.startServiceVMIfNotRunning(id, nil, fmt.Sprintf("changes %s", id))
+	if err != nil {
+		return nil, err
+	}
+	defer d.terminateServiceVM(id, fmt.Sprintf("changes %s", id), false)
+
+	if err := svm.hotAddVHDs(mounts...); err != nil {
+		return nil, err
+	}
+	defer svm.hotRemoveVHDs(mounts...)
+
+	// Run changes command
+	changesRawResult := &bytes.Buffer{}
+	guestPaths := make([]string, len(mounts), len(mounts))
+	for i := range mounts {
+		guestPaths[i] = mounts[i].ContainerPath
+	}
+
+	changesCmd := fmt.Sprintf("changes %s", strings.Join(guestPaths, " "))
+	logrus.Debugf("lcowdriver: changes: executing command: %s", changesCmd)
+	if err := svm.runProcess(changesCmd, nil, changesRawResult, nil); err != nil {
+		return nil, fmt.Errorf("lcowdriver: changes: failed to calculate changes: %s", err)
+	}
+
+	logrus.Debugf("lcowdriver: changes: Converting raw changes result to struct")
+	var changesRes []archive.Change
+	if err := json.Unmarshal(changesRawResult.Bytes(), &changesRes); err != nil {
+		return nil, fmt.Errorf("lcowdriver: changes: failed to convert raw change to struct: %s", err)
+	}
+	return changesRes, nil
 }
 
 // DiffSize calculates the changes between the specified layer
