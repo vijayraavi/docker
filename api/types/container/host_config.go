@@ -122,6 +122,11 @@ func (n UsernsMode) IsPrivate() bool {
 	return !(n.IsHost())
 }
 
+// IsEmpty indicates whether the container uses the default userns
+func (n UsernsMode) IsEmpty() bool {
+	return n == ""
+}
+
 // Valid indicates whether the userns is valid.
 func (n UsernsMode) Valid() bool {
 	parts := strings.Split(string(n), ":")
@@ -169,6 +174,11 @@ func (n UTSMode) IsHost() bool {
 	return n == "host"
 }
 
+// IsEmpty indicates whether the container uses the default setting for UTS namespace.
+func (n UTSMode) IsEmpty() bool {
+	return n == ""
+}
+
 // Valid indicates whether the UTS namespace is valid.
 func (n UTSMode) Valid() bool {
 	parts := strings.Split(string(n), ":")
@@ -197,6 +207,11 @@ func (n PidMode) IsHost() bool {
 func (n PidMode) IsContainer() bool {
 	parts := strings.SplitN(string(n), ":", 2)
 	return len(parts) > 1 && parts[0] == "container"
+}
+
+// IsEmpty indicates whether the container uses a separate namespace
+func (n PidMode) IsEmpty() bool {
+	return n == ""
 }
 
 // Valid indicates whether the pid namespace is valid.

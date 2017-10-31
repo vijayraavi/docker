@@ -83,83 +83,6 @@ type containerGetter interface {
 	GetContainer(string) (*container.Container, error)
 }
 
-func getMemoryResources(config containertypes.Resources) *specs.LinuxMemory {
-	memory := specs.LinuxMemory{}
-
-	if config.Memory > 0 {
-		memory.Limit = &config.Memory
-	}
-
-	if config.MemoryReservation > 0 {
-		memory.Reservation = &config.MemoryReservation
-	}
-
-	if config.MemorySwap > 0 {
-		memory.Swap = &config.MemorySwap
-	}
-
-	if config.MemorySwappiness != nil {
-		swappiness := uint64(*config.MemorySwappiness)
-		memory.Swappiness = &swappiness
-	}
-
-	if config.KernelMemory != 0 {
-		memory.Kernel = &config.KernelMemory
-	}
-
-	return &memory
-}
-
-func getCPUResources(config containertypes.Resources) (*specs.LinuxCPU, error) {
-	cpu := specs.LinuxCPU{}
-
-	if config.CPUShares < 0 {
-		return nil, fmt.Errorf("shares: invalid argument")
-	}
-	if config.CPUShares >= 0 {
-		shares := uint64(config.CPUShares)
-		cpu.Shares = &shares
-	}
-
-	if config.CpusetCpus != "" {
-		cpu.Cpus = config.CpusetCpus
-	}
-
-	if config.CpusetMems != "" {
-		cpu.Mems = config.CpusetMems
-	}
-
-	if config.NanoCPUs > 0 {
-		// https://www.kernel.org/doc/Documentation/scheduler/sched-bwc.txt
-		period := uint64(100 * time.Millisecond / time.Microsecond)
-		quota := config.NanoCPUs * int64(period) / 1e9
-		cpu.Period = &period
-		cpu.Quota = &quota
-	}
-
-	if config.CPUPeriod != 0 {
-		period := uint64(config.CPUPeriod)
-		cpu.Period = &period
-	}
-
-	if config.CPUQuota != 0 {
-		q := config.CPUQuota
-		cpu.Quota = &q
-	}
-
-	if config.CPURealtimePeriod != 0 {
-		period := uint64(config.CPURealtimePeriod)
-		cpu.RealtimePeriod = &period
-	}
-
-	if config.CPURealtimeRuntime != 0 {
-		c := config.CPURealtimeRuntime
-		cpu.RealtimeRuntime = &c
-	}
-
-	return &cpu, nil
-}
-
 func getBlkioWeightDevices(config containertypes.Resources) ([]specs.LinuxWeightDevice, error) {
 	var stat unix.Stat_t
 	var blkioWeightDevices []specs.LinuxWeightDevice
@@ -570,7 +493,7 @@ func UsingSystemd(config *config.Config) bool {
 
 // verifyPlatformContainerSettings performs platform-specific validation of the
 // hostconfig and config structures.
-func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *containertypes.HostConfig, config *containertypes.Config, update bool) ([]string, error) {
+func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *containertypes.HostConfig, config *containertypes.Config, update bool, _ string) ([]string, error) {
 	var warnings []string
 	sysInfo := sysinfo.New(true)
 

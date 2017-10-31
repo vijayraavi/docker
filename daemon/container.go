@@ -229,12 +229,12 @@ func (daemon *Daemon) setHostConfig(container *container.Container, hostConfig *
 
 // verifyContainerSettings performs validation of the hostconfig and config
 // structures.
-func (daemon *Daemon) verifyContainerSettings(platform string, hostConfig *containertypes.HostConfig, config *containertypes.Config, update bool) ([]string, error) {
+func (daemon *Daemon) verifyContainerSettings(operatingSystem string, hostConfig *containertypes.HostConfig, config *containertypes.Config, update bool) ([]string, error) {
 	// First perform verification of settings common across all platforms.
 	if config != nil {
 		if config.WorkingDir != "" {
 			wdInvalid := false
-			if runtime.GOOS == platform {
+			if runtime.GOOS == operatingSystem {
 				config.WorkingDir = filepath.FromSlash(config.WorkingDir) // Ensure in platform semantics
 				if !system.IsAbs(config.WorkingDir) {
 					wdInvalid = true
@@ -330,5 +330,5 @@ func (daemon *Daemon) verifyContainerSettings(platform string, hostConfig *conta
 	}
 
 	// Now do platform-specific verification
-	return verifyPlatformContainerSettings(daemon, hostConfig, config, update)
+	return verifyPlatformContainerSettings(daemon, hostConfig, config, update, operatingSystem)
 }

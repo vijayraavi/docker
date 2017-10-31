@@ -2,6 +2,7 @@ package config
 
 import (
 	"github.com/docker/docker/api/types"
+	units "github.com/docker/go-units"
 )
 
 // BridgeConfig stores all the bridge driver specific
@@ -16,8 +17,10 @@ type BridgeConfig struct {
 type Config struct {
 	CommonConfig
 
-	// Fields below here are platform specific. (There are none presently
-	// for the Windows daemon.)
+	// Fields below here are platform specific.
+
+	// The following are used by LCOW
+	Ulimits map[string]*units.Ulimit `json:"default-ulimits,omitempty"`
 }
 
 // GetRuntime returns the runtime path and arguments for a given

@@ -34,59 +34,6 @@ var (
 	deviceCgroupRuleRegex = regexp.MustCompile("^([acb]) ([0-9]+|\\*):([0-9]+|\\*) ([rwm]{1,3})$")
 )
 
-func setResources(s *specs.Spec, r containertypes.Resources) error {
-	weightDevices, err := getBlkioWeightDevices(r)
-	if err != nil {
-		return err
-	}
-	readBpsDevice, err := getBlkioThrottleDevices(r.BlkioDeviceReadBps)
-	if err != nil {
-		return err
-	}
-	writeBpsDevice, err := getBlkioThrottleDevices(r.BlkioDeviceWriteBps)
-	if err != nil {
-		return err
-	}
-	readIOpsDevice, err := getBlkioThrottleDevices(r.BlkioDeviceReadIOps)
-	if err != nil {
-		return err
-	}
-	writeIOpsDevice, err := getBlkioThrottleDevices(r.BlkioDeviceWriteIOps)
-	if err != nil {
-		return err
-	}
-
-	memoryRes := getMemoryResources(r)
-	cpuRes, err := getCPUResources(r)
-	if err != nil {
-		return err
-	}
-	blkioWeight := r.BlkioWeight
-
-	specResources := &specs.LinuxResources{
-		Memory: memoryRes,
-		CPU:    cpuRes,
-		BlockIO: &specs.LinuxBlockIO{
-			Weight:                  &blkioWeight,
-			WeightDevice:            weightDevices,
-			ThrottleReadBpsDevice:   readBpsDevice,
-			ThrottleWriteBpsDevice:  writeBpsDevice,
-			ThrottleReadIOPSDevice:  readIOpsDevice,
-			ThrottleWriteIOPSDevice: writeIOpsDevice,
-		},
-		Pids: &specs.LinuxPids{
-			Limit: r.PidsLimit,
-		},
-	}
-
-	if s.Linux.Resources != nil && len(s.Linux.Resources.Devices) > 0 {
-		specResources.Devices = s.Linux.Resources.Devices
-	}
-
-	s.Linux.Resources = specResources
-	return nil
-}
-
 func setDevices(s *specs.Spec, c *container.Container) error {
 	// Build lists of devices allowed and created within the container.
 	var devs []specs.LinuxDevice
@@ -156,25 +103,6 @@ func setDevices(s *specs.Spec, c *container.Container) error {
 	return nil
 }
 
-func (daemon *Daemon) setRlimits(s *specs.Spec, c *container.Container) error {
-	var rlimits []specs.POSIXRlimit
-
-	// We want to leave the original HostConfig alone so make a copy here
-	hostConfig := *c.HostConfig
-	// Merge with the daemon defaults
-	daemon.mergeUlimits(&hostConfig)
-	for _, ul := range hostConfig.Ulimits {
-		rlimits = append(rlimits, specs.POSIXRlimit{
-			Type: "RLIMIT_" + strings.ToUpper(ul.Name),
-			Soft: uint64(ul.Soft),
-			Hard: uint64(ul.Hard),
-		})
-	}
-
-	s.Process.Rlimits = rlimits
-	return nil
-}
-
 func setUser(s *specs.Spec, c *container.Container) error {
 	uid, gid, additionalGids, err := getUser(c, c.Config.User)
 	if err != nil {
@@ -239,34 +167,6 @@ func getUser(c *container.Container, username string) (uint32, uint32, []uint32,
 	return uid, gid, additionalGids, nil
 }
 
-func setNamespace(s *specs.Spec, ns specs.LinuxNamespace) {
-	for i, n := range s.Linux.Namespaces {
-		if n.Type == ns.Type {
-			s.Linux.Namespaces[i] = ns
-			return
-		}
-	}
-	s.Linux.Namespaces = append(s.Linux.Namespaces, ns)
-}
-
-func setCapabilities(s *specs.Spec, c *container.Container) error {
-	var caplist []string
-	var err error
-	if c.HostConfig.Privileged {
-		caplist = caps.GetAllCapabilities()
-	} else {
-		caplist, err = caps.TweakCapabilities(s.Process.Capabilities.Effective, c.HostConfig.CapAdd, c.HostConfig.CapDrop)
-		if err != nil {
-			return err
-		}
-	}
-	s.Process.Capabilities.Effective = caplist
-	s.Process.Capabilities.Bounding = caplist
-	s.Process.Capabilities.Permitted = caplist
-	s.Process.Capabilities.Inheritable = caplist
-	return nil
-}
-
 func setNamespaces(daemon *Daemon, s *specs.Spec, c *container.Container) error {
 	userNS := false
 	// user
@@ -329,7 +229,7 @@ func setNamespaces(daemon *Daemon, s *specs.Spec, c *container.Container) error 
 		ns := specs.LinuxNamespace{Type: "ipc"}
 		setNamespace(s, ns)
 	default:
-		return fmt.Errorf("Invalid IPC mode: %v", ipcMode)
+		return fmt.Errorf("invalid IPC mode: %v", ipcMode)
 	}
 
 	// pid
@@ -752,9 +652,13 @@ func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
 	}
 	s.Linux.CgroupsPath = cgroupsPath
 
-	if err := setResources(&s, c.HostConfig.Resources); err != nil {
-		return nil, fmt.Errorf("linux runtime spec resources: %v", err)
+	if err := setBlkioPidsDevicesResources(&s, c.HostConfig.Resources); err != nil {
+		return nil, fmt.Errorf("linux runtime spec BlkioPidsDeviceResources: %v", err)
 	}
+	if err := setLinuxCPUMemoryPidsResources(&s, c.HostConfig.Resources); err != nil {
+		return nil, fmt.Errorf("linux runtime spec CPUMemoryPidsResources: %v", err)
+	}
+
 	s.Process.OOMScoreAdj = &c.HostConfig.OomScoreAdj
 	s.Linux.Sysctl = c.HostConfig.Sysctls
 
@@ -895,18 +799,45 @@ func clearReadOnly(m *specs.Mount) {
 	m.Options = opt
 }
 
-// mergeUlimits merge the Ulimits from HostConfig with daemon defaults, and update HostConfig
-func (daemon *Daemon) mergeUlimits(c *containertypes.HostConfig) {
-	ulimits := c.Ulimits
-	// Merge ulimits with daemon defaults
-	ulIdx := make(map[string]struct{})
-	for _, ul := range ulimits {
-		ulIdx[ul.Name] = struct{}{}
+func setBlkioPidsDevicesResources(s *specs.Spec, r containertypes.Resources) error {
+	weightDevices, err := getBlkioWeightDevices(r)
+	if err != nil {
+		return err
 	}
-	for name, ul := range daemon.configStore.Ulimits {
-		if _, exists := ulIdx[name]; !exists {
-			ulimits = append(ulimits, ul)
-		}
+	readBpsDevice, err := getBlkioThrottleDevices(r.BlkioDeviceReadBps)
+	if err != nil {
+		return err
 	}
-	c.Ulimits = ulimits
+	writeBpsDevice, err := getBlkioThrottleDevices(r.BlkioDeviceWriteBps)
+	if err != nil {
+		return err
+	}
+	readIOpsDevice, err := getBlkioThrottleDevices(r.BlkioDeviceReadIOps)
+	if err != nil {
+		return err
+	}
+	writeIOpsDevice, err := getBlkioThrottleDevices(r.BlkioDeviceWriteIOps)
+	if err != nil {
+		return err
+	}
+
+	blkioWeight := r.BlkioWeight
+
+	specResources := &specs.LinuxResources{
+		BlockIO: &specs.LinuxBlockIO{
+			Weight:                  &blkioWeight,
+			WeightDevice:            weightDevices,
+			ThrottleReadBpsDevice:   readBpsDevice,
+			ThrottleWriteBpsDevice:  writeBpsDevice,
+			ThrottleReadIOPSDevice:  readIOpsDevice,
+			ThrottleWriteIOPSDevice: writeIOpsDevice,
+		},
+	}
+
+	if s.Linux.Resources != nil && len(s.Linux.Resources.Devices) > 0 {
+		specResources.Devices = s.Linux.Resources.Devices
+	}
+
+	s.Linux.Resources = specResources
+	return nil
 }

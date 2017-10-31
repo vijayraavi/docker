@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"strings"
 
-	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/container"
 	"github.com/docker/docker/layer"
 	"github.com/docker/docker/oci"
@@ -217,7 +216,9 @@ func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
 	} else {
 		// TODO @jhowardmsft LCOW Support. Modify this check when running in dual-mode
 		if system.LCOWSupported() && img.OS == "linux" {
-			daemon.createSpecLinuxFields(c, &s)
+			if err := daemon.createSpecLinuxFields(c, &s); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -340,12 +341,66 @@ func (daemon *Daemon) createSpecWindowsFields(c *container.Container, s *specs.S
 // Sets the Linux-specific fields of the OCI spec
 // TODO: @jhowardmsft LCOW Support. We need to do a lot more pulling in what can
 // be pulled in from oci_linux.go.
-func (daemon *Daemon) createSpecLinuxFields(c *container.Container, s *specs.Spec) {
+func (daemon *Daemon) createSpecLinuxFields(c *container.Container, s *specs.Spec) error {
+	const lcow = "Linux containers on Windows do not support"
 	if len(s.Process.Cwd) == 0 {
 		s.Process.Cwd = `/`
 	}
 	s.Root.Path = "rootfs"
 	s.Root.Readonly = c.HostConfig.ReadonlyRootfs
+
+	if c.HostConfig.SecurityOpt != nil {
+		return fmt.Errorf("%s security options", lcow)
+	}
+	if err := setLinuxCPUMemoryPidsResources(s, c.HostConfig.Resources); err != nil {
+		return fmt.Errorf("linux runtime spec CPUMemoryPidsResources: %v", err)
+	}
+
+	if err := setNamespaces(daemon, s, c); err != nil {
+		return err
+	}
+	return nil
+}
+
+func setNamespaces(daemon *Daemon, s *specs.Spec, c *container.Container) error {
+
+	// user
+	if !c.HostConfig.UsernsMode.IsEmpty() {
+		return fmt.Errorf("unsupported mode for user namespace: %q", c.HostConfig.UsernsMode)
+	}
+
+	// ipc
+	ipcMode := c.HostConfig.IpcMode
+	switch {
+	case ipcMode.IsHost():
+		oci.RemoveNamespace(s, specs.LinuxNamespaceType("ipc"))
+	case ipcMode.IsEmpty():
+
+		// A container was created by an older version of the daemon.
+		// The default behavior used to be what is now called "shareable".
+		fallthrough
+	case ipcMode.IsPrivate(), ipcMode.IsShareable(), ipcMode.IsNone():
+		ns := specs.LinuxNamespace{Type: "ipc"}
+		setNamespace(s, ns)
+	default:
+		return fmt.Errorf("invalid IPC mode: %v", ipcMode)
+	}
+
+	// pid
+	if c.HostConfig.PidMode.IsHost() {
+		oci.RemoveNamespace(s, specs.LinuxNamespaceType("pid"))
+	} else if c.HostConfig.PidMode.IsEmpty() {
+		// Nothing to do
+	} else {
+		return fmt.Errorf("unsupported mode for PID namespace: %q", c.HostConfig.PidMode)
+	}
+
+	// uts
+	if !c.HostConfig.UTSMode.IsEmpty() {
+		return fmt.Errorf("unsupported mode for UTS namespace: %q", c.HostConfig.UTSMode)
+	}
+
+	return nil
 }
 
 func escapeArgs(args []string) []string {
@@ -354,12 +409,6 @@ func escapeArgs(args []string) []string {
 		escapedArgs[i] = windows.EscapeArg(a)
 	}
 	return escapedArgs
-}
-
-// mergeUlimits merge the Ulimits from HostConfig with daemon defaults, and update HostConfig
-// It will do nothing on non-Linux platform
-func (daemon *Daemon) mergeUlimits(c *containertypes.HostConfig) {
-	return
 }
 
 // getCredentialSpec is a helper function to get the value of a credential spec supplied

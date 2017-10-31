@@ -59,6 +59,7 @@ import (
 	"github.com/docker/libnetwork/cluster"
 	nwconfig "github.com/docker/libnetwork/config"
 	"github.com/docker/libtrust"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
 
@@ -1324,4 +1325,83 @@ func fixMemorySwappiness(resources *containertypes.Resources) {
 // GetAttachmentStore returns current attachment store associated with the daemon
 func (daemon *Daemon) GetAttachmentStore() *network.AttachmentStore {
 	return &daemon.attachmentStore
+}
+
+// Note getLinuxMemoryResources is used by both LCOL and LCOW
+func getLinuxMemoryResources(config containertypes.Resources) *specs.LinuxMemory {
+	memory := specs.LinuxMemory{}
+
+	if config.Memory > 0 {
+		memory.Limit = &config.Memory
+	}
+
+	if config.MemoryReservation > 0 {
+		memory.Reservation = &config.MemoryReservation
+	}
+
+	if config.MemorySwap > 0 {
+		memory.Swap = &config.MemorySwap
+	}
+
+	if config.MemorySwappiness != nil {
+		swappiness := uint64(*config.MemorySwappiness)
+		memory.Swappiness = &swappiness
+	}
+
+	if config.KernelMemory != 0 {
+		memory.Kernel = &config.KernelMemory
+	}
+
+	return &memory
+}
+
+// Note getLinuxCPUResources is used by both LCOL and LCOW
+func getLinuxCPUResources(config containertypes.Resources) (*specs.LinuxCPU, error) {
+	cpu := specs.LinuxCPU{}
+
+	if config.CPUShares < 0 {
+		return nil, fmt.Errorf("shares: invalid argument")
+	}
+	if config.CPUShares >= 0 {
+		shares := uint64(config.CPUShares)
+		cpu.Shares = &shares
+	}
+
+	if config.CpusetCpus != "" {
+		cpu.Cpus = config.CpusetCpus
+	}
+
+	if config.CpusetMems != "" {
+		cpu.Mems = config.CpusetMems
+	}
+
+	if config.NanoCPUs > 0 {
+		// https://www.kernel.org/doc/Documentation/scheduler/sched-bwc.txt
+		period := uint64(100 * time.Millisecond / time.Microsecond)
+		quota := config.NanoCPUs * int64(period) / 1e9
+		cpu.Period = &period
+		cpu.Quota = &quota
+	}
+
+	if config.CPUPeriod != 0 {
+		period := uint64(config.CPUPeriod)
+		cpu.Period = &period
+	}
+
+	if config.CPUQuota != 0 {
+		q := config.CPUQuota
+		cpu.Quota = &q
+	}
+
+	if config.CPURealtimePeriod != 0 {
+		period := uint64(config.CPURealtimePeriod)
+		cpu.RealtimePeriod = &period
+	}
+
+	if config.CPURealtimeRuntime != 0 {
+		c := config.CPURealtimeRuntime
+		cpu.RealtimeRuntime = &c
+	}
+
+	return &cpu, nil
 }

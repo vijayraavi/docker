@@ -27,7 +27,7 @@ import (
 	winlibnetwork "github.com/docker/libnetwork/drivers/windows"
 	"github.com/docker/libnetwork/netlabel"
 	"github.com/docker/libnetwork/options"
-	blkiodev "github.com/opencontainers/runc/libcontainer/configs"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/windows"
@@ -48,7 +48,7 @@ func getPluginExecRoot(root string) string {
 	return filepath.Join(root, "plugins")
 }
 
-func getBlkioWeightDevices(config *containertypes.HostConfig) ([]blkiodev.WeightDevice, error) {
+func getBlkioWeightDevices(config *containertypes.HostConfig) ([]specs.LinuxWeightDevice, error) {
 	return nil, nil
 }
 
@@ -82,7 +82,10 @@ func (daemon *Daemon) adaptContainerSettings(hostConfig *containertypes.HostConf
 	return nil
 }
 
-func verifyContainerResources(resources *containertypes.Resources, isHyperv bool) ([]string, error) {
+func verifyContainerResources(resources *containertypes.Resources, isHyperv bool, os string) ([]string, error) {
+
+	// TODO @jhowardmsft LCOW Support - handle differences for LCOW
+
 	warnings := []string{}
 	fixMemorySwappiness(resources)
 	if !isHyperv {
@@ -198,7 +201,7 @@ func verifyContainerResources(resources *containertypes.Resources, isHyperv bool
 
 // verifyPlatformContainerSettings performs platform-specific validation of the
 // hostconfig and config structures.
-func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *containertypes.HostConfig, config *containertypes.Config, update bool) ([]string, error) {
+func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *containertypes.HostConfig, config *containertypes.Config, update bool, operatingSystem string) ([]string, error) {
 	warnings := []string{}
 
 	hyperv := daemon.runAsHyperVContainer(hostConfig)
@@ -208,7 +211,7 @@ func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *containertypes.
 		return warnings, fmt.Errorf("Windows client operating systems only support Hyper-V containers")
 	}
 
-	w, err := verifyContainerResources(&hostConfig.Resources, hyperv)
+	w, err := verifyContainerResources(&hostConfig.Resources, hyperv, operatingSystem)
 	warnings = append(warnings, w...)
 	return warnings, err
 }

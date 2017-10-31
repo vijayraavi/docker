@@ -80,22 +80,25 @@ func (daemon *Daemon) getIpcContainer(id string) (*container.Container, error) {
 	return container, nil
 }
 
+// Note getPidContainer is used by both LCOL and LCOW
 func (daemon *Daemon) getPidContainer(container *container.Container) (*container.Container, error) {
 	containerID := container.HostConfig.PidMode.Container()
 	container, err := daemon.GetContainer(containerID)
 	if err != nil {
-		return nil, errors.Wrapf(err, "cannot join PID of a non running container: %s", containerID)
+		return nil, pkgerrors.Wrapf(err, "cannot join PID of a non running container: %s", containerID)
 	}
 	return container, daemon.checkContainer(container, containerIsRunning, containerIsNotRestarting)
 }
 
+// Note containerIsRunning is used by both LCOL and LCOW
 func containerIsRunning(c *container.Container) error {
 	if !c.IsRunning() {
-		return stateConflictError{errors.Errorf("container %s is not running", c.ID)}
+		return stateConflictError{pkgerrors.Errorf("container %s is not running", c.ID)}
 	}
 	return nil
 }
 
+// Note containerIsNotRestarting is used by both LCOL and LCOW
 func containerIsNotRestarting(c *container.Container) error {
 	if c.IsRestarting() {
 		return errContainerIsRestarting(c.ID)
