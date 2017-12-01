@@ -312,6 +312,16 @@ func (svm *serviceVM) createUnionMount(mountName string, mvds ...hcsshim.MappedV
 			return err
 		}
 
+		// Can't overlay mount something with 0 lower layers. So, create a fake empty layer.
+		if len(lowerLayers) == 0 {
+			baseLayer := fmt.Sprintf("%s/fake-base", mvds[0].ContainerPath)
+			if err = svm.runProcess(fmt.Sprintf("mkdir -p %s", baseLayer), nil, nil, nil); err != nil {
+				return err
+			}
+			lowerLayers = []string{baseLayer}
+			defer svm.runProcess(fmt.Sprintf("rmdir %s", baseLayer), nil, nil, nil)
+		}
+
 		cmd = fmt.Sprintf("mount -t overlay overlay -olowerdir=%s,upperdir=%s,workdir=%s %s",
 			strings.Join(lowerLayers, ":"),
 			upper,

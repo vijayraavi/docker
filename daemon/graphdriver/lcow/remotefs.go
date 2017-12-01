@@ -68,12 +68,19 @@ func (l *lcowfs) Architecture() string {
 func (l *lcowfs) ExtractArchive(src io.Reader, dst string, opts *archive.TarOptions) error {
 	logrus.Debugf("remotefs.ExtractArchve inputs: %s %+v", dst, opts)
 
+	// Decompress stream incase we don't get a regular tar file.
+	decompressedArchive, err := archive.DecompressStream(src)
+	if err != nil {
+		return err
+	}
+	defer decompressedArchive.Close()
+
 	tarBuf := &bytes.Buffer{}
 	if err := remotefs.WriteTarOptions(tarBuf, opts); err != nil {
 		return fmt.Errorf("failed to marshall tar opts: %s", err)
 	}
 
-	input := io.MultiReader(tarBuf, src)
+	input := io.MultiReader(tarBuf, decompressedArchive)
 	if err := l.runRemoteFSProcess(input, nil, remotefs.ExtractArchiveCmd, dst); err != nil {
 		return fmt.Errorf("failed to extract archive to %s: %s", dst, err)
 	}
