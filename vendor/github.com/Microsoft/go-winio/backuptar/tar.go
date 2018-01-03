@@ -324,12 +324,14 @@ func WriteBackupStreamFromTarFile(w io.Writer, t *tar.Reader, hdr *tar.Header) (
 	if sddl, ok := hdr.Winheaders[hdrSecurityDescriptor]; ok {
 		sd, err = winio.SddlToSecurityDescriptor(sddl)
 		if err != nil {
+			fmt.Println("error on sddltosd", err)
 			return nil, err
 		}
 	}
 	if sdraw, ok := hdr.Winheaders[hdrRawSecurityDescriptor]; ok {
 		sd, err = base64.StdEncoding.DecodeString(sdraw)
 		if err != nil {
+			fmt.Println("failed on decodestring", err)
 			return nil, err
 		}
 	}
@@ -340,10 +342,12 @@ func WriteBackupStreamFromTarFile(w io.Writer, t *tar.Reader, hdr *tar.Header) (
 		}
 		err := bw.WriteHeader(&bhdr)
 		if err != nil {
+			fmt.Println("failed on WriteHeader", err)
 			return nil, err
 		}
 		_, err = bw.Write(sd)
 		if err != nil {
+			fmt.Println("failed on write(sd)", err)
 			return nil, err
 		}
 	}
@@ -354,6 +358,7 @@ func WriteBackupStreamFromTarFile(w io.Writer, t *tar.Reader, hdr *tar.Header) (
 		}
 		data, err := base64.StdEncoding.DecodeString(v)
 		if err != nil {
+			fmt.Println("failed on decodestring", err)
 			return nil, err
 		}
 		eas = append(eas, winio.ExtendedAttribute{
@@ -364,6 +369,7 @@ func WriteBackupStreamFromTarFile(w io.Writer, t *tar.Reader, hdr *tar.Header) (
 	if len(eas) != 0 {
 		eadata, err := winio.EncodeExtendedAttributes(eas)
 		if err != nil {
+			fmt.Println("failed on encodeEA", err)
 			return nil, err
 		}
 		bhdr := winio.BackupHeader{
@@ -372,10 +378,12 @@ func WriteBackupStreamFromTarFile(w io.Writer, t *tar.Reader, hdr *tar.Header) (
 		}
 		err = bw.WriteHeader(&bhdr)
 		if err != nil {
+			fmt.Println("Faield on vw.WriteHeader", err)
 			return nil, err
 		}
 		_, err = bw.Write(eadata)
 		if err != nil {
+			fmt.Println("failed on bw.Write ea", err)
 			return nil, err
 		}
 	}
@@ -392,10 +400,12 @@ func WriteBackupStreamFromTarFile(w io.Writer, t *tar.Reader, hdr *tar.Header) (
 		}
 		err := bw.WriteHeader(&bhdr)
 		if err != nil {
+			fmt.Println("failed on writeheader typesymlink", err)
 			return nil, err
 		}
 		_, err = bw.Write(reparse)
 		if err != nil {
+			fmt.Println("failed on write typesymlink", err)
 			return nil, err
 		}
 	}
@@ -406,10 +416,12 @@ func WriteBackupStreamFromTarFile(w io.Writer, t *tar.Reader, hdr *tar.Header) (
 		}
 		err := bw.WriteHeader(&bhdr)
 		if err != nil {
+			fmt.Println("failed on writeheader")
 			return nil, err
 		}
 		_, err = io.Copy(bw, t)
 		if err != nil {
+			fmt.Println("failed oin io.copy bw.t", err)
 			return nil, err
 		}
 	}
@@ -417,6 +429,7 @@ func WriteBackupStreamFromTarFile(w io.Writer, t *tar.Reader, hdr *tar.Header) (
 	for {
 		ahdr, err := t.Next()
 		if err != nil {
+			fmt.Println("failed on ahdr,err t.Next", err)
 			return nil, err
 		}
 		if ahdr.Typeflag != tar.TypeReg || !strings.HasPrefix(ahdr.Name, hdr.Name+":") {
@@ -429,10 +442,12 @@ func WriteBackupStreamFromTarFile(w io.Writer, t *tar.Reader, hdr *tar.Header) (
 		}
 		err = bw.WriteHeader(&bhdr)
 		if err != nil {
+			fmt.Println("failed on last writeheader", err)
 			return nil, err
 		}
 		_, err = io.Copy(bw, t)
 		if err != nil {
+			fmt.Println("failed on last io.copy", err)
 			return nil, err
 		}
 	}

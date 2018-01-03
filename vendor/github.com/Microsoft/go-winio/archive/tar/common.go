@@ -206,6 +206,7 @@ const (
 // the file it describes, it may be necessary to modify the Name field
 // of the returned header to provide the full path name of the file.
 func FileInfoHeader(fi os.FileInfo, link string) (*Header, error) {
+	fmt.Println("FileInfoHeader on", fi.Name())
 	if fi == nil {
 		return nil, errors.New("tar: FileInfo is nil")
 	}

@@ -670,11 +670,13 @@ func writeBackupStreamFromTarAndSaveMutatedFiles(buf *bufio.Writer, w io.Writer,
 	if backupPath, ok := mutatedFiles[hdr.Name]; ok {
 		bcdBackup, err = os.Create(filepath.Join(root, backupPath))
 		if err != nil {
+			fmt.Println("err on oscreate", filepath.Join(root, backupPath), err)
 			return nil, err
 		}
 		defer func() {
 			cerr := bcdBackup.Close()
 			if err == nil {
+				fmt.Println("err on bcdBackup.CLose", err)
 				err = cerr
 			}
 		}()
@@ -683,6 +685,7 @@ func writeBackupStreamFromTarAndSaveMutatedFiles(buf *bufio.Writer, w io.Writer,
 		defer func() {
 			cerr := bcdBackupWriter.Close()
 			if err == nil {
+				fmt.Println("Failed on bcdBackupWrite.Close deferred", cerr)
 				err = cerr
 			}
 		}()
@@ -707,18 +710,36 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 	hdr, err := t.Next()
 	totalSize := int64(0)
 	buf := bufio.NewWriter(nil)
-	for err == nil {
+	fnf := syscall.Errno(syscall.ERROR_FILE_NOT_FOUND)
+	for err == nil || (err != nil && strings.Contains(err.Error(), fnf.Error())) {
+		fmt.Println("TOP OF LOOP:", hdr, err)
+		if err != nil && strings.Contains(err.Error(), fnf.Error()) {
+			fmt.Println("In fnf condition")
+			t.ResetError()
+			hdr, err = t.Next()
+			if err != nil {
+				fmt.Println("Hit an error on t.Next() in FNF condition", err, hdr)
+			}
+			panic("JJH")
+			continue
+		}
+
 		base := path.Base(hdr.Name)
+		fmt.Println("base", base)
 		if strings.HasPrefix(base, archive.WhiteoutPrefix) {
 			name := path.Join(path.Dir(hdr.Name), base[len(archive.WhiteoutPrefix):])
+			fmt.Println("name", name)
 			err = w.Remove(filepath.FromSlash(name))
 			if err != nil {
+				fmt.Println("error removing", err)
 				return 0, err
 			}
 			hdr, err = t.Next()
 		} else if hdr.Typeflag == tar.TypeLink {
+			fmt.Println("adding link", filepath.FromSlash(hdr.Name), filepath.FromSlash(hdr.Linkname))
 			err = w.AddLink(filepath.FromSlash(hdr.Name), filepath.FromSlash(hdr.Linkname))
 			if err != nil {
+				fmt.Println("error adding link")
 				return 0, err
 			}
 			hdr, err = t.Next()
@@ -729,18 +750,39 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 				fileInfo *winio.FileBasicInfo
 			)
 			name, size, fileInfo, err = backuptar.FileInfoFromHeader(hdr)
+			fmt.Println("else: name,size", name, size, err)
 			if err != nil {
 				return 0, err
 			}
+			//			// Skip files in the Recycle Bin
+			//			if strings.HasPrefix(filepath.FromSlash(name), `Files\$Recycle.Bin\`) {
+			//				fmt.Println("**** SKIPPING **** ", filepath.FromSlash(name), hdr.Name, path.Dir(hdr.Name))
+			//				err = w.Remove(filepath.FromSlash(name))
+			//				if err != nil {
+			//					fmt.Println("error removing on RB skip", err)
+			//					return 0, err
+			//				}
+			//				hdr, err = t.Next()
+			//				if err != nil {
+			//					fmt.Println("Hit an error on t.Next() in RB condition", err, hdr)
+			//				}
+			//				continue
+			//			}
+			fmt.Println("calling add on ", filepath.FromSlash(name))
 			err = w.Add(filepath.FromSlash(name), fileInfo)
 			if err != nil {
+				fmt.Println("add failed", err)
 				return 0, err
 			}
 			hdr, err = writeBackupStreamFromTarAndSaveMutatedFiles(buf, w, t, hdr, root)
+			fmt.Println("err afer writebackupstreamfrom,....", err)
 			totalSize += size
 		}
+		fmt.Println("BOTTOM OF LOOP", err)
 	}
+	fmt.Println("OUT OF LOOP:", err)
 	if err != io.EOF {
+		fmt.Println("returning at end 0,err", err)
 		return 0, err
 	}
 	return totalSize, nil
@@ -803,8 +845,9 @@ func writeLayer(layerData io.Reader, home string, id string, parentLayerPaths ..
 	if err != nil {
 		return 0, err
 	}
-
+	fmt.Println("JJH calling writeLayerFromTar")
 	size, err := writeLayerFromTar(layerData, w, filepath.Join(home, id))
+	fmt.Println("Returned", size, err)
 	if err != nil {
 		return 0, err
 	}

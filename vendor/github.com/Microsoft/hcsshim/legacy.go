@@ -118,15 +118,39 @@ func (r *legacyLayerReader) walkUntilCancelled() error {
 	}
 
 	err = filepath.Walk(r.root, func(path string, info os.FileInfo, err error) error {
+		fmt.Println("walkUntilCancelled", r.root, path, info)
+
 		if err != nil {
+			// https://github.com/moby/moby/issues/32838#issuecomment-343610048
+			// This is failing from what maybe a golang bug in the conversion of
+			// UTF16 to UTF8 in files which are left in the recycle bin. Os.Lstat
+			// which is called by filepath.Walk will fail when a filename contains
+			// unicode characters. That particular example fails with files
+			// under the recycle bin.
+			if strings.Contains(err.Error(), syscall.Errno(syscall.ERROR_FILE_NOT_FOUND).Error()) &&
+				strings.HasPrefix(path, filepath.Join(r.root, `Files\$Recycle.Bin`)) {
+				fmt.Println("walkUntilCalled ignoring filenotfound")
+				return nil
+			}
+
+			fmt.Println("walkUntilCancelled error return 1", err)
 			return err
 		}
 		if path == r.root || path == filepath.Join(r.root, "tombstones.txt") || strings.HasSuffix(path, ".$wcidirs$") {
+			fmt.Println("walkUntilCancelled nil return 1")
 			return nil
 		}
 
+		// Skip the recycle bin (arguable whether goodness, but makes layers smaller)
+		if strings.HasPrefix(path, filepath.Join(r.root, `Files\$Recycle.Bin`)) {
+			fmt.Println("***JJJH Skipping recycle bin")
+			return nil
+		}
+		fmt.Println("Not skipping recycle bin", path, filepath.Join(r.root, `Files\$Recycle.Bin`))
+
 		r.result <- &fileEntry{path, info, nil}
 		if !<-r.proceed {
+			fmt.Println("walkUntilCCancelled errorIterationCacnelled 1")
 			return errorIterationCanceled
 		}
 
@@ -140,6 +164,7 @@ func (r *legacyLayerReader) walkUntilCancelled() error {
 				for _, t := range dts {
 					r.result <- &fileEntry{filepath.Join(r.root, t), nil, nil}
 					if !<-r.proceed {
+						fmt.Println("walkUntilCCancelled errorIterationCacnelled 2")
 						return errorIterationCanceled
 					}
 				}
@@ -148,11 +173,14 @@ func (r *legacyLayerReader) walkUntilCancelled() error {
 		return nil
 	})
 	if err == errorIterationCanceled {
+		fmt.Println("walkUntilCCancelled errorIterationCacnelled 3 so returning nil")
 		return nil
 	}
 	if err == nil {
+		fmt.Println("walkUntilCCancelled eof")
 		return io.EOF
 	}
+	fmt.Println("walkUntilCCancelled error at end", err)
 	return err
 }
 
@@ -298,13 +326,22 @@ func (r *legacyLayerReader) Next() (path string, size int64, fileInfo *winio.Fil
 }
 
 func (r *legacyLayerReader) Read(b []byte) (int, error) {
+	fmt.Println("legacyLayerReader: Read()")
 	if r.backupReader == nil {
+		fmt.Println("llr - no backup reader")
 		if r.currentFile == nil {
+			fmt.Println("llr no backup reader and EOF")
 			return 0, io.EOF
 		}
-		return r.currentFile.Read(b)
+		fmt.Println("llr calling r.currentfile.read")
+		i, e := r.currentFile.Read(b)
+		fmt.Println("llr return point 1", i, e)
+		return i, e
 	}
-	return r.backupReader.Read(b)
+	fmt.Println("llr calling backupreader.read")
+	i, e := r.backupReader.Read(b)
+	fmt.Println("llr return point 2", i, e)
+	return i, e
 }
 
 func (r *legacyLayerReader) Seek(offset int64, whence int) (int64, error) {

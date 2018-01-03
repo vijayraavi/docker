@@ -1,6 +1,7 @@
 package hcsshim
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -60,6 +61,7 @@ type FilterLayerReader struct {
 // Next returns the file's relative path, size, and basic file metadata. Read() should be used to
 // extract a Win32 backup stream with the remainder of the metadata and the data.
 func (r *FilterLayerReader) Next() (string, int64, *winio.FileBasicInfo, error) {
+	fmt.Println("FilterLayerReader: Next()")
 	var fileNamep *uint16
 	fileInfo := &winio.FileBasicInfo{}
 	var deleted uint32
@@ -80,19 +82,23 @@ func (r *FilterLayerReader) Next() (string, int64, *winio.FileBasicInfo, error) 
 	if fileName[0] == '\\' {
 		fileName = fileName[1:]
 	}
+	fmt.Println("FilterLayerReader: Next() Exiting", fileName, fileSize)
 	return fileName, fileSize, fileInfo, nil
 }
 
 // Read reads from the current file's Win32 backup stream.
 func (r *FilterLayerReader) Read(b []byte) (int, error) {
+	fmt.Println("FilterLayerReader: Read()")
 	var bytesRead uint32
 	err := exportLayerRead(r.context, b, &bytesRead)
 	if err != nil {
+		fmt.Println("FilterLayerReader: Read() Error", err)
 		return 0, makeError(err, "ExportLayerRead", "")
 	}
 	if bytesRead == 0 {
 		return 0, io.EOF
 	}
+	fmt.Println("FilterLayerReader exiting Read()", int(bytesRead))
 	return int(bytesRead), nil
 }
 

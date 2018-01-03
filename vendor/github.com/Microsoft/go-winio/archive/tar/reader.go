@@ -10,6 +10,7 @@ package tar
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math"
@@ -113,11 +114,17 @@ const (
 // NewReader creates a new Reader reading from r.
 func NewReader(r io.Reader) *Reader { return &Reader{r: r} }
 
+// ResetError resets the tar reader error
+func (tr *Reader) ResetError() {
+	tr.err = nil
+}
+
 // Next advances to the next entry in the tar archive.
 //
 // io.EOF is returned at the end of the input.
 func (tr *Reader) Next() (*Header, error) {
 	if tr.err != nil {
+		fmt.Println("err 1")
 		return nil, tr.err
 	}
 
@@ -133,11 +140,14 @@ loop:
 	for {
 		tr.err = tr.skipUnread()
 		if tr.err != nil {
+			fmt.Println("err 2")
 			return nil, tr.err
 		}
 
 		hdr = tr.readHeader()
 		if tr.err != nil {
+			fmt.Println("err 3", hdr)
+			//panic("JJH")
 			return nil, tr.err
 		}
 
@@ -146,6 +156,7 @@ loop:
 		case TypeXHeader:
 			extHdrs, tr.err = parsePAX(tr)
 			if tr.err != nil {
+				fmt.Println("err 4")
 				return nil, tr.err
 			}
 			continue loop // This is a meta header affecting the next header
@@ -153,6 +164,7 @@ loop:
 			var realname []byte
 			realname, tr.err = ioutil.ReadAll(tr)
 			if tr.err != nil {
+				fmt.Println("err 5")
 				return nil, tr.err
 			}
 
@@ -168,6 +180,7 @@ loop:
 				extHdrs[paxLinkpath] = p.parseString(realname)
 			}
 			if p.err != nil {
+				fmt.Println("err 6")
 				tr.err = p.err
 				return nil, tr.err
 			}
@@ -178,6 +191,7 @@ loop:
 			// Check for a PAX format sparse file
 			sp, err := tr.checkForGNUSparsePAXHeaders(hdr, extHdrs)
 			if err != nil {
+				fmt.Println("err 7")
 				tr.err = err
 				return nil, err
 			}
@@ -186,6 +200,7 @@ loop:
 				// Set the current file reader to a sparse file reader.
 				tr.curr, tr.err = newSparseFileReader(tr.curr, sp, hdr.Size)
 				if tr.err != nil {
+					fmt.Println("err 8")
 					return nil, tr.err
 				}
 			}
@@ -577,23 +592,28 @@ func (tr *Reader) readHeader() *Header {
 	copy(header, zeroBlock)
 
 	if _, tr.err = io.ReadFull(tr.r, header); tr.err != nil {
+		fmt.Println("readHeader err 1", tr.err)
 		return nil // io.EOF is okay here
 	}
 
 	// Two blocks of zero bytes marks the end of the archive.
 	if bytes.Equal(header, zeroBlock[0:blockSize]) {
 		if _, tr.err = io.ReadFull(tr.r, header); tr.err != nil {
+			fmt.Println("readHeader err 2")
 			return nil // io.EOF is okay here
 		}
 		if bytes.Equal(header, zeroBlock[0:blockSize]) {
+			fmt.Println("readHeader err 3")
 			tr.err = io.EOF
 		} else {
+			fmt.Println("readHeader err 4")
 			tr.err = ErrHeader // zero block and then non-zero block
 		}
 		return nil
 	}
 
 	if !tr.verifyChecksum(header) {
+		fmt.Println("readHeader err 5")
 		tr.err = ErrHeader
 		return nil
 	}
@@ -654,6 +674,7 @@ func (tr *Reader) readHeader() *Header {
 	}
 
 	if p.err != nil {
+		fmt.Println("readHeader err 6")
 		tr.err = p.err
 		return nil
 	}
@@ -664,6 +685,7 @@ func (tr *Reader) readHeader() *Header {
 	}
 	if nb < 0 {
 		tr.err = ErrHeader
+		fmt.Println("readHeader err 7")
 		return nil
 	}
 
@@ -676,6 +698,7 @@ func (tr *Reader) readHeader() *Header {
 		// Get the real size of the file.
 		hdr.Size = p.parseNumeric(header[483:495])
 		if p.err != nil {
+			fmt.Println("readHeader err 8")
 			tr.err = p.err
 			return nil
 		}
@@ -683,12 +706,14 @@ func (tr *Reader) readHeader() *Header {
 		// Read the sparse map.
 		sp := tr.readOldGNUSparseMap(header)
 		if tr.err != nil {
+			fmt.Println("readHeader err 9")
 			return nil
 		}
 
 		// Current file is a GNU sparse file. Update the current file reader.
 		tr.curr, tr.err = newSparseFileReader(tr.curr, sp, hdr.Size)
 		if tr.err != nil {
+			fmt.Println("readHeader err 10")
 			return nil
 		}
 	}
@@ -874,16 +899,20 @@ func (tr *Reader) numBytes() int64 {
 // the Header.Size claims.
 func (tr *Reader) Read(b []byte) (n int, err error) {
 	if tr.err != nil {
+		fmt.Println("JJH tr.read tr.err!=nil", err)
 		return 0, tr.err
 	}
 	if tr.curr == nil {
+		fmt.Println("JJH tr.read io.EOF")
 		return 0, io.EOF
 	}
 
 	n, err = tr.curr.Read(b)
 	if err != nil && err != io.EOF {
+		fmt.Println("JJH tr.read error:", err)
 		tr.err = err
 	}
+	fmt.Println("JJH tr.read OK :)")
 	return
 }
 
