@@ -3,6 +3,7 @@
 package client
 
 import (
+	//	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -40,6 +41,10 @@ func copyWithTimeout(dst io.Writer, src io.Reader, size int64, timeoutSeconds in
 	done := make(chan resultType, 1)
 	go func() {
 		result := resultType{}
+		//		var buf bytes.Buffer
+		//		tee := io.TeeReader(src, &buf)
+		//		result.bytes, result.err = io.Copy(dst, tee) // rather than src
+		//		fmt.Printf("JJH context='%s' bytes=%d contents=%s\n", context, result.bytes, buf.String())
 		result.bytes, result.err = io.Copy(dst, src)
 		done <- result
 	}()

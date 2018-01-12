@@ -304,6 +304,9 @@ func (svm *serviceVM) createUnionMount(mountName string, mvds ...hcsshim.MappedV
 		cmd = fmt.Sprintf("mount -t overlay overlay -olowerdir=%s %s",
 			strings.Join(lowerLayers, ","),
 			mountName)
+	} else if len(mvds) == 1 {
+		// `FROM SCRATCH` case and the first layer. No overlay required.
+		cmd = fmt.Sprintf("mount %s %s", mvds[0].ContainerPath, mountName)
 	} else {
 		upper := fmt.Sprintf("%s/upper", mvds[0].ContainerPath)
 		work := fmt.Sprintf("%s/work", mvds[0].ContainerPath)

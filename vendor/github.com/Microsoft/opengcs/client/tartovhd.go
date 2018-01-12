@@ -5,6 +5,7 @@ package client
 import (
 	"fmt"
 	"io"
+	//	"os"
 
 	"github.com/sirupsen/logrus"
 )
@@ -24,6 +25,12 @@ func (config *Config) TarToVhd(targetVHDFile string, reader io.Reader) (int64, e
 		return 0, fmt.Errorf("failed to start tar2vhd for %s: %s", targetVHDFile, err)
 	}
 	defer process.Process.Close()
+
+	//	w, e := os.Create(`c:\tar.txt`)
+	//	n, err := io.Copy(w, reader)
+	//	fmt.Println("Wrote", n, e)
+	//	w.Close()
+	//	panic("JKJH")
 
 	// Send the tarstream into the `tar2vhd`s stdin
 	if _, err = copyWithTimeout(process.Stdin, reader, 0, config.UvmTimeoutSeconds, fmt.Sprintf("stdin of tar2vhd for generating %s", targetVHDFile)); err != nil {
