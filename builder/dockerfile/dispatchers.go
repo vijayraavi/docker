@@ -215,22 +215,17 @@ func (d *dispatchRequest) getExpandedImageName(shlex *shell.Lex, name string) (s
 // stagePlatform contains the value supplied by optional `--platform=` on
 // a current FROM statement. b.builder.options.Platform contains the operating
 // system part of the optional flag passed in the API call (or CLI flag
-// through `docker build --platform=...`).
+// through `docker build --platform=...`). Precedence is for an explicit
+// platform indication in the FROM statement.
 func (d *dispatchRequest) getOsFromFlagsAndStage(stagePlatform string) string {
-	osForPull := ""
-	// First, take the API platform if nothing provided on FROM
-	if stagePlatform == "" && d.builder.options.Platform != "" {
-		osForPull = d.builder.options.Platform
+	switch {
+	case stagePlatform != "":
+		return stagePlatform
+	case d.builder.options.Platform != "":
+		return d.builder.options.Platform
+	default:
+		return runtime.GOOS
 	}
-	// Next, use the FROM flag if that was provided
-	if osForPull == "" && stagePlatform != "" {
-		osForPull = stagePlatform
-	}
-	// Finally, assume the host OS
-	if osForPull == "" {
-		osForPull = runtime.GOOS
-	}
-	return osForPull
 }
 
 func (d *dispatchRequest) getImageOrStage(name string, stagePlatform string) (builder.Image, error) {
