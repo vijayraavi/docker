@@ -310,10 +310,13 @@ func (svm *serviceVM) createUnionMount(mountName string, mvds ...hcsshim.MappedV
 			strings.Join(lowerLayers, ","),
 			mountName)
 	} else {
+		logrus.Debugf("mvds[0].ContainerPath %s", mvds[0].ContainerPath)
 		upper := fmt.Sprintf("%s/upper", mvds[0].ContainerPath)
 		work := fmt.Sprintf("%s/work", mvds[0].ContainerPath)
 
 		if err = svm.runProcess(fmt.Sprintf("mkdir -p %s %s", upper, work), nil, nil, nil); err != nil {
+			logrus.Debugf("MKDIR FAILED!!!")
+			time.Sleep(60 * time.Hour)
 			return err
 		}
 

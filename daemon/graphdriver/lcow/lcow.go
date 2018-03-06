@@ -240,6 +240,7 @@ func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd []hcsshim.Mapped
 		logrus.Debugf("%s: service vm already exists. Just hot adding: %+v", title, mvdToAdd)
 		if err := svm.hotAddVHDs(mvdToAdd...); err != nil {
 			logrus.Debugf("%s: failed to hot add vhds on service vm creation: %s", title, err)
+			time.Sleep(60 * time.Hour)
 			return nil, fmt.Errorf("%s: failed to hot add vhds on service vm: %s", title, err)
 		}
 		return svm, nil
