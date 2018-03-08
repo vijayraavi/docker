@@ -3,6 +3,7 @@
 package lcow // import "github.com/docker/docker/daemon/graphdriver/lcow"
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -208,6 +209,9 @@ func (svm *serviceVM) hotAddVHDsAtStart(mvds ...hcsshim.MappedVirtualDisk) error
 		}
 
 		if err := svm.config.HotAddVhd(mvd.HostPath, mvd.ContainerPath, mvd.ReadOnly, !mvd.AttachOnly); err != nil {
+			fmt.Println("JJH failed to hot-add", mvd.HostPath, err)
+			time.Sleep(60 * time.Second)
+
 			svm.hotRemoveVHDsNoLock(mvds[:i]...)
 			return err
 		}
@@ -314,8 +318,9 @@ func (svm *serviceVM) createUnionMount(mountName string, mvds ...hcsshim.MappedV
 		upper := fmt.Sprintf("%s/upper", mvds[0].ContainerPath)
 		work := fmt.Sprintf("%s/work", mvds[0].ContainerPath)
 
-		if err = svm.runProcess(fmt.Sprintf("mkdir -p %s %s", upper, work), nil, nil, nil); err != nil {
-			logrus.Debugf("MKDIR FAILED!!!")
+		errOut := &bytes.Buffer{}
+		if err = svm.runProcess(fmt.Sprintf("mkdir -p %s %s", upper, work), nil, nil, errOut); err != nil {
+			logrus.Debugf("MKDIR FAILED!!! %s", errOut.String())
 			time.Sleep(60 * time.Hour)
 			return err
 		}
