@@ -11,9 +11,11 @@ import (
 	"github.com/docker/docker/pkg/archive"
 	"github.com/gotestyourself/gotestyourself/assert"
 	"github.com/gotestyourself/gotestyourself/poll"
+	"github.com/gotestyourself/gotestyourself/skip"
 )
 
 func TestDiff(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows") // TODO Windows: FIXME
 	defer setupTest(t)()
 	client := request.NewAPIClient(t)
 	ctx := context.Background()

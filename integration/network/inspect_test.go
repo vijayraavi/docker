@@ -13,6 +13,7 @@ import (
 	"github.com/docker/docker/integration-cli/daemon"
 	"github.com/gotestyourself/gotestyourself/assert"
 	"github.com/gotestyourself/gotestyourself/poll"
+	"github.com/gotestyourself/gotestyourself/skip"
 	"golang.org/x/net/context"
 )
 
@@ -20,6 +21,7 @@ const defaultSwarmPort = 2477
 const dockerdBinary = "dockerd"
 
 func TestInspectNetwork(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows")
 	defer setupTest(t)()
 	d := newSwarm(t)
 	defer d.Stop(t)

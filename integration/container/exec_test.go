@@ -11,9 +11,11 @@ import (
 	"github.com/docker/docker/integration/internal/request"
 	"github.com/gotestyourself/gotestyourself/assert"
 	is "github.com/gotestyourself/gotestyourself/assert/cmp"
+	"github.com/gotestyourself/gotestyourself/skip"
 )
 
 func TestExec(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows") // TODO Windows: FIXME. Probably needs to wait for container to be in running state.
 	defer setupTest(t)()
 	ctx := context.Background()
 	client := request.NewAPIClient(t)

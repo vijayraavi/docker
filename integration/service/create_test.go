@@ -14,10 +14,12 @@ import (
 	"github.com/gotestyourself/gotestyourself/assert"
 	is "github.com/gotestyourself/gotestyourself/assert/cmp"
 	"github.com/gotestyourself/gotestyourself/poll"
+	"github.com/gotestyourself/gotestyourself/skip"
 	"golang.org/x/net/context"
 )
 
 func TestCreateServiceMultipleTimes(t *testing.T) {
+	skip.If(t, testEnv.DaemonInfo.OSType != "linux")
 	defer setupTest(t)()
 	d := swarm.NewSwarm(t, testEnv)
 	defer d.Stop(t)
@@ -84,6 +86,7 @@ func TestCreateServiceMultipleTimes(t *testing.T) {
 }
 
 func TestCreateWithDuplicateNetworkNames(t *testing.T) {
+	skip.If(t, testEnv.DaemonInfo.OSType != "linux")
 	defer setupTest(t)()
 	d := swarm.NewSwarm(t, testEnv)
 	defer d.Stop(t)
@@ -146,6 +149,7 @@ func TestCreateWithDuplicateNetworkNames(t *testing.T) {
 }
 
 func TestCreateServiceSecretFileMode(t *testing.T) {
+	skip.If(t, testEnv.DaemonInfo.OSType != "linux")
 	defer setupTest(t)()
 	d := swarm.NewSwarm(t, testEnv)
 	defer d.Stop(t)
@@ -227,6 +231,7 @@ func TestCreateServiceSecretFileMode(t *testing.T) {
 }
 
 func TestCreateServiceConfigFileMode(t *testing.T) {
+	skip.If(t, testEnv.DaemonInfo.OSType != "linux")
 	defer setupTest(t)()
 	d := swarm.NewSwarm(t, testEnv)
 	defer d.Stop(t)

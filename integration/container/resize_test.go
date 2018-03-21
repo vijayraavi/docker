@@ -14,9 +14,11 @@ import (
 	"github.com/gotestyourself/gotestyourself/assert"
 	is "github.com/gotestyourself/gotestyourself/assert/cmp"
 	"github.com/gotestyourself/gotestyourself/poll"
+	"github.com/gotestyourself/gotestyourself/skip"
 )
 
 func TestResize(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows") // TODO Windows: FIXME
 	defer setupTest(t)()
 	client := request.NewAPIClient(t)
 	ctx := context.Background()
@@ -33,6 +35,7 @@ func TestResize(t *testing.T) {
 }
 
 func TestResizeWithInvalidSize(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows") // TODO Windows: FIXME
 	defer setupTest(t)()
 	client := request.NewAPIClient(t)
 	ctx := context.Background()

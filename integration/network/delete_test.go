@@ -8,6 +8,7 @@ import (
 	"github.com/docker/docker/integration/internal/request"
 	"github.com/gotestyourself/gotestyourself/assert"
 	is "github.com/gotestyourself/gotestyourself/assert/cmp"
+	"github.com/gotestyourself/gotestyourself/skip"
 )
 
 func containsNetwork(nws []types.NetworkResource, nw types.NetworkCreateResponse) bool {
@@ -48,6 +49,7 @@ func createAmbiguousNetworks(t *testing.T) (types.NetworkCreateResponse, types.N
 // equal to another network's ID exists, the Network with the given
 // ID is removed, and not the network with the given name.
 func TestDockerNetworkDeletePreferID(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows") // TODO Windows: FIXME. Windows doesn't run DinD and uses networks shared between control daemon and daemon under test
 	defer setupTest(t)()
 	client := request.NewAPIClient(t)
 	ctx := context.Background()

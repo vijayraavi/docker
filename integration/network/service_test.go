@@ -11,10 +11,12 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/gotestyourself/gotestyourself/assert"
 	"github.com/gotestyourself/gotestyourself/poll"
+	"github.com/gotestyourself/gotestyourself/skip"
 	"golang.org/x/net/context"
 )
 
 func TestServiceWithPredefinedNetwork(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows")
 	defer setupTest(t)()
 	d := newSwarm(t)
 	defer d.Stop(t)
@@ -59,6 +61,7 @@ func TestServiceWithPredefinedNetwork(t *testing.T) {
 const ingressNet = "ingress"
 
 func TestServiceWithIngressNetwork(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows")
 	defer setupTest(t)()
 	d := newSwarm(t)
 	defer d.Stop(t)

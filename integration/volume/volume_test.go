@@ -15,9 +15,11 @@ import (
 	"github.com/docker/docker/internal/testutil"
 	"github.com/gotestyourself/gotestyourself/assert"
 	is "github.com/gotestyourself/gotestyourself/assert/cmp"
+	"github.com/gotestyourself/gotestyourself/skip"
 )
 
 func TestVolumesCreateAndList(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows") // TODO Windows: FIXME
 	defer setupTest(t)()
 	client := request.NewAPIClient(t)
 	ctx := context.Background()
@@ -47,6 +49,7 @@ func TestVolumesCreateAndList(t *testing.T) {
 }
 
 func TestVolumesRemove(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows") // TODO Windows: FIXME
 	defer setupTest(t)()
 	client := request.NewAPIClient(t)
 	ctx := context.Background()
@@ -72,6 +75,7 @@ func TestVolumesRemove(t *testing.T) {
 }
 
 func TestVolumesInspect(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows") // TODO Windows: FIXME
 	defer setupTest(t)()
 	client := request.NewAPIClient(t)
 	ctx := context.Background()

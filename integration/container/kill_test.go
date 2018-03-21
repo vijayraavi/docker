@@ -31,6 +31,7 @@ func TestKillContainerInvalidSignal(t *testing.T) {
 }
 
 func TestKillContainer(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows") // TODO Windows: FIXME. No SIGWINCH
 	defer setupTest(t)()
 	client := request.NewAPIClient(t)
 

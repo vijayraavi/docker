@@ -11,11 +11,13 @@ import (
 	"github.com/docker/docker/integration/internal/container"
 	"github.com/docker/docker/integration/internal/request"
 	"github.com/gotestyourself/gotestyourself/poll"
+	"github.com/gotestyourself/gotestyourself/skip"
 )
 
 // TestHealthCheckWorkdir verifies that health-checks inherit the containers'
 // working-dir.
 func TestHealthCheckWorkdir(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows") // TODO Windows: FIXME
 	defer setupTest(t)()
 	ctx := context.Background()
 	client := request.NewAPIClient(t)

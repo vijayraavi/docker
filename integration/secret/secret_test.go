@@ -231,6 +231,7 @@ func TestSecretsUpdate(t *testing.T) {
 }
 
 func TestTemplatedSecret(t *testing.T) {
+	skip.If(t, testEnv.DaemonInfo.OSType != "linux")
 	d := swarm.NewSwarm(t, testEnv)
 	defer d.Stop(t)
 

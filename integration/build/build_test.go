@@ -17,6 +17,7 @@ import (
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/gotestyourself/gotestyourself/assert"
 	is "github.com/gotestyourself/gotestyourself/assert/cmp"
+	"github.com/gotestyourself/gotestyourself/skip"
 )
 
 func TestBuildWithRemoveAndForceRemove(t *testing.T) {
@@ -166,7 +167,11 @@ func TestBuildMultiStageParentConfig(t *testing.T) {
 	image, _, err := apiclient.ImageInspectWithRaw(ctx, "build1")
 	assert.NilError(t, err)
 
-	assert.Check(t, is.Equal("/foo/sub2", image.Config.WorkingDir))
+	expected := "/foo/sub2"
+	if testEnv.DaemonInfo.OSType == "windows" {
+		expected = `C:\foo\sub2`
+	}
+	assert.Check(t, is.Equal(expected, image.Config.WorkingDir))
 	assert.Check(t, is.Contains(image.Config.Env, "WHO=parent"))
 }
 
@@ -209,7 +214,8 @@ ONBUILD RUN echo 'foo' >somefile
 ONBUILD ENV bar=baz
 
 FROM stage1
-RUN cat somefile # fails if ONBUILD RUN fails
+# fails if ONBUILD RUN fails
+RUN cat somefile
 
 FROM stage1
 RUN cat somefile`
@@ -246,6 +252,8 @@ RUN cat somefile`
 
 // #35403 #36122
 func TestBuildUncleanTarFilenames(t *testing.T) {
+	skip.If(t, testEnv.DaemonInfo.OSType != "linux") // Windows doesn't support FROM scratch
+
 	ctx := context.TODO()
 	defer setupTest(t)()
 

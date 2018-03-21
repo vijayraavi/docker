@@ -19,9 +19,11 @@ import (
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/gotestyourself/gotestyourself/assert"
 	is "github.com/gotestyourself/gotestyourself/assert/cmp"
+	"github.com/gotestyourself/gotestyourself/skip"
 )
 
 func TestEvents(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows") // TODO Windows: FIXME. Suspect may need to wait until container is running before exec
 	defer setupTest(t)()
 	ctx := context.Background()
 	client := request.NewAPIClient(t)
@@ -71,6 +73,7 @@ func TestEvents(t *testing.T) {
 // backward compatibility so old `JSONMessage` could still be used.
 // This test verifies that backward compatibility maintains.
 func TestEventsBackwardsCompatible(t *testing.T) {
+	skip.If(t, testEnv.OSType == "windows") // Windows doesn't support back-compat messages
 	defer setupTest(t)()
 	ctx := context.Background()
 	client := request.NewAPIClient(t)

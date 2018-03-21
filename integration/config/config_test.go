@@ -194,6 +194,7 @@ func TestConfigsUpdate(t *testing.T) {
 }
 
 func TestTemplatedConfig(t *testing.T) {
+	skip.If(t, testEnv.DaemonInfo.OSType != "linux")
 	d := swarm.NewSwarm(t, testEnv)
 	defer d.Stop(t)
 

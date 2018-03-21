@@ -11,6 +11,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/integration/internal/request"
 	"github.com/docker/docker/internal/testutil"
+	"github.com/gotestyourself/gotestyourself/skip"
 )
 
 // Ensure we don't regress on CVE-2017-14992.
@@ -18,6 +19,7 @@ func TestImportExtremelyLargeImageWorks(t *testing.T) {
 	if runtime.GOARCH == "arm64" {
 		t.Skip("effective test will be time out")
 	}
+	skip.If(t, testEnv.OSType == "windows") // TODO Windows: FIXME
 
 	client := request.NewAPIClient(t)
 

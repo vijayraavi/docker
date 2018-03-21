@@ -11,9 +11,11 @@ import (
 	"github.com/docker/docker/integration/internal/swarm"
 	"github.com/gotestyourself/gotestyourself/assert"
 	is "github.com/gotestyourself/gotestyourself/assert/cmp"
+	"github.com/gotestyourself/gotestyourself/skip"
 )
 
 func TestDockerNetworkConnectAlias(t *testing.T) {
+	skip.If(t, testEnv.DaemonInfo.OSType != "linux")
 	defer setupTest(t)()
 	d := swarm.NewSwarm(t, testEnv)
 	defer d.Stop(t)
