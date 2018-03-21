@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -12,7 +13,24 @@ import (
 )
 
 var (
-	defaultTimeout = time.Minute * 4
+	// defaultTimeoutSeconds is the default time to wait for various operations.
+	// - Waiting for async notifications from HCS
+	// - Waiting for processes to launch through
+	// - Waiting to copy data to/from a launched processes stdio pipes.
+	// This can be overridden through HCS_TIMEOUT_SECONDS
+	defaultTimeoutSeconds = time.Second * 60 * 4
+
+	// logDataByteCount is for an advanced debugging technique to allow
+	// data read/written to a processes stdio channels hex-dumped to the
+	// log when running at debug level or higher. It is controlled through
+	// the environment variable HCSSHIM_LOG_DATA_BYTE_COUNT
+	logDataByteCount int64
+
+	// createContainerAdditionalJSON is read from the environment at initialisation
+	// time. It allows an environment variable to define additional JSON which
+	// is merged in the CreateContainer call to HCS. It is controlled through
+	// HCSSHIM_CREATECONTAINER_ADDITIONALJSON
+	createContainerAdditionalJSON string
 )
 
 const (
@@ -27,160 +45,67 @@ type container struct {
 	handle         hcsSystem
 	id             string
 	callbackNumber uintptr
+	schemaVersion  SchemaVersion
+	vsmbShares     struct {
+		sync.Mutex
+		guids map[string]int // Refcount
+	}
+	scsiLocations struct {
+		sync.Mutex
+		used [4][64]bool // Hyper-V supports 4 controllers, 64 slots per controller
+	}
 }
-
-// ContainerProperties holds the properties for a container and the processes running in that container
-type ContainerProperties struct {
-	ID                           string `json:"Id"`
-	Name                         string
-	SystemType                   string
-	Owner                        string
-	SiloGUID                     string                              `json:"SiloGuid,omitempty"`
-	RuntimeID                    string                              `json:"RuntimeId,omitempty"`
-	IsRuntimeTemplate            bool                                `json:",omitempty"`
-	RuntimeImagePath             string                              `json:",omitempty"`
-	Stopped                      bool                                `json:",omitempty"`
-	ExitType                     string                              `json:",omitempty"`
-	AreUpdatesPending            bool                                `json:",omitempty"`
-	ObRoot                       string                              `json:",omitempty"`
-	Statistics                   Statistics                          `json:",omitempty"`
-	ProcessList                  []ProcessListItem                   `json:",omitempty"`
-	MappedVirtualDiskControllers map[int]MappedVirtualDiskController `json:",omitempty"`
-}
-
-// MemoryStats holds the memory statistics for a container
-type MemoryStats struct {
-	UsageCommitBytes            uint64 `json:"MemoryUsageCommitBytes,omitempty"`
-	UsageCommitPeakBytes        uint64 `json:"MemoryUsageCommitPeakBytes,omitempty"`
-	UsagePrivateWorkingSetBytes uint64 `json:"MemoryUsagePrivateWorkingSetBytes,omitempty"`
-}
-
-// ProcessorStats holds the processor statistics for a container
-type ProcessorStats struct {
-	TotalRuntime100ns  uint64 `json:",omitempty"`
-	RuntimeUser100ns   uint64 `json:",omitempty"`
-	RuntimeKernel100ns uint64 `json:",omitempty"`
-}
-
-// StorageStats holds the storage statistics for a container
-type StorageStats struct {
-	ReadCountNormalized  uint64 `json:",omitempty"`
-	ReadSizeBytes        uint64 `json:",omitempty"`
-	WriteCountNormalized uint64 `json:",omitempty"`
-	WriteSizeBytes       uint64 `json:",omitempty"`
-}
-
-// NetworkStats holds the network statistics for a container
-type NetworkStats struct {
-	BytesReceived          uint64 `json:",omitempty"`
-	BytesSent              uint64 `json:",omitempty"`
-	PacketsReceived        uint64 `json:",omitempty"`
-	PacketsSent            uint64 `json:",omitempty"`
-	DroppedPacketsIncoming uint64 `json:",omitempty"`
-	DroppedPacketsOutgoing uint64 `json:",omitempty"`
-	EndpointId             string `json:",omitempty"`
-	InstanceId             string `json:",omitempty"`
-}
-
-// Statistics is the structure returned by a statistics call on a container
-type Statistics struct {
-	Timestamp          time.Time      `json:",omitempty"`
-	ContainerStartTime time.Time      `json:",omitempty"`
-	Uptime100ns        uint64         `json:",omitempty"`
-	Memory             MemoryStats    `json:",omitempty"`
-	Processor          ProcessorStats `json:",omitempty"`
-	Storage            StorageStats   `json:",omitempty"`
-	Network            []NetworkStats `json:",omitempty"`
-}
-
-// ProcessList is the structure of an item returned by a ProcessList call on a container
-type ProcessListItem struct {
-	CreateTimestamp              time.Time `json:",omitempty"`
-	ImageName                    string    `json:",omitempty"`
-	KernelTime100ns              uint64    `json:",omitempty"`
-	MemoryCommitBytes            uint64    `json:",omitempty"`
-	MemoryWorkingSetPrivateBytes uint64    `json:",omitempty"`
-	MemoryWorkingSetSharedBytes  uint64    `json:",omitempty"`
-	ProcessId                    uint32    `json:",omitempty"`
-	UserTime100ns                uint64    `json:",omitempty"`
-}
-
-// MappedVirtualDiskController is the structure of an item returned by a MappedVirtualDiskList call on a container
-type MappedVirtualDiskController struct {
-	MappedVirtualDisks map[int]MappedVirtualDisk `json:",omitempty"`
-}
-
-// Type of Request Support in ModifySystem
-type RequestType string
-
-// Type of Resource Support in ModifySystem
-type ResourceType string
-
-// RequestType const
-const (
-	Add     RequestType  = "Add"
-	Remove  RequestType  = "Remove"
-	Network ResourceType = "Network"
-)
-
-// ResourceModificationRequestResponse is the structure used to send request to the container to modify the system
-// Supported resource types are Network and Request Types are Add/Remove
-type ResourceModificationRequestResponse struct {
-	Resource ResourceType `json:"ResourceType"`
-	Data     interface{}  `json:"Settings"`
-	Request  RequestType  `json:"RequestType,omitempty"`
-}
-
-// createContainerAdditionalJSON is read from the environment at initialisation
-// time. It allows an environment variable to define additional JSON which
-// is merged in the CreateContainer call to HCS.
-var createContainerAdditionalJSON string
 
 func init() {
 	createContainerAdditionalJSON = os.Getenv("HCSSHIM_CREATECONTAINER_ADDITIONALJSON")
+
+	bytes := os.Getenv("HCSSHIM_LOG_DATA_BYTE_COUNT")
+	if len(bytes) > 0 {
+		u, err := strconv.ParseUint(bytes, 10, 32)
+		if err == nil {
+			logDataByteCount = int64(u)
+		}
+	}
+
+	envTimeout := os.Getenv("HCSSHIM_TIMEOUT_SECONDS")
+	if len(envTimeout) > 0 {
+		e, err := strconv.Atoi(envTimeout)
+		if err == nil && e > 0 {
+			defaultTimeoutSeconds = time.Second * time.Duration(e)
+		}
+	}
 }
 
 // CreateContainer creates a new container with the given configuration but does not start it.
+// This is a 'legacy' API used in RS1..RS4 for the v1 Schema
 func CreateContainer(id string, c *ContainerConfig) (Container, error) {
-	return createContainerWithJSON(id, c, "")
-}
-
-// CreateContainerWithJSON creates a new container with the given configuration but does not start it.
-// It is identical to CreateContainer except that optional additional JSON can be merged before passing to HCS.
-func CreateContainerWithJSON(id string, c *ContainerConfig, additionalJSON string) (Container, error) {
-	return createContainerWithJSON(id, c, additionalJSON)
-}
-
-func createContainerWithJSON(id string, c *ContainerConfig, additionalJSON string) (Container, error) {
-	operation := "CreateContainer"
-	title := "HCSShim::" + operation
-
-	container := &container{
-		id: id,
-	}
-
 	configurationb, err := json.Marshal(c)
 	if err != nil {
 		return nil, err
 	}
+	return createContainer(id, string(configurationb), SchemaV10())
+}
 
-	configuration := string(configurationb)
-	logrus.Debugf(title+" id=%s config=%s", id, configuration)
+func createContainer(id string, configurationJSON string, schemaVersion *SchemaVersion) (Container, error) {
+	operation := "CreateContainer"
+	title := "HCSShim::" + operation
 
-	// Merge any additional JSON. Priority is given to what is passed in explicitly,
-	// falling back to what's set in the environment.
-	if additionalJSON == "" && createContainerAdditionalJSON != "" {
-		additionalJSON = createContainerAdditionalJSON
+	container := &container{
+		id:            id,
+		schemaVersion: *schemaVersion,
 	}
-	if additionalJSON != "" {
+	logrus.Debugf(title+" id=%s config=%s", id, configurationJSON)
+
+	// Merge any additional JSON.
+	if createContainerAdditionalJSON != "" {
 		configurationMap := map[string]interface{}{}
-		if err := json.Unmarshal([]byte(configuration), &configurationMap); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal %s: %s", configuration, err)
+		if err := json.Unmarshal([]byte(configurationJSON), &configurationMap); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal %s: %s", configurationJSON, err)
 		}
 
 		additionalMap := map[string]interface{}{}
-		if err := json.Unmarshal([]byte(additionalJSON), &additionalMap); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal %s: %s", additionalJSON, err)
+		if err := json.Unmarshal([]byte(createContainerAdditionalJSON), &additionalMap); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal %s: %s", createContainerAdditionalJSON, err)
 		}
 
 		mergedMap := mergeMaps(additionalMap, configurationMap)
@@ -189,15 +114,15 @@ func createContainerWithJSON(id string, c *ContainerConfig, additionalJSON strin
 			return nil, fmt.Errorf("failed to marshal merged configuration map %+v: %s", mergedMap, err)
 		}
 
-		configuration = string(mergedJSON)
-		logrus.Debugf(title+" id=%s merged config=%s", id, configuration)
+		configurationJSON = string(mergedJSON)
+		logrus.Debugf(title+" id=%s merged config=%s", id, configurationJSON)
 	}
 
 	var (
 		resultp  *uint16
 		identity syscall.Handle
 	)
-	createError := hcsCreateComputeSystem(id, configuration, identity, &container.handle, &resultp)
+	createError := hcsCreateComputeSystem(id, configurationJSON, identity, &container.handle, &resultp)
 
 	if createError == nil || IsPending(createError) {
 		if err := container.registerCallback(); err != nil {
@@ -207,13 +132,13 @@ func createContainerWithJSON(id string, c *ContainerConfig, additionalJSON strin
 		}
 	}
 
-	err = processAsyncHcsResult(createError, resultp, container.callbackNumber, hcsNotificationSystemCreateCompleted, &defaultTimeout)
+	err := processAsyncHcsResult(createError, resultp, container.callbackNumber, hcsNotificationSystemCreateCompleted, &defaultTimeoutSeconds)
 	if err != nil {
 		if err == ErrTimeout {
 			// Terminate the container if it still exists. We're okay to ignore a failure here.
 			container.Terminate()
 		}
-		return nil, makeContainerError(container, operation, configuration, err)
+		return nil, makeContainerError(container, operation, configurationJSON, err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s handle=%d", id, container.handle)
@@ -327,7 +252,7 @@ func (container *container) Start() error {
 
 	var resultp *uint16
 	err := hcsStartComputeSystem(container.handle, "", &resultp)
-	err = processAsyncHcsResult(err, resultp, container.callbackNumber, hcsNotificationSystemStartCompleted, &defaultTimeout)
+	err = processAsyncHcsResult(err, resultp, container.callbackNumber, hcsNotificationSystemStartCompleted, &defaultTimeoutSeconds)
 	if err != nil {
 		return makeContainerError(container, operation, "", err)
 	}
@@ -563,7 +488,7 @@ func (container *container) Pause() error {
 
 	var resultp *uint16
 	err := hcsPauseComputeSystem(container.handle, "", &resultp)
-	err = processAsyncHcsResult(err, resultp, container.callbackNumber, hcsNotificationSystemPauseCompleted, &defaultTimeout)
+	err = processAsyncHcsResult(err, resultp, container.callbackNumber, hcsNotificationSystemPauseCompleted, &defaultTimeoutSeconds)
 	if err != nil {
 		return makeContainerError(container, operation, "", err)
 	}
@@ -586,7 +511,7 @@ func (container *container) Resume() error {
 
 	var resultp *uint16
 	err := hcsResumeComputeSystem(container.handle, "", &resultp)
-	err = processAsyncHcsResult(err, resultp, container.callbackNumber, hcsNotificationSystemResumeCompleted, &defaultTimeout)
+	err = processAsyncHcsResult(err, resultp, container.callbackNumber, hcsNotificationSystemResumeCompleted, &defaultTimeoutSeconds)
 	if err != nil {
 		return makeContainerError(container, operation, "", err)
 	}
@@ -595,7 +520,9 @@ func (container *container) Resume() error {
 	return nil
 }
 
-// CreateProcess launches a new process within the container.
+// CreateProcess launches a new process. It can launch both in a container,
+// and inside a utility VM. It is the responsibility of the caller to call
+// Close() on the process returned.
 func (container *container) CreateProcess(c *ProcessConfig) (Process, error) {
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
@@ -771,7 +698,7 @@ func (container *container) unregisterCallback() error {
 }
 
 // Modifies the System by sending a request to HCS
-func (container *container) Modify(config *ResourceModificationRequestResponse) error {
+func (container *container) Modify(config interface{}) error {
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "Modify"
@@ -797,4 +724,64 @@ func (container *container) Modify(config *ResourceModificationRequestResponse) 
 	}
 	logrus.Debugf(title+" succeeded id=%s", container.id)
 	return nil
+}
+
+// TODO: Get rid of this! @JJH
+// HotAddVhd hot-adds a VHD to a container
+func (container *container) HotAddVhd(hostPath string, containerPath string, utilityVM, readOnly bool, mount bool) error {
+	logrus.Debugf("hcsshim: HotAddVhd: %s: %s", hostPath, containerPath)
+
+	// TODO - Have a method so we only do this for LCOW (detect Linux that is)
+	//defer config.DebugLCOWGCS()
+
+	modification := &ResourceModificationRequestResponse{
+		Resource: "MappedVirtualDisk",
+		Data: MappedVirtualDisk{
+			HostPath:          hostPath,
+			ContainerPath:     containerPath,
+			CreateInUtilityVM: utilityVM,
+			ReadOnly:          readOnly,
+			AttachOnly:        !mount,
+		},
+		Request: "Add",
+	}
+
+	if err := container.Modify(modification); err != nil {
+		return fmt.Errorf("failed to modify utility VM configuration for hot-add: %s", err)
+	}
+	logrus.Debugf("hcsshim: HotAddVhd: %s added successfully", hostPath)
+	return nil
+}
+
+// TODO: Get rid of this! @JJH
+// HotRemoveVhd hot-removes a VHD from a utility VM.
+func (container *container) HotRemoveVhd(hostPath string) error {
+	logrus.Debugf("hcsshim: HotRemoveVhd: %s", hostPath)
+
+	// TODO - Have a method so we only do this for LCOW
+	//defer config.DebugLCOWGCS()
+
+	modification := &ResourceModificationRequestResponse{
+		Resource: "MappedVirtualDisk",
+		Data: MappedVirtualDisk{
+			HostPath:          hostPath,
+			CreateInUtilityVM: true,
+		},
+		Request: "Remove",
+	}
+	if err := container.Modify(modification); err != nil {
+		return fmt.Errorf("failed modifying utility VM for hot-remove %s: %s", hostPath, err)
+	}
+	logrus.Debugf("hcsshim: HotRemoveVhd: %s removed successfully", hostPath)
+	return nil
+}
+
+// ID returns the ID of a container
+func (container *container) ID() string {
+	return container.id
+}
+
+// SchemaVersion returns the schema version for a container
+func (container *container) SchemaVersion() *SchemaVersion {
+	return &container.schemaVersion
 }

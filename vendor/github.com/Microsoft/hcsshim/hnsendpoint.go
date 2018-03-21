@@ -74,12 +74,12 @@ func HNSListEndpointRequest() ([]HNSEndpoint, error) {
 
 // HotAttachEndpoint makes a HCS Call to attach the endpoint to the container
 func HotAttachEndpoint(containerID string, endpointID string) error {
-	return modifyNetworkEndpoint(containerID, endpointID, Add)
+	return modifyNetworkEndpoint(containerID, endpointID, RequestTypeAdd)
 }
 
 // HotDetachEndpoint makes a HCS Call to detach the endpoint from the container
 func HotDetachEndpoint(containerID string, endpointID string) error {
-	return modifyNetworkEndpoint(containerID, endpointID, Remove)
+	return modifyNetworkEndpoint(containerID, endpointID, RequestTypeRemove)
 }
 
 // ModifyContainer corresponding to the container id, by sending a request
@@ -105,7 +105,7 @@ func modifyContainer(id string, request *ResourceModificationRequestResponse) er
 
 func modifyNetworkEndpoint(containerID string, endpointID string, request RequestType) error {
 	requestMessage := &ResourceModificationRequestResponse{
-		Resource: Network,
+		Resource: ResourceTypeNetwork,
 		Request:  request,
 		Data:     endpointID,
 	}
@@ -179,7 +179,7 @@ func (endpoint *HNSEndpoint) ContainerHotAttach(containerID string) error {
 	title := "HCSShim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s, containerId=%s", endpoint.Id, containerID)
 
-	return modifyNetworkEndpoint(containerID, endpoint.Id, Add)
+	return modifyNetworkEndpoint(containerID, endpoint.Id, RequestTypeAdd)
 }
 
 // ContainerHotDetach detaches an endpoint from a running container
@@ -188,7 +188,7 @@ func (endpoint *HNSEndpoint) ContainerHotDetach(containerID string) error {
 	title := "HCSShim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s, containerId=%s", endpoint.Id, containerID)
 
-	return modifyNetworkEndpoint(containerID, endpoint.Id, Remove)
+	return modifyNetworkEndpoint(containerID, endpoint.Id, RequestTypeRemove)
 }
 
 // ApplyACLPolicy applies a set of ACL Policies on the Endpoint

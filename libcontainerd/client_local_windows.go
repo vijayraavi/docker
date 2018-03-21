@@ -67,9 +67,8 @@ const (
 )
 
 // defaultOwner is a tag passed to HCS to allow it to differentiate between
-// container creator management stacks. We hard code "docker" in the case
-// of docker.
-const defaultOwner = "docker"
+// container creator management stacks. We hard code "moby".
+const defaultOwner = "moby"
 
 func (c *client) Version(ctx context.Context) (containerd.Version, error) {
 	return containerd.Version{}, errors.New("not implemented on Windows")
@@ -145,18 +144,45 @@ func (c *client) Create(_ context.Context, id string, spec *specs.Spec, runtimeO
 }
 
 func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions interface{}) error {
-	logger := c.logger.WithField("container", id)
-	configuration := &hcsshim.ContainerConfig{
-		SystemType: "Container",
-		Name:       id,
-		Owner:      defaultOwner,
-		IgnoreFlushesDuringBoot: spec.Windows.IgnoreFlushesDuringBoot,
-		HostName:                spec.Hostname,
-		HvPartition:             false,
+	//logger := c.logger.WithField("container", id)
+
+	schema := 1
+	// Will be RS5 only. TODO @jhowardmsft
+	if os.Getenv("ENABLE_HCS_V2_SCHEMA") != "" && system.GetOSVersion().Build >= 17127 {
+		schema = 2
+	}
+
+	configuration := &hcsshim.ContainerConfig{}
+	computeSystemV2 := &hcsshim.ComputeSystemV2{}
+
+	if schema == 1 {
+		configuration = &hcsshim.ContainerConfig{
+			SystemType: "Container",
+			Name:       id,
+			Owner:      defaultOwner,
+			IgnoreFlushesDuringBoot: spec.Windows.IgnoreFlushesDuringBoot,
+			HostName:                spec.Hostname,
+			HvPartition:             false,
+		}
+	} else {
+		computeSystemV2 = &hcsshim.ComputeSystemV2{
+			Container: &hcsshim.ContainerConfigV2{},
+			Owner:     defaultOwner,
+			SchemaVersion: &hcsshim.SchemaVersionV2{
+				Major: 2,
+				Minor: 0,
+			},
+		}
 	}
 
 	if spec.Windows.Resources != nil {
 		if spec.Windows.Resources.CPU != nil {
+			if schema == 2 &&
+				(spec.Windows.Resources.CPU.Count != nil ||
+					spec.Windows.Resources.CPU.Shares != nil ||
+					spec.Windows.Resources.CPU.Maximum != nil) {
+				computeSystemV2.Container.Processor = &hcsshim.ContainersResourcesProcessorV2{}
+			}
 			if spec.Windows.Resources.CPU.Count != nil {
 				// This check is being done here rather than in adaptContainerSettings
 				// because we don't want to update the HostConfig in case this container
@@ -167,45 +193,95 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 					c.logger.Warnf("Changing requested CPUCount of %d to current number of processors, %d", cpuCount, hostCPUCount)
 					cpuCount = hostCPUCount
 				}
-				configuration.ProcessorCount = uint32(cpuCount)
+				if schema == 1 {
+					configuration.ProcessorCount = uint32(cpuCount)
+				} else {
+					computeSystemV2.Container.Processor.Count = uint32(cpuCount)
+				}
 			}
 			if spec.Windows.Resources.CPU.Shares != nil {
-				configuration.ProcessorWeight = uint64(*spec.Windows.Resources.CPU.Shares)
+				if schema == 1 {
+					configuration.ProcessorWeight = uint64(*spec.Windows.Resources.CPU.Shares)
+				} else {
+					computeSystemV2.Container.Processor.Weight = uint64(*spec.Windows.Resources.CPU.Shares)
+				}
 			}
 			if spec.Windows.Resources.CPU.Maximum != nil {
-				configuration.ProcessorMaximum = int64(*spec.Windows.Resources.CPU.Maximum)
+				if schema == 1 {
+					configuration.ProcessorMaximum = int64(*spec.Windows.Resources.CPU.Maximum)
+				} else {
+					computeSystemV2.Container.Processor.Maximum = uint64(*spec.Windows.Resources.CPU.Maximum)
+				}
 			}
 		}
 		if spec.Windows.Resources.Memory != nil {
 			if spec.Windows.Resources.Memory.Limit != nil {
-				configuration.MemoryMaximumInMB = int64(*spec.Windows.Resources.Memory.Limit) / 1024 / 1024
+				if schema == 1 {
+					configuration.MemoryMaximumInMB = int64(*spec.Windows.Resources.Memory.Limit) / 1024 / 1024
+				} else {
+					computeSystemV2.Container.Memory = &hcsshim.ContainersResourcesMemoryV2{
+						Maximum: uint64(*spec.Windows.Resources.Memory.Limit) / 1024 / 1024}
+				}
 			}
 		}
 		if spec.Windows.Resources.Storage != nil {
+			if schema == 2 {
+				computeSystemV2.Container.Storage = &hcsshim.ContainersResourcesStorageV2{
+					StorageQoS: &hcsshim.ContainersResourcesStorageQoSV2{},
+				}
+			}
 			if spec.Windows.Resources.Storage.Bps != nil {
-				configuration.StorageBandwidthMaximum = *spec.Windows.Resources.Storage.Bps
+				if schema == 1 {
+					configuration.StorageBandwidthMaximum = *spec.Windows.Resources.Storage.Bps
+				} else {
+					computeSystemV2.Container.Storage.StorageQoS.BandwidthMaximum = *spec.Windows.Resources.Storage.Bps
+				}
+
 			}
 			if spec.Windows.Resources.Storage.Iops != nil {
-				configuration.StorageIOPSMaximum = *spec.Windows.Resources.Storage.Iops
+				if schema == 1 {
+					configuration.StorageIOPSMaximum = *spec.Windows.Resources.Storage.Iops
+				} else {
+					computeSystemV2.Container.Storage.StorageQoS.IOPSMaximum = *spec.Windows.Resources.Storage.Iops
+				}
 			}
 		}
 	}
 
 	if spec.Windows.HyperV != nil {
-		configuration.HvPartition = true
+		if schema == 1 {
+			configuration.HvPartition = true
+		} else {
+			return fmt.Errorf("Hyper-V containers not implemented yet in v2 schema")
+		}
 	}
 
 	if spec.Windows.Network != nil {
-		configuration.EndpointList = spec.Windows.Network.EndpointList
-		configuration.AllowUnqualifiedDNSQuery = spec.Windows.Network.AllowUnqualifiedDNSQuery
-		if spec.Windows.Network.DNSSearchList != nil {
-			configuration.DNSSearchList = strings.Join(spec.Windows.Network.DNSSearchList, ",")
+		if schema == 1 {
+			configuration.EndpointList = spec.Windows.Network.EndpointList
+			configuration.AllowUnqualifiedDNSQuery = spec.Windows.Network.AllowUnqualifiedDNSQuery
+			if spec.Windows.Network.DNSSearchList != nil {
+				configuration.DNSSearchList = strings.Join(spec.Windows.Network.DNSSearchList, ",")
+			}
+			configuration.NetworkSharedContainerName = spec.Windows.Network.NetworkSharedContainerName
+		} else {
+			computeSystemV2.Container.Networking = &hcsshim.ContainersResourcesNetworkingV2{
+				AllowUnqualifiedDnsQuery:   spec.Windows.Network.AllowUnqualifiedDNSQuery,
+				NetworkSharedContainerName: spec.Windows.Network.NetworkSharedContainerName,
+				NetworkAdapters:            spec.Windows.Network.EndpointList,
+			}
+			if len(spec.Windows.Network.DNSSearchList) > 0 {
+				computeSystemV2.Container.Networking.DNSSearchList = strings.Join(spec.Windows.Network.DNSSearchList, ",")
+			}
 		}
-		configuration.NetworkSharedContainerName = spec.Windows.Network.NetworkSharedContainerName
 	}
 
 	if cs, ok := spec.Windows.CredentialSpec.(string); ok {
-		configuration.Credentials = cs
+		if schema == 1 {
+			configuration.Credentials = cs
+		} else {
+			return fmt.Errorf("credential spec not implemented yet in v2 schema")
+		}
 	}
 
 	// We must have least two layers in the spec, the bottom one being a
@@ -214,10 +290,16 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 		return fmt.Errorf("OCI spec is invalid - at least two LayerFolders must be supplied to the runtime")
 	}
 
-	// Strip off the top-most layer as that's passed in separately to HCS
-	configuration.LayerFolderPath = spec.Windows.LayerFolders[len(spec.Windows.LayerFolders)-1]
-	layerFolders := spec.Windows.LayerFolders[:len(spec.Windows.LayerFolders)-1]
+	if schema == 1 {
+		// Strip off the top-most RW layer as that's passed in separately to HCS
+		configuration.LayerFolderPath = spec.Windows.LayerFolders[len(spec.Windows.LayerFolders)-1]
+	} else {
+		if computeSystemV2.Container.Storage == nil {
+			computeSystemV2.Container.Storage = &hcsshim.ContainersResourcesStorageV2{}
+		}
+	}
 
+	// TODO @jhowardmsft - schema V2. To implement.
 	if configuration.HvPartition {
 		// We don't currently support setting the utility VM image explicitly.
 		// TODO @swernli/jhowardmsft circa RS5, this may be re-locatable.
@@ -227,7 +309,7 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 
 		// Find the upper-most utility VM image.
 		var uvmImagePath string
-		for _, path := range layerFolders {
+		for _, path := range spec.Windows.LayerFolders[:len(spec.Windows.LayerFolders)-1] {
 			fullPath := filepath.Join(path, "UtilityVM")
 			_, err := os.Stat(fullPath)
 			if err == nil {
@@ -252,60 +334,83 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 			return fmt.Errorf(`OCI spec is invalid - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, spec.Root.Path)
 		}
 		// HCS API requires the trailing backslash to be removed
-		configuration.VolumePath = spec.Root.Path[:len(spec.Root.Path)-1]
+		if schema == 1 {
+			configuration.VolumePath = spec.Root.Path[:len(spec.Root.Path)-1]
+		} else {
+			computeSystemV2.Container.Storage.Path = spec.Root.Path[:len(spec.Root.Path)-1]
+		}
 	}
 
 	if spec.Root.Readonly {
 		return errors.New(`OCI spec is invalid - Root.Readonly must not be set on Windows`)
 	}
 
-	for _, layerPath := range layerFolders {
+	for _, layerPath := range spec.Windows.LayerFolders[:len(spec.Windows.LayerFolders)-1] {
 		_, filename := filepath.Split(layerPath)
 		g, err := hcsshim.NameToGuid(filename)
 		if err != nil {
 			return err
 		}
-		configuration.Layers = append(configuration.Layers, hcsshim.Layer{
-			ID:   g.ToString(),
-			Path: layerPath,
-		})
-	}
 
-	// Add the mounts (volumes, bind mounts etc) to the structure
-	var mds []hcsshim.MappedDir
-	var mps []hcsshim.MappedPipe
-	for _, mount := range spec.Mounts {
-		const pipePrefix = `\\.\pipe\`
-		if mount.Type != "" {
-			return fmt.Errorf("OCI spec is invalid - Mount.Type '%s' must not be set", mount.Type)
-		}
-		if strings.HasPrefix(mount.Destination, pipePrefix) {
-			mp := hcsshim.MappedPipe{
-				HostPath:          mount.Source,
-				ContainerPipeName: mount.Destination[len(pipePrefix):],
-			}
-			mps = append(mps, mp)
+		if schema == 1 {
+			configuration.Layers = append(configuration.Layers, hcsshim.Layer{
+				ID:   g.ToString(),
+				Path: layerPath,
+			})
 		} else {
-			md := hcsshim.MappedDir{
-				HostPath:      mount.Source,
-				ContainerPath: mount.Destination,
-				ReadOnly:      false,
-			}
-			for _, o := range mount.Options {
-				if strings.ToLower(o) == "ro" {
-					md.ReadOnly = true
-				}
-			}
-			mds = append(mds, md)
+			computeSystemV2.Container.Storage.Layers = append(computeSystemV2.Container.Storage.Layers, hcsshim.ContainersResourcesLayerV2{
+				Id:   g.ToString(),
+				Path: layerPath,
+			})
 		}
 	}
-	configuration.MappedDirectories = mds
-	if len(mps) > 0 && system.GetOSVersion().Build < 16299 { // RS3
-		return errors.New("named pipe mounts are not supported on this version of Windows")
-	}
-	configuration.MappedPipes = mps
 
-	hcsContainer, err := hcsshim.CreateContainer(id, configuration)
+	// JJH V2 Schema up to here
+	// Add the mounts (volumes, bind mounts etc) to the structure
+	if schema == 1 {
+		var mds []hcsshim.MappedDir
+		var mps []hcsshim.MappedPipe
+		for _, mount := range spec.Mounts {
+			const pipePrefix = `\\.\pipe\`
+			if mount.Type != "" {
+				return fmt.Errorf("OCI spec is invalid - Mount.Type '%s' must not be set", mount.Type)
+			}
+			if strings.HasPrefix(mount.Destination, pipePrefix) {
+				mp := hcsshim.MappedPipe{
+					HostPath:          mount.Source,
+					ContainerPipeName: mount.Destination[len(pipePrefix):],
+				}
+				mps = append(mps, mp)
+			} else {
+				md := hcsshim.MappedDir{
+					HostPath:      mount.Source,
+					ContainerPath: mount.Destination,
+					ReadOnly:      false,
+				}
+				for _, o := range mount.Options {
+					if strings.ToLower(o) == "ro" {
+						md.ReadOnly = true
+					}
+				}
+				mds = append(mds, md)
+			}
+		}
+		configuration.MappedDirectories = mds
+		if len(mps) > 0 && system.GetOSVersion().Build < 16299 { // RS3
+			return errors.New("named pipe mounts are not supported on this version of Windows")
+		}
+		configuration.MappedPipes = mps
+	}
+
+	var (
+		hcsContainer hcsshim.Container
+		err          error
+	)
+	if schema == 1 {
+		hcsContainer, err = hcsshim.CreateContainer(id, configuration)
+	} else {
+		hcsContainer, err = hcsshim.CreateContainerV2(id, computeSystemV2, "") // JJH Add additionalJSON
+	}
 	if err != nil {
 		return err
 	}

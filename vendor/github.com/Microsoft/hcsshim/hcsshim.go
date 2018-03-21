@@ -33,6 +33,7 @@ import (
 //sys unprepareLayer(info *driverInfo, id string) (hr error) = vmcompute.UnprepareLayer?
 //sys processBaseImage(path string) (hr error) = vmcompute.ProcessBaseImage?
 //sys processUtilityImage(path string) (hr error) = vmcompute.ProcessUtilityImage?
+//sys grantVmAccess(vmid string, filepath string) (hr error) = vmcompute.GrantVmAccess?
 
 //sys importLayerBegin(info *driverInfo, id string, descriptors []WC_LAYER_DESCRIPTOR, context *uintptr) (hr error) = vmcompute.ImportLayerBegin?
 //sys importLayerNext(context uintptr, fileName string, fileInfo *winio.FileBasicInfo) (hr error) = vmcompute.ImportLayerNext?

@@ -946,7 +946,7 @@ func (d *Driver) getAllMounts(id string) ([]hcsshim.MappedVirtualDisk, error) {
 	for i := range layerChain {
 		ld, err := getLayerDetails(layerChain[i])
 		if err != nil {
-			logrus.Debugf("Failed to get LayerVhdDetails from %s: %s", layerChain[i], err)
+			logrus.Debugf("Failed to get layer details from %s: %s", layerChain[i], err)
 			return nil, err
 		}
 		disks[i].HostPath = ld.filename

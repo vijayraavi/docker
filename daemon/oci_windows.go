@@ -1,6 +1,7 @@
 package daemon // import "github.com/docker/docker/daemon"
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/docker/docker/pkg/system"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
@@ -29,6 +31,7 @@ func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
 		return nil, err
 	}
 
+	logrus.Debugf("hostConfig to translate: %+v", c.HostConfig)
 	s := oci.DefaultOSSpec(img.OS)
 
 	linkedEnv, err := daemon.setupLinkedContainers(c)
@@ -195,11 +198,16 @@ func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
 		epList = append(epList, gwHNSID)
 	}
 
-	s.Windows.Network = &specs.WindowsNetwork{
-		AllowUnqualifiedDNSQuery:   AllowUnqualifiedDNSQuery,
-		DNSSearchList:              dnsSearch,
-		EndpointList:               epList,
-		NetworkSharedContainerName: networkSharedContainerID,
+	if AllowUnqualifiedDNSQuery ||
+		networkSharedContainerID != "" ||
+		len(dnsSearch) > 0 ||
+		len(epList) > 0 {
+		s.Windows.Network = &specs.WindowsNetwork{
+			AllowUnqualifiedDNSQuery:   AllowUnqualifiedDNSQuery,
+			DNSSearchList:              dnsSearch,
+			EndpointList:               epList,
+			NetworkSharedContainerName: networkSharedContainerID,
+		}
 	}
 
 	switch img.OS {
@@ -216,7 +224,12 @@ func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
 		return nil, fmt.Errorf("Unsupported platform %q", img.OS)
 	}
 
-	return (*specs.Spec)(&s), nil
+	if logrus.GetLevel() == logrus.DebugLevel {
+		if b, err := json.Marshal(s); err == nil {
+			logrus.Debugln("OCI spec", string(b))
+		}
+	}
+	return &s, nil
 }
 
 // Sets the Windows-specific fields of the OCI spec
@@ -272,19 +285,30 @@ func (daemon *Daemon) createSpecWindowsFields(c *container.Container, s *specs.S
 		}
 	}
 	memoryLimit := uint64(c.HostConfig.Memory)
-	s.Windows.Resources = &specs.WindowsResources{
-		CPU: &specs.WindowsCPUResources{
+	if memoryLimit != 0 {
+		if s.Windows.Resources == nil {
+			s.Windows.Resources = &specs.WindowsResources{}
+		}
+		s.Windows.Resources.Memory = &specs.WindowsMemoryResources{Limit: &memoryLimit}
+	}
+	if cpuMaximum != 0 || cpuShares != 0 || cpuCount != 0 {
+		if s.Windows.Resources == nil {
+			s.Windows.Resources = &specs.WindowsResources{}
+		}
+		s.Windows.Resources.CPU = &specs.WindowsCPUResources{
 			Maximum: &cpuMaximum,
 			Shares:  &cpuShares,
 			Count:   &cpuCount,
-		},
-		Memory: &specs.WindowsMemoryResources{
-			Limit: &memoryLimit,
-		},
-		Storage: &specs.WindowsStorageResources{
+		}
+	}
+	if c.HostConfig.IOMaximumBandwidth != 0 || c.HostConfig.IOMaximumIOps != 0 {
+		if s.Windows.Resources == nil {
+			s.Windows.Resources = &specs.WindowsResources{}
+		}
+		s.Windows.Resources.Storage = &specs.WindowsStorageResources{
 			Bps:  &c.HostConfig.IOMaximumBandwidth,
 			Iops: &c.HostConfig.IOMaximumIOps,
-		},
+		}
 	}
 
 	// Read and add credentials from the security options if a credential spec has been provided.

@@ -61,6 +61,7 @@ var (
 	procUnprepareLayer                     = modvmcompute.NewProc("UnprepareLayer")
 	procProcessBaseImage                   = modvmcompute.NewProc("ProcessBaseImage")
 	procProcessUtilityImage                = modvmcompute.NewProc("ProcessUtilityImage")
+	procGrantVmAccess                      = modvmcompute.NewProc("GrantVmAccess")
 	procImportLayerBegin                   = modvmcompute.NewProc("ImportLayerBegin")
 	procImportLayerNext                    = modvmcompute.NewProc("ImportLayerNext")
 	procImportLayerWrite                   = modvmcompute.NewProc("ImportLayerWrite")
@@ -479,6 +480,31 @@ func _processUtilityImage(path *uint16) (hr error) {
 		return
 	}
 	r0, _, _ := syscall.Syscall(procProcessUtilityImage.Addr(), 1, uintptr(unsafe.Pointer(path)), 0, 0)
+	if int32(r0) < 0 {
+		hr = syscall.Errno(win32FromHresult(r0))
+	}
+	return
+}
+
+func grantVmAccess(vmid string, filepath string) (hr error) {
+	var _p0 *uint16
+	_p0, hr = syscall.UTF16PtrFromString(vmid)
+	if hr != nil {
+		return
+	}
+	var _p1 *uint16
+	_p1, hr = syscall.UTF16PtrFromString(filepath)
+	if hr != nil {
+		return
+	}
+	return _grantVmAccess(_p0, _p1)
+}
+
+func _grantVmAccess(vmid *uint16, filepath *uint16) (hr error) {
+	if hr = procGrantVmAccess.Find(); hr != nil {
+		return
+	}
+	r0, _, _ := syscall.Syscall(procGrantVmAccess.Addr(), 2, uintptr(unsafe.Pointer(vmid)), uintptr(unsafe.Pointer(filepath)), 0)
 	if int32(r0) < 0 {
 		hr = syscall.Errno(win32FromHresult(r0))
 	}
