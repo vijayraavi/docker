@@ -17,19 +17,33 @@ import (
 
 // allocateSCSI finds the next available slot on the
 // SCSI controllers associated with a utility VM to use.
-func allocateSCSI(container *container) (int, int, error) {
+func allocateSCSI(container *container, hostPath string, containerPath string) (int, int, error) {
 	container.scsiLocations.Lock()
 	defer container.scsiLocations.Unlock()
-	for controller, slots := range container.scsiLocations.used {
-		for slot, isUsed := range slots {
-			if !isUsed {
-				container.scsiLocations.used[controller][slot] = true
-				logrus.Debugf("Allocated SCSI %d:%d", controller, slot)
-				return controller, slot, nil
+	for controller, luns := range container.scsiLocations.hostPath {
+		for lun, hp := range luns {
+			if hp == "" {
+				container.scsiLocations.hostPath[controller][lun] = hostPath
+				logrus.Debugf("Allocated SCSI %d:%d %q %q", controller, lun, hostPath, containerPath)
+				return controller, lun, nil
+
 			}
 		}
 	}
 	return -1, -1, fmt.Errorf("no free SCSI locations")
+}
+
+// Lock must be taken externally when calling this function
+func findSCSIAttachment(container *container, findThisHostPath string) (int, int, error) {
+	for controller, slots := range container.scsiLocations.hostPath {
+		for slot, hostPath := range slots {
+			if hostPath == findThisHostPath {
+				logrus.Debugf("Found SCSI %d:%d %s", controller, slot, hostPath)
+				return controller, slot, nil
+			}
+		}
+	}
+	return 0, 0, fmt.Errorf("%s is not attached to SCSI", findThisHostPath)
 }
 
 // CreateProcessExParams is the structure used for calling CreateProcessEx

@@ -406,24 +406,25 @@ func defaultLinuxSpec() *specs.Spec {
 // -------------------
 
 // A v1 Argon with a single base layer
-func Testv1Argon(t *testing.T) {
-	//t.Skip("fornow")
+func TestV1Argon(t *testing.T) {
+	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
 	layers := []string{nanoImagePath, tempDir}
-	mountPath, err := MountContainerStorage(layers, nil, SchemaV10())
+	mountPath, err := Mount(layers, nil, SchemaV10())
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
 	}
+	defer Unmount([]string{tempDir}, nil, SchemaV10())
 
 	c, err := CreateContainerEx(&CreateOptions{
-		id:            "Testv1Argon",
+		id:            "TestV1Argon",
 		owner:         "unit-test",
 		schemaVersion: SchemaVersion{Major: 1, Minor: 0},
 		logger:        logrus.WithField("module", "hcsshim unit test"),
 		spec: &specs.Spec{
-			Windows: &specs.Windows{LayerFolders: layers}, // TODO Is this actually needed now?
+			Windows: &specs.Windows{LayerFolders: layers},
 			Root:    &specs.Root{Path: mountPath.(string)},
 		},
 	})
@@ -438,13 +439,13 @@ func Testv1Argon(t *testing.T) {
 }
 
 // A v1 WCOW Xenon with a single base layer
-func Testv1XenonWCOW(t *testing.T) {
-	//t.Skip("for now")
+func TestV1XenonWCOW(t *testing.T) {
+	t.Skip("for now")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
 	c, err := CreateContainerEx(&CreateOptions{
-		id:            "Testv1XenonWCOW",
+		id:            "TestV1XenonWCOW",
 		owner:         "unit-test",
 		schemaVersion: SchemaVersion{Major: 1, Minor: 0},
 		logger:        logrus.WithField("module", "hcsshim unit test"),
@@ -463,13 +464,14 @@ func Testv1XenonWCOW(t *testing.T) {
 }
 
 // A v1 LCOW
-func Testv1XenonLCOW(t *testing.T) {
-	//t.Skip("for now")
+// TODO LCOW doesn't work currently
+func TestV1XenonLCOW(t *testing.T) {
+	t.Skip("for now")
 	tempDir, _ := createLCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
 	c, err := CreateContainerEx(&CreateOptions{
-		id:            "Testv1XenonLCOW",
+		id:            "TestV1XenonLCOW",
 		owner:         "unit-test",
 		schemaVersion: SchemaVersion{Major: 1, Minor: 0},
 		logger:        logrus.WithField("module", "hcsshim unit test"),
@@ -487,9 +489,10 @@ func Testv1XenonLCOW(t *testing.T) {
 }
 
 // Two v2 WCOW containers in the same UVM, each with a single base layer
-func Testv2XenonsWCOWTwoContainers(t *testing.T) {
-	//t.Skip("Skipping for now")
-	uvmID := "Testv2XenonsWCOWTwoContainers_UVM"
+// TODO: Unmounting
+func TestV2XenonWCOWTwoContainers(t *testing.T) {
+	t.Skip("Skipping for now")
+	uvmID := "TestV2XenonWCOWTwoContainers_UVM"
 	uvmScratchDir, err := ioutil.TempDir("", "hcsshimtestcase")
 	if err != nil {
 		t.Fatalf("Failed create temporary directory: %s", err)
@@ -566,9 +569,9 @@ func Testv2XenonsWCOWTwoContainers(t *testing.T) {
 
 // A single WCOW xenon
 func TestV2XenonWCOW(t *testing.T) {
-	t.Skip("Skipping for now")
+	//t.Skip("Skipping for now")
 	uvmID := "Testv2XenonWCOW_UVM"
-	uvmScratchDir, err := ioutil.TempDir("", "hcsshimtestcase")
+	uvmScratchDir, err := ioutil.TempDir("", "uvmScratch")
 	if err != nil {
 		t.Fatalf("Failed create temporary directory: %s", err)
 	}
@@ -597,35 +600,47 @@ func TestV2XenonWCOW(t *testing.T) {
 		t.Fatalf("Failed start utility VM: %s", err)
 	}
 
-	// Now an argon inside the UVM
+	// Mount the containers storage in the utility VM
+	containerScratchDir := createWCOWTempDirWithSandbox(t)
+	layerFolders := []string{nanoImagePath, containerScratchDir}
+	cls, err := Mount(layerFolders, uvm, SchemaV20())
+	if err != nil {
+		t.Fatalf("failed to mount container storage: %s", err)
+	}
+	combinedLayers := cls.(CombinedLayersV2)
+	mountedLayers := &ContainersResourcesStorageV2{
+		Layers: combinedLayers.Layers,
+		Path:   combinedLayers.ContainerRootPath,
+	}
+	defer func() {
+		if err := Unmount(layerFolders, uvm, SchemaV20()); err != nil {
+			t.Fatalf("failed to unmount container storage: %s", err)
+		}
+	}()
 
-	// Create a sandbox, then create the container
-	containerAScratchDir := createWCOWTempDirWithSandbox(t)
-	defer os.RemoveAll(containerAScratchDir)
-	xenonA, err := CreateContainerEx(&CreateOptions{
-		id:            "containerA",
+	// Start the container
+	defer os.RemoveAll(containerScratchDir)
+	xenon, err := CreateContainerEx(&CreateOptions{
+		id:            "container",
 		owner:         "unit-test",
 		hostingSystem: uvm,
 		schemaVersion: *SchemaV20(),
 		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec: &specs.Spec{
-			Windows: &specs.Windows{
-				LayerFolders: []string{nanoImagePath, containerAScratchDir},
-			},
-		},
+		spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
+		mountedLayers: mountedLayers,
 	})
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)
 	}
 
 	// Start/stop the containers
-	startAndRunCommand(t, xenonA, "cmd /s /c echo ContainerA", `c:\`, "ContainerA")
-	stopContainer(t, xenonA)
+	startAndRunCommand(t, xenon, "cmd /s /c echo TestV2XenonWCOW", `c:\`, "TestV2XenonWCOW")
+	stopContainer(t, xenon)
 }
 
 // TestCreateContainerExv2XenonWCOWMultiLayer creates a V2 Xenon having multiple image layers
 func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
-	//t.Skip("for now")
+	t.Skip("for now")
 	uvmID := "TestCreateContainerExv2XenonWCOWMultiLayer_UVM"
 	uvmScratchDir, err := ioutil.TempDir("", "hcsshimtestcase")
 	if err != nil {
@@ -673,7 +688,7 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 
 	// Mount the storage in the utility VM
 	layerFolders := append(busyboxROLayers, containerAScratchDir)
-	cls, err := MountContainerStorage(layerFolders, uvm, SchemaV20())
+	cls, err := Mount(layerFolders, uvm, SchemaV20())
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
 	}
@@ -698,7 +713,7 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 	}
 
 	// Start/stop the container
-	startAndRunCommand(t, xenonA, "echo Container", `c:\`, "Container")
+	startAndRunCommand(t, xenon, "echo Container", `c:\`, "Container")
 	stopContainer(t, xenon)
 
 }

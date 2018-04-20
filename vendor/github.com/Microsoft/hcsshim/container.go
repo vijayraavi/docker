@@ -52,7 +52,7 @@ type container struct {
 	}
 	scsiLocations struct {
 		sync.Mutex
-		used [4][64]bool // Hyper-V supports 4 controllers, 64 slots per controller
+		hostPath [4][64]string // Hyper-V supports 4 controllers, 64 slots per controller
 	}
 }
 

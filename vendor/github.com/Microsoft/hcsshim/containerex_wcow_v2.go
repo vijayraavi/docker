@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -116,7 +117,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	uvmContainer.(*container).scsiLocations.used[0][0] = true
+	uvmContainer.(*container).scsiLocations.hostPath[0][0] = attachments["0"].Path
 	return uvmContainer, nil
 }
 
@@ -162,24 +163,32 @@ func removeVSMBOnFailure(c Container, toRemove []string) {
 
 // removeSCSI removes a mapped virtual disk from a containers SCSI controller. The mutex
 // must be held when calling this function
-func removeSCSI(c Container, controller int, lun int) error {
+func removeSCSI(c Container, controller int, lun int, containerPath string) error {
 	scsiModification := &ModifySettingsRequestV2{
 		ResourceType: ResourceTypeMappedVirtualDisk,
 		RequestType:  RequestTypeRemove,
 		ResourceUri:  fmt.Sprintf("VirtualMachine/Devices/SCSI/%d/%d", controller, lun),
 	}
+
+	if containerPath != "" {
+		scsiModification.HostedSettings = ContainersResourcesMappedDirectoryV2{
+			ContainerPath: containerPath,
+			Lun:           uint8(lun),
+		}
+	}
+
 	if err := c.Modify(scsiModification); err != nil {
 		return err
 	}
-	c.(*container).scsiLocations.used[controller][lun] = false
+	c.(*container).scsiLocations.hostPath[controller][lun] = ""
 	return nil
 }
 
 // removeSCSIOnFailure is a helper to roll-back a SCSI disk added to a utility VM on a failure path
-func removeSCSIOnFailure(c Container, controller int, lun int) {
+func removeSCSIOnFailure(c Container, controller int, lun int, containerPath string) {
 	c.(*container).scsiLocations.Lock()
 	defer c.(*container).scsiLocations.Unlock()
-	if err := removeSCSI(c, controller, lun); err != nil {
+	if err := removeSCSI(c, controller, lun, containerPath); err != nil {
 		logrus.Warnf("Possibly leaked SCSI disk on error removal path: %s", err)
 	}
 }
@@ -405,12 +414,17 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (interface{}, erro
 	return "", nil
 }
 
-// MountLayers is a helper for clients to hide all the complexity of layer mounting
+// Mount is a helper for clients to hide all the complexity of layer mounting
 // Layer folder are in order: base, [rolayer1..rolayern,] sandbox
 // TODO: Extend for LCOW?
 //
 // v1: Returns the mount path on the host as a volume GUID. It's pointless doing this for Xenon.
-func MountContainerStorage(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (interface{}, error) {
+// v2: Xenon WCOW: Returns a CombinedLayersV2 structure where ContainerRootPath is a folder
+//                 inside the utility VM which is a GUID mapping of the sandbox folder. Each
+//                 of the layers are the VSMB locations where the read-only layers are mounted.
+
+// TODO: Does it also need to return the sandbox controller/lun/location?
+func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (interface{}, error) {
 	if err := sv.isSupported(); err != nil {
 		return nil, err
 	}
@@ -498,7 +512,16 @@ func MountContainerStorage(layerFolders []string, hostingSystem Container, sv *S
 	// 	GUID is based on the folder in which the sandbox is located. Therefore, it is critical that if two containers
 	// 	are created in the same utility VM, they have unique sandbox directories.
 
-	controller, lun, err := allocateSCSI(c)
+	_, sandboxPath := filepath.Split(layerFolders[len(layerFolders)-1])
+	containerPathGUID, err := NameToGuid(sandboxPath)
+	if err != nil {
+		removeVSMBOnFailure(hostingSystem, vsmbAdded)
+		return nil, err
+	}
+	hostPath := filepath.Join(layerFolders[len(layerFolders)-1], "sandbox.vhdx")
+	logrus.Debugln("hostPath=", hostPath)
+	containerPath := fmt.Sprintf(`C:\%s`, containerPathGUID.ToString())
+	controller, lun, err := allocateSCSI(c, hostPath, containerPath)
 	if err != nil {
 		removeVSMBOnFailure(hostingSystem, vsmbAdded)
 		return nil, err
@@ -510,23 +533,17 @@ func MountContainerStorage(layerFolders []string, hostingSystem Container, sv *S
 		return nil, fmt.Errorf("too many SCSI attachments for a single controller")
 	}
 
-	_, sandboxPath := filepath.Split(layerFolders[len(layerFolders)-1])
-	containerPathGUID, err := NameToGuid(sandboxPath)
-	if err != nil {
-		removeVSMBOnFailure(hostingSystem, vsmbAdded)
-		return nil, err
-	}
 	sandboxModification := &ModifySettingsRequestV2{
 		ResourceType: ResourceTypeMappedVirtualDisk,
 		RequestType:  RequestTypeAdd,
 		Settings: VirtualMachinesResourcesStorageAttachmentV2{
-			Path: filepath.Join(layerFolders[len(layerFolders)-1], "sandbox.vhdx"),
+			Path: hostPath,
 			Type: "VirtualDisk",
 			// TODO Hmmm....  Where do we do this now????  IgnoreFlushes: createOptions.spec.Windows.IgnoreFlushesDuringBoot,
 		},
 		ResourceUri: fmt.Sprintf("VirtualMachine/Devices/SCSI/%d/%d", controller, lun),
 		HostedSettings: ContainersResourcesMappedDirectoryV2{
-			ContainerPath: fmt.Sprintf(`C:\%s`, containerPathGUID.ToString()),
+			ContainerPath: containerPath,
 			Lun:           uint8(lun),
 		},
 	}
@@ -556,48 +573,123 @@ func MountContainerStorage(layerFolders []string, hostingSystem Container, sv *S
 	}
 	if err := hostingSystem.Modify(combinedLayersModification); err != nil {
 		removeVSMBOnFailure(hostingSystem, vsmbAdded)
-		removeSCSIOnFailure(hostingSystem, controller, lun)
+		removeSCSIOnFailure(hostingSystem, controller, lun, fmt.Sprintf(`C:\%s`, containerPathGUID.ToString()))
 		return nil, err
 	}
 
 	return combinedLayers, nil
 }
 
-// TODO UnmountContainerStorage()
+func Unmount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) error {
 
-func UnmountContainerStorage(layerFolders []string, hostingSystem Container, sv *SchemaVersion) error {
-	//	if err := sv.isSupported(); err != nil {
-	//		return nil, err
-	//	}
-	//	if sv.isV10() {
-	//		if len(layerFolders) < 2 {
-	//			return nil, fmt.Errorf("need at least two layers - base and sandbox")
-	//		}
-	//		id := filepath.Base(layerFolders[len(layerFolders)-1])
-	//		homeDir := filepath.Dir(layerFolders[len(layerFolders)-1])
-	//		di := DriverInfo{HomeDir: homeDir}
+	if err := sv.isSupported(); err != nil {
+		return err
+	}
+	if sv.isV10() {
+		// V1, we only need to have the sandbox.
+		if len(layerFolders) < 1 {
+			return fmt.Errorf("need at least one layer for Unmount")
+		}
+		id := filepath.Base(layerFolders[len(layerFolders)-1])
+		homeDir := filepath.Dir(layerFolders[len(layerFolders)-1])
+		di := DriverInfo{HomeDir: homeDir}
+		if err := UnprepareLayer(di, id); err != nil {
+			return err
+		}
+		return DeactivateLayer(di, id)
+	}
 
-	//		if err := ActivateLayer(di, id); err != nil {
-	//			return nil, err
-	//		}
-	//		if err := PrepareLayer(di, id, layerFolders[:len(layerFolders)-1]); err != nil {
-	//			if err2 := DeactivateLayer(di, id); err2 != nil {
-	//				logrus.Warnf("Failed to Deactivate %s: %s", id, err)
-	//			}
-	//			return nil, err
-	//		}
+	if hostingSystem == nil {
+		return fmt.Errorf("Not implemented v2 mounting argon-style")
+	}
 
-	//		mountPath, err := GetLayerMountPath(di, id)
-	//		if err != nil {
-	//			if err := UnprepareLayer(di, id); err != nil {
-	//				logrus.Warnf("Failed to Unprepare %s: %s", id, err)
-	//			}
-	//			if err2 := DeactivateLayer(di, id); err2 != nil {
-	//				logrus.Warnf("Failed to Deactivate %s: %s", id, err)
-	//			}
-	//			return nil, err
-	//		}
-	//		return mountPath, nil
-	//	}
-	return nil
+	// Base+Sandbox as a minimum. This is different to v1 which only requires the sandbox
+	if len(layerFolders) < 2 {
+		return fmt.Errorf("at least two layers are required for unmount")
+	}
+
+	var retError error
+	c := hostingSystem.(*container)
+
+	// Unload the storage filter
+	_, sandboxPath := filepath.Split(layerFolders[len(layerFolders)-1])
+	containerPathGUID, err := NameToGuid(sandboxPath)
+	if err != nil {
+		logrus.Warnf("may leak a sandbox in %s as nametoguid failed: %s", err)
+	} else {
+		combinedLayersModification := &ModifySettingsRequestV2{
+			ResourceType:   ResourceTypeCombinedLayers,
+			RequestType:    RequestTypeRemove,
+			HostedSettings: CombinedLayersV2{ContainerRootPath: fmt.Sprintf(`C:\%s`, containerPathGUID.ToString())},
+		}
+		if err := hostingSystem.Modify(combinedLayersModification); err != nil {
+			logrus.Errorf(err.Error())
+		}
+	}
+
+	// Hot remove the sandbox from the SCSI controller
+	c.scsiLocations.Lock()
+	hostSandboxFile := filepath.Join(layerFolders[len(layerFolders)-1], "sandbox.vhdx")
+	controller, lun, err := findSCSIAttachment(c, hostSandboxFile)
+	if err != nil {
+		logrus.Warnf("sandbox %s is not attached to SCSI - cannot remove!", hostSandboxFile)
+	} else {
+		if err := removeSCSI(c, controller, lun, fmt.Sprintf(`C:\%s`, containerPathGUID.ToString())); err != nil {
+			e := fmt.Errorf("failed to remove SCSI %s: %s", hostSandboxFile, err)
+			logrus.Debugln(e)
+			if retError == nil {
+				retError = e
+			} else {
+				retError = errors.Wrapf(retError, e.Error())
+			}
+		}
+	}
+	c.scsiLocations.Unlock()
+
+	// Remove each of the read-only layers from VSMB. These's are ref-counted and
+	// only removed once the count drops to zero. This allows multiple containers
+	// to share layers.
+	if len(layerFolders) > 1 {
+		c.vsmbShares.Lock()
+		if c.vsmbShares.guids == nil {
+			c.vsmbShares.guids = make(map[string]int)
+		}
+		for _, layerPath := range layerFolders[:len(layerFolders)-1] {
+			logrus.Debugf("Processing layerPath %s as read-only VSMB share", layerPath)
+			_, filename := filepath.Split(layerPath)
+			guid, err := NameToGuid(filename)
+			if err != nil {
+				logrus.Warnf("may have leaked a VSMB share - failed to NameToGuid on %s: %s", filename, err)
+				continue
+			}
+			if _, ok := c.vsmbShares.guids[guid.ToString()]; !ok {
+				logrus.Warnf("layer %s is not mounted as a VSMB share - cannot unmount!", layerPath)
+				continue
+			}
+			c.vsmbShares.guids[guid.ToString()]--
+			if c.vsmbShares.guids[guid.ToString()] > 0 {
+				logrus.Debugf("VSMB read-only layer %s is still in use by another container, not removing from utility VM", layerPath)
+				continue
+			}
+			delete(c.vsmbShares.guids, guid.ToString())
+			logrus.Debugf("Processing layerPath %s: Perfoming modify to remove VSMB share", layerPath)
+			modification := &ModifySettingsRequestV2{
+				ResourceType: ResourceTypeVSmbShare,
+				RequestType:  RequestTypeRemove,
+				Settings:     VirtualMachinesResourcesStorageVSmbShareV2{Name: guid.ToString()},
+				ResourceUri:  fmt.Sprintf("virtualmachine/devices/virtualsmbshares/%s", guid.ToString()),
+			}
+			if err := hostingSystem.Modify(modification); err != nil {
+				e := fmt.Errorf("failed to remove vsmb share %s: %s: %s", layerPath, modification, err)
+				logrus.Debugln(e)
+				if retError == nil {
+					retError = e
+				} else {
+					retError = errors.Wrapf(retError, e.Error())
+				}
+			}
+		}
+		c.vsmbShares.Unlock()
+	}
+	return retError
 }
