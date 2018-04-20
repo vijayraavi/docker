@@ -13,6 +13,8 @@ import (
 // createWCOWv1 creates a Windows (WCOW) container using the V1 schema.
 // This supports both Argon and Xenon. We are guaranteed that the top-level
 // fields in the createOptions are populated at this point.
+
+// TODO: COmbined in specToHCSContainerDocument for both v1 and v2
 func createWCOWv1(createOptions *CreateOptions) (Container, error) {
 
 	logrus.Debugf("createWCOWv1")

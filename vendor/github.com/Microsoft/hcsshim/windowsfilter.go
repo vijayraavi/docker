@@ -243,7 +243,7 @@ var prepareLayerLock sync.Mutex
 // Disabling the filter must be done via UnprepareLayer.
 func PrepareLayer(info DriverInfo, layerId string, parentLayerPaths []string) error {
 	title := "hcsshim::PrepareLayer "
-	logrus.Debugf(title+"flavour %d layerId %s", info.Flavour, layerId)
+	logrus.Debugf(title+"layerId %s", layerId)
 
 	// Generate layer descriptors
 	layers, err := layerPathsToDescriptors(parentLayerPaths)
@@ -264,12 +264,12 @@ func PrepareLayer(info DriverInfo, layerId string, parentLayerPaths []string) er
 	defer prepareLayerLock.Unlock()
 	err = prepareLayer(&infop, layerId, layers)
 	if err != nil {
-		err = makeErrorf(err, title, "layerId=%s flavour=%d", layerId, info.Flavour)
+		err = makeErrorf(err, title, "layerId=%s", layerId)
 		logrus.Error(err)
 		return err
 	}
 
-	logrus.Debugf(title+"succeeded flavour=%d layerId=%s", info.Flavour, layerId)
+	logrus.Debugf(title+"succeeded layerId=%s", layerId)
 	return nil
 }
 

@@ -156,11 +156,7 @@ func (d *Driver) Status() [][2]string {
 
 // Exists returns true if the given id is registered with this driver.
 func (d *Driver) Exists(id string) bool {
-	rID, err := d.resolveID(id)
-	if err != nil {
-		return false
-	}
-	result, err := hcsshim.LayerExists(d.info, rID)
+	result, err := hcsshim.LayerExists(d.info, id)
 	if err != nil {
 		return false
 	}
@@ -185,20 +181,16 @@ func (d *Driver) Create(id, parent string, opts *graphdriver.CreateOpts) error {
 }
 
 func (d *Driver) create(id, parent, mountLabel string, readOnly bool, storageOpt map[string]string) error {
-	rPId, err := d.resolveID(parent)
-	if err != nil {
-		return err
-	}
 
-	parentChain, err := d.getLayerChain(rPId)
+	parentChain, err := d.getLayerChain(parent)
 	if err != nil {
 		return err
 	}
 
 	var layerChain []string
 
-	if rPId != "" {
-		parentPath, err := hcsshim.GetLayerMountPath(d.info, rPId)
+	if parent != "" {
+		parentPath, err := hcsshim.GetLayerMountPath(d.info, parent)
 		if err != nil {
 			return err
 		}
@@ -212,7 +204,7 @@ func (d *Driver) create(id, parent, mountLabel string, readOnly bool, storageOpt
 	layerChain = append(layerChain, parentChain...)
 
 	if readOnly {
-		if err := hcsshim.CreateLayer(d.info, id, rPId); err != nil {
+		if err := hcsshim.CreateLayer(d.info, id, parent); err != nil {
 			return err
 		}
 	} else {
@@ -261,11 +253,6 @@ func (d *Driver) dir(id string) string {
 
 // Remove unmounts and removes the dir information.
 func (d *Driver) Remove(id string) error {
-	rID, err := d.resolveID(id)
-	if err != nil {
-		return err
-	}
-
 	// This retry loop is due to a bug in Windows (Internal bug #9432268)
 	// if GetContainers fails with ErrVmcomputeOperationInvalidState
 	// it is a transient error. Retry until it succeeds.
@@ -291,6 +278,7 @@ func (d *Driver) Remove(id string) error {
 		// the remove is being called - that could improve efficiency by not
 		// enumerating compute systems during a remove of a container as it's
 		// not required.
+		var err error
 		computeSystems, err = hcsshim.GetContainers(hcsshim.ComputeSystemQuery{})
 		if err != nil {
 			if (osv.Build < 15139) &&
@@ -327,8 +315,8 @@ func (d *Driver) Remove(id string) error {
 		}
 	}
 
-	layerPath := filepath.Join(d.info.HomeDir, rID)
-	tmpID := fmt.Sprintf("%s-removing", rID)
+	layerPath := filepath.Join(d.info.HomeDir, id)
+	tmpID := fmt.Sprintf("%s-removing", id)
 	tmpLayerPath := filepath.Join(d.info.HomeDir, tmpID)
 	if err := os.Rename(layerPath, tmpLayerPath); err != nil && !os.IsNotExist(err) {
 		return err
@@ -350,46 +338,42 @@ func (d *Driver) Get(id, mountLabel string) (containerfs.ContainerFS, error) {
 	logrus.Debugf("WindowsGraphDriver Get() id %s mountLabel %s", id, mountLabel)
 	var dir string
 
-	rID, err := d.resolveID(id)
-	if err != nil {
-		return nil, err
-	}
-	if count := d.ctr.Increment(rID); count > 1 {
-		return containerfs.NewLocalContainerFS(d.cache[rID]), nil
+	if count := d.ctr.Increment(id); count > 1 {
+		return containerfs.NewLocalContainerFS(d.cache[id]), nil
 	}
 
 	// Getting the layer paths must be done outside of the lock.
-	layerChain, err := d.getLayerChain(rID)
+	layerChain, err := d.getLayerChain(id)
 	if err != nil {
-		d.ctr.Decrement(rID)
+		d.ctr.Decrement(id)
 		return nil, err
 	}
 
-	if err := hcsshim.ActivateLayer(d.info, rID); err != nil {
-		d.ctr.Decrement(rID)
+	if err := hcsshim.ActivateLayer(d.info, id); err != nil {
+		d.ctr.Decrement(id)
 		return nil, err
 	}
-	if err := hcsshim.PrepareLayer(d.info, rID, layerChain); err != nil {
-		d.ctr.Decrement(rID)
-		if err2 := hcsshim.DeactivateLayer(d.info, rID); err2 != nil {
+	if err := hcsshim.PrepareLayer(d.info, id, layerChain); err != nil {
+		d.ctr.Decrement(id)
+		if err2 := hcsshim.DeactivateLayer(d.info, id); err2 != nil {
 			logrus.Warnf("Failed to Deactivate %s: %s", id, err)
 		}
 		return nil, err
 	}
 
-	mountPath, err := hcsshim.GetLayerMountPath(d.info, rID)
+	mountPath, err := hcsshim.GetLayerMountPath(d.info, id)
 	if err != nil {
-		d.ctr.Decrement(rID)
-		if err := hcsshim.UnprepareLayer(d.info, rID); err != nil {
+		d.ctr.Decrement(id)
+		if err := hcsshim.UnprepareLayer(d.info, id); err != nil {
 			logrus.Warnf("Failed to Unprepare %s: %s", id, err)
 		}
-		if err2 := hcsshim.DeactivateLayer(d.info, rID); err2 != nil {
+		if err2 := hcsshim.DeactivateLayer(d.info, id); err2 != nil {
 			logrus.Warnf("Failed to Deactivate %s: %s", id, err)
 		}
 		return nil, err
 	}
 	d.cacheMu.Lock()
-	d.cache[rID] = mountPath
+	d.cache[id] = mountPath
 	d.cacheMu.Unlock()
 
 	// If the layer has a mount path, use that. Otherwise, use the
@@ -407,16 +391,12 @@ func (d *Driver) Get(id, mountLabel string) (containerfs.ContainerFS, error) {
 func (d *Driver) Put(id string) error {
 	logrus.Debugf("WindowsGraphDriver Put() id %s", id)
 
-	rID, err := d.resolveID(id)
-	if err != nil {
-		return err
-	}
-	if count := d.ctr.Decrement(rID); count > 0 {
+	if count := d.ctr.Decrement(id); count > 0 {
 		return nil
 	}
 	d.cacheMu.Lock()
-	_, exists := d.cache[rID]
-	delete(d.cache, rID)
+	_, exists := d.cache[id]
+	delete(d.cache, id)
 	d.cacheMu.Unlock()
 
 	// If the cache was not populated, then the layer was left unprepared and deactivated
@@ -424,10 +404,10 @@ func (d *Driver) Put(id string) error {
 		return nil
 	}
 
-	if err := hcsshim.UnprepareLayer(d.info, rID); err != nil {
+	if err := hcsshim.UnprepareLayer(d.info, id); err != nil {
 		return err
 	}
-	return hcsshim.DeactivateLayer(d.info, rID)
+	return hcsshim.DeactivateLayer(d.info, id)
 }
 
 // Cleanup ensures the information the driver stores is properly removed.
@@ -463,27 +443,22 @@ func (d *Driver) Cleanup() error {
 // layer and its parent layer which may be "".
 // The layer should be mounted when calling this function
 func (d *Driver) Diff(id, parent string) (_ io.ReadCloser, err error) {
-	rID, err := d.resolveID(id)
-	if err != nil {
-		return
-	}
-
-	layerChain, err := d.getLayerChain(rID)
+	layerChain, err := d.getLayerChain(id)
 	if err != nil {
 		return
 	}
 
 	// this is assuming that the layer is unmounted
-	if err := hcsshim.UnprepareLayer(d.info, rID); err != nil {
+	if err := hcsshim.UnprepareLayer(d.info, id); err != nil {
 		return nil, err
 	}
 	prepare := func() {
-		if err := hcsshim.PrepareLayer(d.info, rID, layerChain); err != nil {
-			logrus.Warnf("Failed to Deactivate %s: %s", rID, err)
+		if err := hcsshim.PrepareLayer(d.info, id, layerChain); err != nil {
+			logrus.Warnf("Failed to Deactivate %s: %s", id, err)
 		}
 	}
 
-	arch, err := d.exportLayer(rID, layerChain)
+	arch, err := d.exportLayer(id, layerChain)
 	if err != nil {
 		prepare()
 		return
@@ -499,21 +474,17 @@ func (d *Driver) Diff(id, parent string) (_ io.ReadCloser, err error) {
 // and its parent layer. If parent is "", then all changes will be ADD changes.
 // The layer should not be mounted when calling this function.
 func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
-	rID, err := d.resolveID(id)
-	if err != nil {
-		return nil, err
-	}
-	parentChain, err := d.getLayerChain(rID)
+	parentChain, err := d.getLayerChain(id)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := hcsshim.ActivateLayer(d.info, rID); err != nil {
+	if err := hcsshim.ActivateLayer(d.info, id); err != nil {
 		return nil, err
 	}
 	defer func() {
-		if err2 := hcsshim.DeactivateLayer(d.info, rID); err2 != nil {
-			logrus.Errorf("changes() failed to DeactivateLayer %s %s: %s", id, rID, err2)
+		if err2 := hcsshim.DeactivateLayer(d.info, id); err2 != nil {
+			logrus.Errorf("changes() failed to DeactivateLayer %s: %s", id, err2)
 		}
 	}()
 
@@ -556,15 +527,11 @@ func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 	var layerChain []string
 	if parent != "" {
-		rPId, err := d.resolveID(parent)
+		parentChain, err := d.getLayerChain(parent)
 		if err != nil {
 			return 0, err
 		}
-		parentChain, err := d.getLayerChain(rPId)
-		if err != nil {
-			return 0, err
-		}
-		parentPath, err := hcsshim.GetLayerMountPath(d.info, rPId)
+		parentPath, err := hcsshim.GetLayerMountPath(d.info, parent)
 		if err != nil {
 			return 0, err
 		}
@@ -588,12 +555,7 @@ func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 // and its parent and returns the size in bytes of the changes
 // relative to its base filesystem directory.
 func (d *Driver) DiffSize(id, parent string) (size int64, err error) {
-	rPId, err := d.resolveID(parent)
-	if err != nil {
-		return
-	}
-
-	changes, err := d.Changes(id, rPId)
+	changes, err := d.Changes(id, parent)
 	if err != nil {
 		return
 	}
@@ -822,22 +784,6 @@ func writeLayer(layerData io.Reader, home string, id string, parentLayerPaths ..
 	return writeLayerFromTar(layerData, w, filepath.Join(home, id))
 }
 
-// resolveID computes the layerID information based on the given id.
-func (d *Driver) resolveID(id string) (string, error) {
-	content, err := ioutil.ReadFile(filepath.Join(d.dir(id), "layerID"))
-	if os.IsNotExist(err) {
-		return id, nil
-	} else if err != nil {
-		return "", err
-	}
-	return string(content), nil
-}
-
-// setID stores the layerId in disk.
-func (d *Driver) setID(id, altID string) error {
-	return ioutil.WriteFile(filepath.Join(d.dir(id), "layerId"), []byte(altID), 0600)
-}
-
 // getLayerChain returns the layer chain information.
 func (d *Driver) getLayerChain(id string) ([]string, error) {
 	jPath := filepath.Join(d.dir(id), "layerchain.json")
@@ -911,11 +857,6 @@ func (fg *fileGetCloserWithBackupPrivileges) Close() error {
 // DiffGetter returns a FileGetCloser that can read files from the directory that
 // contains files for the layer differences. Used for direct access for tar-split.
 func (d *Driver) DiffGetter(id string) (graphdriver.FileGetCloser, error) {
-	id, err := d.resolveID(id)
-	if err != nil {
-		return nil, err
-	}
-
 	return &fileGetCloserWithBackupPrivileges{d.dir(id)}, nil
 }
 

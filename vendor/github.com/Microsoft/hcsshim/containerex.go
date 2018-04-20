@@ -234,13 +234,14 @@ func copyWithTimeout(dst io.Writer, src io.Reader, size int64, context string) (
 // CreateOptions are the complete set of fields required to call any of the
 // Create* APIs in HCSShim.
 type CreateOptions struct {
-	id            string        // Identifier for the container
-	hostingSystem Container     // Container object if creating a hosted system
-	owner         string        // Arbitrary string determining the owner
-	schemaVersion SchemaVersion // Schema version of the create request
-	spec          *specs.Spec   // Definition of the container or utility VM
-	lcowOptions   *LCOWOptions  // Configuration of an LCOW utility VM. ??Should these be part of OCI?? // What about annotations to put these in?
-	logger        *logrus.Entry // For logging
+	id            string                        // Identifier for the container
+	hostingSystem Container                     // Container object if creating a hosted system
+	owner         string                        // Arbitrary string determining the owner
+	schemaVersion SchemaVersion                 // Schema version of the create request
+	spec          *specs.Spec                   // Definition of the container or utility VM
+	lcowOptions   *LCOWOptions                  // Configuration of an LCOW utility VM. ??Should these be part of OCI?? // What about annotations to put these in?
+	logger        *logrus.Entry                 // For logging
+	mountedLayers *ContainersResourcesStorageV2 // For v2 Xenon - TODO for Argon too....
 }
 
 // CreateWindowsUVMSandbox is a helper to create a sandbox for a Windows utility VM
