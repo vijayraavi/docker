@@ -469,7 +469,7 @@ func TestV1XenonWCOW(t *testing.T) {
 // A v1 LCOW
 // TODO LCOW doesn't work currently
 func TestV1XenonLCOW(t *testing.T) {
-	t.Skip("for now")
+	//t.Skip("for now")
 	tempDir, _ := createLCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -578,7 +578,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 
 // A single WCOW xenon
 func TestV2XenonWCOW(t *testing.T) {
-	//t.Skip("Skipping for now")
+	t.Skip("Skipping for now")
 	uvmID := "Testv2XenonWCOW_UVM"
 	uvmScratchDir, err := ioutil.TempDir("", "uvmScratch")
 	if err != nil {
@@ -652,7 +652,7 @@ func TestV2XenonWCOW(t *testing.T) {
 // This verifies the container storage is unmounted correctly so that a second
 // container can be started from the same storage.
 func TestV2XenonWCOWWithRemount(t *testing.T) {
-	//t.Skip("Skipping for now")
+	t.Skip("Skipping for now")
 	uvmID := "Testv2XenonWCOWWithRestart_UVM"
 	uvmScratchDir, err := ioutil.TempDir("", "uvmScratch")
 	if err != nil {
