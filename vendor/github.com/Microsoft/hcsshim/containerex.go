@@ -339,41 +339,35 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		// TODO: @darrenstahlmsft fix this once the OCI spec is updated to
 		// support layer folder paths for LCOW
 		if createOptions.spec.Linux == nil {
-
-			// -----------------------
-			// 1/2. WCOW Argon/Xenon v1
-			// -----------------------
 			logrus.Debugf("Is a V1 WCOW Argon or Xenon")
 
 			if createOptions.spec.Windows == nil {
 				return nil, fmt.Errorf("containerSpec 'Windows' field must be populated")
 			}
-
 			if createOptions.lcowOptions != nil {
 				return nil, fmt.Errorf("lcowOptions must not be supplied for a v1 schema Windows container request")
 			}
-			return createWCOWv1(createOptions)
+			v1Configuration, err := specToHCSContainerDocument(createOptions)
+			if err != nil {
+				return nil, err
+			}
+			return CreateContainer(createOptions.id, v1Configuration.(*ContainerConfig))
 		}
 
-		// -----------------------
-		// 3. LCOW Xenon v1
-		// -----------------------
-
+		logrus.Debugf("Is a V1 LCOW")
 		if createOptions.lcowOptions == nil {
 			return nil, fmt.Errorf("lcowOptions must be supplied for a v1 schema Linux container request")
 		}
 		return createLCOWv1(createOptions)
 	}
 
-	//
-	// Is a V2.x schema request
-	//
-
 	logrus.Debugf("HCSShim: Processing v2 schema call")
-
 	if createOptions.spec.Linux == nil {
+		logrus.Debugf("Is a V2 WCOW Argon or Xenon")
 		return createWCOWv2(createOptions)
 	}
+
+	// TODO: LCOWv2
 
 	return nil, fmt.Errorf("invalid request - could not determine what to do")
 }

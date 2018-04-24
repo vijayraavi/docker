@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -17,7 +18,7 @@ func createWCOWv2(createOptions *CreateOptions) (Container, error) {
 	if createOptions.spec.Windows != nil && createOptions.spec.Windows.HyperV != nil {
 		return createWCOWv2UVM(createOptions)
 	}
-	return createWCOWv2Argon(createOptions)
+	return createWCOWv2HostedContainer(createOptions)
 }
 
 func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
@@ -162,21 +163,19 @@ func removeVSMBOnFailure(c Container, toRemove []string) {
 }
 
 // removeSCSI removes a mapped virtual disk from a containers SCSI controller. The mutex
-// must be held when calling this function
+// MUST be held when calling this function
 func removeSCSI(c Container, controller int, lun int, containerPath string) error {
 	scsiModification := &ModifySettingsRequestV2{
 		ResourceType: ResourceTypeMappedVirtualDisk,
 		RequestType:  RequestTypeRemove,
 		ResourceUri:  fmt.Sprintf("VirtualMachine/Devices/SCSI/%d/%d", controller, lun),
 	}
-
 	if containerPath != "" {
 		scsiModification.HostedSettings = ContainersResourcesMappedDirectoryV2{
 			ContainerPath: containerPath,
 			Lun:           uint8(lun),
 		}
 	}
-
 	if err := c.Modify(scsiModification); err != nil {
 		return err
 	}
@@ -184,43 +183,37 @@ func removeSCSI(c Container, controller int, lun int, containerPath string) erro
 	return nil
 }
 
-// removeSCSIOnFailure is a helper to roll-back a SCSI disk added to a utility VM on a failure path
-func removeSCSIOnFailure(c Container, controller int, lun int, containerPath string) {
+// removeSCSIOnFailure is a helper to roll-back a SCSI disk added to a utility VM on a failure path.
+// The mutex  must NOT be held when calling this function.
+func removeSCSIOnFailure(c Container, controller int, lun int) {
 	c.(*container).scsiLocations.Lock()
 	defer c.(*container).scsiLocations.Unlock()
-	if err := removeSCSI(c, controller, lun, containerPath); err != nil {
+	if err := removeSCSI(c, controller, lun, ""); err != nil {
 		logrus.Warnf("Possibly leaked SCSI disk on error removal path: %s", err)
 	}
 }
 
-func createWCOWv2Argon(createOptions *CreateOptions) (Container, error) {
-
-	hostedSystem := &HostedSystemV2{
-		SchemaVersion: SchemaV20(),
-		Container:     &ContainerV2{Storage: createOptions.mountedLayers},
+func createWCOWv2HostedContainer(createOptions *CreateOptions) (Container, error) {
+	if createOptions.mountedLayers == nil {
+		return nil, fmt.Errorf("mountedLayers must be supplied")
 	}
-
 	computeSystemV2 := &ComputeSystemV2{
-		Owner:                             createOptions.owner,
-		SchemaVersion:                     SchemaV20(),
-		HostingSystemId:                   createOptions.hostingSystem.(*container).id,
-		HostedSystem:                      hostedSystem,
+		Owner:           createOptions.owner,
+		SchemaVersion:   SchemaV20(),
+		HostingSystemId: createOptions.hostingSystem.(*container).id,
+		HostedSystem: &HostedSystemV2{
+			SchemaVersion: SchemaV20(),
+			Container:     &ContainerV2{Storage: createOptions.mountedLayers},
+		},
 		ShouldTerminateOnLastHandleClosed: true,
 	}
-
 	computeSystemV2b, err := json.Marshal(computeSystemV2)
 	if err != nil {
-		// TODO:
-		//removeVSMBOnFailure(createOptions.hostingSystem, vsmbAdded)
-		//removeSCSIOnFailure(createOptions.hostingSystem, controller, lun)
 		return nil, err
 	}
 	logrus.Debugf("HCSShim: definition: %s", string(computeSystemV2b))
 	hostedContainer, err := createContainer(createOptions.id, string(computeSystemV2b), SchemaV20())
 	if err != nil {
-		// TODO
-		//removeVSMBOnFailure(createOptions.hostingSystem, vsmbAdded)
-		//removeSCSIOnFailure(createOptions.hostingSystem, controller, lun)
 		return nil, err
 	}
 	return hostedContainer, nil
@@ -230,7 +223,7 @@ func createWCOWv2Argon(createOptions *CreateOptions) (Container, error) {
 // a container, both hosted and process isolated. It can create both v1 and v2
 // schema.
 func specToHCSContainerDocument(createOptions *CreateOptions) (interface{}, error) {
-	logrus.Debugf("createWCOWv1")
+	logrus.Debugf("specToHCSContainerDocument")
 
 	v1 := &ContainerConfig{
 		SystemType: "Container",
@@ -326,53 +319,53 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (interface{}, erro
 		v1.Credentials = cs
 	}
 
-	//	// We must have least two layers in the spec, the bottom one being a
-	//	// base image, the top one being the RW layer.
-	//	if createOptions.spec.Windows.LayerFolders == nil || len(createOptions.spec.Windows.LayerFolders) < 2 {
-	//		return "", fmt.Errorf("invalid spec - not enough layer folders supplied")
-	//	}
+	// We must have least two layers in the spec, the bottom one being a
+	// base image, the top one being the RW layer.
+	if createOptions.spec.Windows.LayerFolders == nil || len(createOptions.spec.Windows.LayerFolders) < 2 {
+		return "", fmt.Errorf("invalid spec - not enough layer folders supplied")
+	}
 
 	//	// Strip off the top-most RW layer as that's passed in separately to HCS
 	//	configuration.LayerFolderPath = createOptions.spec.Windows.LayerFolders[len(createOptions.spec.Windows.LayerFolders)-1]
 
-	//	if createOptions.spec.Windows.HyperV != nil {
-	//		configuration.HvPartition = true
-	//		if createOptions.spec.Windows.HyperV.UtilityVMPath == "" {
-	//			return nil, fmt.Errorf("no utility VM path for Hyper-V containers was supplied to the runtime")
-	//		}
-	//		configuration.HvRuntime = &HvRuntime{ImagePath: createOptions.spec.Windows.HyperV.UtilityVMPath}
+	if createOptions.spec.Windows.HyperV != nil {
+		v1.HvPartition = true
+		if createOptions.spec.Windows.HyperV.UtilityVMPath == "" {
+			return nil, fmt.Errorf("no utility VM path for Hyper-V containers was supplied to the runtime")
+		}
+		v1.HvRuntime = &HvRuntime{ImagePath: createOptions.spec.Windows.HyperV.UtilityVMPath}
 
-	//		if createOptions.spec.Root != nil && createOptions.spec.Root.Path != "" {
-	//			return nil, fmt.Errorf("invalid container spec - Root.Path must be omitted for a Hyper-V container")
-	//		}
-	//	} else {
+		if createOptions.spec.Root != nil && createOptions.spec.Root.Path != "" {
+			return nil, fmt.Errorf("invalid container spec - Root.Path must be omitted for a Hyper-V container")
+		}
+	} else {
 
-	//		if createOptions.spec.Root == nil {
-	//			return nil, fmt.Errorf("invalid container spec - Root must be set")
-	//		}
-	//		const volumeGUIDRegex = `^\\\\\?\\(Volume)\{{0,1}[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}(\}){0,1}\}\\$`
-	//		if _, err := regexp.MatchString(volumeGUIDRegex, createOptions.spec.Root.Path); err != nil {
-	//			return nil, fmt.Errorf(`invalid container spec - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, createOptions.spec.Root.Path)
-	//		}
-	//		// HCS API requires the trailing backslash to be removed
-	//		if createOptions.spec.Root.Path[:len(createOptions.spec.Root.Path)] == `\` {
-	//			createOptions.spec.Root.Path = createOptions.spec.Root.Path[:len(createOptions.spec.Root.Path)-1]
-	//		}
-	//		configuration.VolumePath = createOptions.spec.Root.Path
-	//	}
+		if createOptions.spec.Root == nil {
+			return nil, fmt.Errorf("invalid container spec - Root must be set")
+		}
+		const volumeGUIDRegex = `^\\\\\?\\(Volume)\{{0,1}[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}(\}){0,1}\}\\$`
+		if _, err := regexp.MatchString(volumeGUIDRegex, createOptions.spec.Root.Path); err != nil {
+			return nil, fmt.Errorf(`invalid container spec - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, createOptions.spec.Root.Path)
+		}
+		// HCS API requires the trailing backslash to be removed
+		if createOptions.spec.Root.Path[:len(createOptions.spec.Root.Path)] == `\` {
+			createOptions.spec.Root.Path = createOptions.spec.Root.Path[:len(createOptions.spec.Root.Path)-1]
+		}
+		v1.VolumePath = createOptions.spec.Root.Path
+	}
 
-	//	if createOptions.spec.Root != nil && createOptions.spec.Root.Readonly {
-	//		return nil, fmt.Errorf(`invalid container spec - readonly is not supported`)
-	//	}
+	if createOptions.spec.Root != nil && createOptions.spec.Root.Readonly {
+		return nil, fmt.Errorf(`invalid container spec - readonly is not supported`)
+	}
 
-	//	for _, layerPath := range createOptions.spec.Windows.LayerFolders[:len(createOptions.spec.Windows.LayerFolders)-1] {
-	//		_, filename := filepath.Split(layerPath)
-	//		g, err := NameToGuid(filename)
-	//		if err != nil {
-	//			return nil, err
-	//		}
-	//		configuration.Layers = append(configuration.Layers, Layer{ID: g.ToString(), Path: layerPath})
-	//	}
+	for _, layerPath := range createOptions.spec.Windows.LayerFolders[:len(createOptions.spec.Windows.LayerFolders)-1] {
+		_, filename := filepath.Split(layerPath)
+		g, err := NameToGuid(filename)
+		if err != nil {
+			return nil, err
+		}
+		v1.Layers = append(v1.Layers, Layer{ID: g.ToString(), Path: layerPath})
+	}
 
 	// Add the mounts as mapped directories or mapped pipes
 	var (
@@ -422,8 +415,6 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (interface{}, erro
 // v2: Xenon WCOW: Returns a CombinedLayersV2 structure where ContainerRootPath is a folder
 //                 inside the utility VM which is a GUID mapping of the sandbox folder. Each
 //                 of the layers are the VSMB locations where the read-only layers are mounted.
-
-// TODO: Does it also need to return the sandbox controller/lun/location?
 func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (interface{}, error) {
 	if err := sv.isSupported(); err != nil {
 		return nil, err
@@ -573,7 +564,7 @@ func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (i
 	}
 	if err := hostingSystem.Modify(combinedLayersModification); err != nil {
 		removeVSMBOnFailure(hostingSystem, vsmbAdded)
-		removeSCSIOnFailure(hostingSystem, controller, lun, fmt.Sprintf(`C:\%s`, containerPathGUID.ToString()))
+		removeSCSIOnFailure(hostingSystem, controller, lun)
 		return nil, err
 	}
 
@@ -581,7 +572,6 @@ func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (i
 }
 
 func Unmount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) error {
-
 	if err := sv.isSupported(); err != nil {
 		return err
 	}
@@ -691,5 +681,8 @@ func Unmount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) 
 		}
 		c.vsmbShares.Unlock()
 	}
+
+	// TODO (possibly) Consider deleting the container directory in the utility VM
+
 	return retError
 }

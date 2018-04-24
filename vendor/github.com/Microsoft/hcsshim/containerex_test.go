@@ -158,14 +158,17 @@ func getLCOWOptions() *LCOWOptions {
 	}
 }
 
-// Helper to start a container and launch a process in it. At the
-// point of calling, the container must have been successfully created.
-func startAndRunCommand(t *testing.T, c Container, command, workdir, expectedOutput string) {
-	if c == nil {
-		t.Fatalf("requested container to start is nil!")
-	}
+func startContainer(t *testing.T, c Container) {
 	if err := c.Start(); err != nil {
 		t.Fatalf("Failed start: %s", err)
+	}
+}
+
+// Helper to launch a process in it. At the
+// point of calling, the container must have been successfully created.
+func runCommand(t *testing.T, c Container, command, workdir, expectedOutput string) {
+	if c == nil {
+		t.Fatalf("requested container to start is nil!")
 	}
 	p, err := c.CreateProcess(&ProcessConfig{
 		CommandLine:      command,
@@ -214,7 +217,7 @@ func stopContainer(t *testing.T, c Container) {
 			t.Fatalf("Failed shutdown: %s", err)
 		}
 	}
-	c.Terminate()
+	//c.Terminate()
 }
 
 func iPtr(i int64) *int64 { return &i }
@@ -431,11 +434,10 @@ func TestV1Argon(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
 	}
-	startAndRunCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
+	startContainer(t, c)
+	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
 	stopContainer(t, c)
-
-	// TODO Unmount storage including on cleanup
-
+	c.Terminate()
 }
 
 // A v1 WCOW Xenon with a single base layer
@@ -459,7 +461,8 @@ func TestV1XenonWCOW(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
 	}
-	startAndRunCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
+	startContainer(t, c)
+	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
 	stopContainer(t, c)
 }
 
@@ -484,8 +487,10 @@ func TestV1XenonLCOW(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
 	}
-	startAndRunCommand(t, c, "echo Hello", `/bin`, "Hello")
+	startContainer(t, c)
+	runCommand(t, c, "echo Hello", `/bin`, "Hello")
 	stopContainer(t, c)
+	c.Terminate()
 }
 
 // Two v2 WCOW containers in the same UVM, each with a single base layer
@@ -561,10 +566,14 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	}
 
 	// Start/stop both containers
-	startAndRunCommand(t, xenonA, "cmd /s /c echo ContainerA", `c:\`, "ContainerA")
-	startAndRunCommand(t, xenonB, "cmd /s /c echo ContainerB", `c:\`, "ContainerB")
+	startContainer(t, xenonA)
+	runCommand(t, xenonA, "cmd /s /c echo ContainerA", `c:\`, "ContainerA")
+	startContainer(t, xenonB)
+	runCommand(t, xenonB, "cmd /s /c echo ContainerB", `c:\`, "ContainerB")
 	stopContainer(t, xenonA)
 	stopContainer(t, xenonB)
+	xenonA.Terminate()
+	xenonB.Terminate()
 }
 
 // A single WCOW xenon
@@ -634,8 +643,110 @@ func TestV2XenonWCOW(t *testing.T) {
 	}
 
 	// Start/stop the containers
-	startAndRunCommand(t, xenon, "cmd /s /c echo TestV2XenonWCOW", `c:\`, "TestV2XenonWCOW")
+	startContainer(t, xenon)
+	runCommand(t, xenon, "cmd /s /c echo TestV2XenonWCOW", `c:\`, "TestV2XenonWCOW")
 	stopContainer(t, xenon)
+	xenon.Terminate()
+}
+
+// This verifies the container storage is unmounted correctly so that a second
+// container can be started from the same storage.
+func TestV2XenonWCOWWithRemount(t *testing.T) {
+	//t.Skip("Skipping for now")
+	uvmID := "Testv2XenonWCOWWithRestart_UVM"
+	uvmScratchDir, err := ioutil.TempDir("", "uvmScratch")
+	if err != nil {
+		t.Fatalf("Failed create temporary directory: %s", err)
+	}
+	if err := CreateWindowsUVMSandbox(nanoImagePath, uvmScratchDir, uvmID); err != nil {
+		t.Fatalf("Failed create Windows UVM Sandbox: %s", err)
+	}
+	defer os.RemoveAll(uvmScratchDir)
+
+	uvm, err := CreateContainerEx(&CreateOptions{
+		id:            uvmID,
+		owner:         "unit-test",
+		schemaVersion: *SchemaV20(),
+		logger:        logrus.WithField("module", "hcsshim unit test"),
+		spec: &specs.Spec{
+			Windows: &specs.Windows{
+				LayerFolders: []string{uvmScratchDir},
+				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(nanoImagePath, `UtilityVM\Files`)},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed create UVM: %s", err)
+	}
+	defer uvm.Terminate()
+	if err := uvm.Start(); err != nil {
+		t.Fatalf("Failed start utility VM: %s", err)
+	}
+
+	// Mount the containers storage in the utility VM
+	containerScratchDir := createWCOWTempDirWithSandbox(t)
+	layerFolders := []string{nanoImagePath, containerScratchDir}
+	cls, err := Mount(layerFolders, uvm, SchemaV20())
+	if err != nil {
+		t.Fatalf("failed to mount container storage: %s", err)
+	}
+	combinedLayers := cls.(CombinedLayersV2)
+	mountedLayers := &ContainersResourcesStorageV2{
+		Layers: combinedLayers.Layers,
+		Path:   combinedLayers.ContainerRootPath,
+	}
+	defer func() {
+		if err := Unmount(layerFolders, uvm, SchemaV20()); err != nil {
+			t.Fatalf("failed to unmount container storage: %s", err)
+		}
+	}()
+
+	// Create the first container
+	defer os.RemoveAll(containerScratchDir)
+	xenon, err := CreateContainerEx(&CreateOptions{
+		id:            "container",
+		owner:         "unit-test",
+		hostingSystem: uvm,
+		schemaVersion: *SchemaV20(),
+		logger:        logrus.WithField("module", "hcsshim unit test"),
+		spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
+		mountedLayers: mountedLayers,
+	})
+	if err != nil {
+		t.Fatalf("CreateContainerEx failed: %s", err)
+	}
+
+	// Start/stop the first container
+	startContainer(t, xenon)
+	runCommand(t, xenon, "cmd /s /c echo TestV2XenonWCOWFirstStart", `c:\`, "TestV2XenonWCOWFirstStart")
+	stopContainer(t, xenon)
+	xenon.Terminate()
+
+	// Now unmount and remount to exactly the same places
+	if err := Unmount(layerFolders, uvm, SchemaV20()); err != nil {
+		t.Fatalf("failed to unmount container storage: %s", err)
+	}
+	if _, err = Mount(layerFolders, uvm, SchemaV20()); err != nil {
+		t.Fatalf("failed to mount container storage: %s", err)
+	}
+
+	// Create an identical second container and verify it works too.
+	xenon2, err := CreateContainerEx(&CreateOptions{
+		id:            "container",
+		owner:         "unit-test",
+		hostingSystem: uvm,
+		schemaVersion: *SchemaV20(),
+		logger:        logrus.WithField("module", "hcsshim unit test"),
+		spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
+		mountedLayers: mountedLayers,
+	})
+	if err != nil {
+		t.Fatalf("CreateContainerEx failed: %s", err)
+	}
+	startContainer(t, xenon2)
+	runCommand(t, xenon2, "cmd /s /c echo TestV2XenonWCOWAfterRemount", `c:\`, "TestV2XenonWCOWAfterRemount")
+	stopContainer(t, xenon2)
+	xenon2.Terminate()
 }
 
 // TestCreateContainerExv2XenonWCOWMultiLayer creates a V2 Xenon having multiple image layers
@@ -713,7 +824,8 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 	}
 
 	// Start/stop the container
-	startAndRunCommand(t, xenon, "echo Container", `c:\`, "Container")
+	startContainer(t, xenon)
+	runCommand(t, xenon, "echo Container", `c:\`, "Container")
 	stopContainer(t, xenon)
-
+	xenon.Terminate()
 }
