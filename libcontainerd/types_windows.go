@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/Microsoft/hcsshim"
-	opengcs "github.com/Microsoft/opengcs/client"
 )
 
 // Summary contains a ProcessList item from HCS to support `top`
@@ -26,10 +25,10 @@ func interfaceToStats(read time.Time, v interface{}) *Stats {
 // Resources defines updatable container resource values.
 type Resources struct{}
 
-// LCOWOption is a CreateOption required for LCOW configuration
-type LCOWOption struct {
-	Config *opengcs.Config
-}
+//// LCOWOption is a CreateOption required for LCOW configuration
+//type LCOWOption struct {
+//	Config *opengcs.Config
+//}
 
 // Checkpoint holds the details of a checkpoint (not supported in windows)
 type Checkpoint struct {

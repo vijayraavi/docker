@@ -6,19 +6,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/Microsoft/hcsshim"
-	opengcs "github.com/Microsoft/opengcs/client"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
-	"github.com/docker/docker/pkg/sysinfo"
 	"github.com/docker/docker/pkg/system"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
@@ -74,57 +69,6 @@ func (c *client) Version(ctx context.Context) (containerd.Version, error) {
 	return containerd.Version{}, errors.New("not implemented on Windows")
 }
 
-// Create is the entrypoint to create a container from a spec.
-// Table below shows the fields required for HCS JSON calling parameters,
-// where if not populated, is omitted.
-// +-----------------+--------------------------------------------+---------------------------------------------------+
-// |                 | Isolation=Process                          | Isolation=Hyper-V                                 |
-// +-----------------+--------------------------------------------+---------------------------------------------------+
-// | VolumePath      | \\?\\Volume{GUIDa}                         |                                                   |
-// | LayerFolderPath | %root%\windowsfilter\containerID           |                                                   |
-// | Layers[]        | ID=GUIDb;Path=%root%\windowsfilter\layerID | ID=GUIDb;Path=%root%\windowsfilter\layerID        |
-// | HvRuntime       |                                            | ImagePath=%root%\BaseLayerID\UtilityVM            |
-// +-----------------+--------------------------------------------+---------------------------------------------------+
-//
-// Isolation=Process example:
-//
-// {
-//	"SystemType": "Container",
-//	"Name": "5e0055c814a6005b8e57ac59f9a522066e0af12b48b3c26a9416e23907698776",
-//	"Owner": "docker",
-//	"VolumePath": "\\\\\\\\?\\\\Volume{66d1ef4c-7a00-11e6-8948-00155ddbef9d}",
-//	"IgnoreFlushesDuringBoot": true,
-//	"LayerFolderPath": "C:\\\\control\\\\windowsfilter\\\\5e0055c814a6005b8e57ac59f9a522066e0af12b48b3c26a9416e23907698776",
-//	"Layers": [{
-//		"ID": "18955d65-d45a-557b-bf1c-49d6dfefc526",
-//		"Path": "C:\\\\control\\\\windowsfilter\\\\65bf96e5760a09edf1790cb229e2dfb2dbd0fcdc0bf7451bae099106bfbfea0c"
-//	}],
-//	"HostName": "5e0055c814a6",
-//	"MappedDirectories": [],
-//	"HvPartition": false,
-//	"EndpointList": ["eef2649d-bb17-4d53-9937-295a8efe6f2c"],
-//}
-//
-// Isolation=Hyper-V example:
-//
-//{
-//	"SystemType": "Container",
-//	"Name": "475c2c58933b72687a88a441e7e0ca4bd72d76413c5f9d5031fee83b98f6045d",
-//	"Owner": "docker",
-//	"IgnoreFlushesDuringBoot": true,
-//	"Layers": [{
-//		"ID": "18955d65-d45a-557b-bf1c-49d6dfefc526",
-//		"Path": "C:\\\\control\\\\windowsfilter\\\\65bf96e5760a09edf1790cb229e2dfb2dbd0fcdc0bf7451bae099106bfbfea0c"
-//	}],
-//	"HostName": "475c2c58933b",
-//	"MappedDirectories": [],
-//	"HvPartition": true,
-//	"EndpointList": ["e1bb1e61-d56f-405e-b75d-fd520cefa0cb"],
-//	"DNSSearchList": "a.com,b.com,c.com",
-//	"HvRuntime": {
-//		"ImagePath": "C:\\\\control\\\\windowsfilter\\\\65bf96e5760a09edf1790cb229e2dfb2dbd0fcdc0bf7451bae099106bfbfea0c\\\\UtilityVM"
-//	},
-//}
 func (c *client) Create(_ context.Context, id string, spec *specs.Spec, runtimeOptions interface{}) error {
 	if ctr := c.getContainer(id); ctr != nil {
 		return errors.WithStack(newConflictError("id already in use"))
@@ -146,274 +90,19 @@ func (c *client) Create(_ context.Context, id string, spec *specs.Spec, runtimeO
 func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions interface{}) error {
 	//logger := c.logger.WithField("container", id)
 
-	schema := 1
+	schemaVersion := hcsshim.SchemaV10()
 	// Will be RS5 only. TODO @jhowardmsft
-	if os.Getenv("ENABLE_HCS_V2_SCHEMA") != "" && system.GetOSVersion().Build >= 17127 {
-		schema = 2
+	if os.Getenv("ENABLE_HCS_V2_SCHEMA") != "" && system.GetOSVersion().Build >= 17656 {
+		//		schemaVersion = hcsshim.SchemaV20()
 	}
 
-	configuration := &hcsshim.ContainerConfig{}
-	computeSystemV2 := &hcsshim.ComputeSystemV2{}
-
-	if schema == 1 {
-		configuration = &hcsshim.ContainerConfig{
-			SystemType: "Container",
-			Name:       id,
-			Owner:      defaultOwner,
-			IgnoreFlushesDuringBoot: spec.Windows.IgnoreFlushesDuringBoot,
-			HostName:                spec.Hostname,
-			HvPartition:             false,
-		}
-	} else {
-		computeSystemV2 = &hcsshim.ComputeSystemV2{
-			Container: &hcsshim.ContainerConfigV2{},
-			Owner:     defaultOwner,
-			SchemaVersion: &hcsshim.SchemaVersionV2{
-				Major: 2,
-				Minor: 0,
-			},
-		}
-	}
-
-	if spec.Windows.Resources != nil {
-		if spec.Windows.Resources.CPU != nil {
-			if schema == 2 &&
-				(spec.Windows.Resources.CPU.Count != nil ||
-					spec.Windows.Resources.CPU.Shares != nil ||
-					spec.Windows.Resources.CPU.Maximum != nil) {
-				computeSystemV2.Container.Processor = &hcsshim.ContainersResourcesProcessorV2{}
-			}
-			if spec.Windows.Resources.CPU.Count != nil {
-				// This check is being done here rather than in adaptContainerSettings
-				// because we don't want to update the HostConfig in case this container
-				// is moved to a host with more CPUs than this one.
-				cpuCount := *spec.Windows.Resources.CPU.Count
-				hostCPUCount := uint64(sysinfo.NumCPU())
-				if cpuCount > hostCPUCount {
-					c.logger.Warnf("Changing requested CPUCount of %d to current number of processors, %d", cpuCount, hostCPUCount)
-					cpuCount = hostCPUCount
-				}
-				if schema == 1 {
-					configuration.ProcessorCount = uint32(cpuCount)
-				} else {
-					computeSystemV2.Container.Processor.Count = uint32(cpuCount)
-				}
-			}
-			if spec.Windows.Resources.CPU.Shares != nil {
-				if schema == 1 {
-					configuration.ProcessorWeight = uint64(*spec.Windows.Resources.CPU.Shares)
-				} else {
-					computeSystemV2.Container.Processor.Weight = uint64(*spec.Windows.Resources.CPU.Shares)
-				}
-			}
-			if spec.Windows.Resources.CPU.Maximum != nil {
-				if schema == 1 {
-					configuration.ProcessorMaximum = int64(*spec.Windows.Resources.CPU.Maximum)
-				} else {
-					computeSystemV2.Container.Processor.Maximum = uint64(*spec.Windows.Resources.CPU.Maximum)
-				}
-			}
-		}
-		if spec.Windows.Resources.Memory != nil {
-			if spec.Windows.Resources.Memory.Limit != nil {
-				if schema == 1 {
-					configuration.MemoryMaximumInMB = int64(*spec.Windows.Resources.Memory.Limit) / 1024 / 1024
-				} else {
-					computeSystemV2.Container.Memory = &hcsshim.ContainersResourcesMemoryV2{
-						Maximum: uint64(*spec.Windows.Resources.Memory.Limit) / 1024 / 1024}
-				}
-			}
-		}
-		if spec.Windows.Resources.Storage != nil {
-			if schema == 2 {
-				computeSystemV2.Container.Storage = &hcsshim.ContainersResourcesStorageV2{
-					StorageQoS: &hcsshim.ContainersResourcesStorageQoSV2{},
-				}
-			}
-			if spec.Windows.Resources.Storage.Bps != nil {
-				if schema == 1 {
-					configuration.StorageBandwidthMaximum = *spec.Windows.Resources.Storage.Bps
-				} else {
-					computeSystemV2.Container.Storage.StorageQoS.BandwidthMaximum = *spec.Windows.Resources.Storage.Bps
-				}
-
-			}
-			if spec.Windows.Resources.Storage.Iops != nil {
-				if schema == 1 {
-					configuration.StorageIOPSMaximum = *spec.Windows.Resources.Storage.Iops
-				} else {
-					computeSystemV2.Container.Storage.StorageQoS.IOPSMaximum = *spec.Windows.Resources.Storage.Iops
-				}
-			}
-		}
-	}
-
-	if spec.Windows.HyperV != nil {
-		if schema == 1 {
-			configuration.HvPartition = true
-		} else {
-			return fmt.Errorf("Hyper-V containers not implemented yet in v2 schema")
-		}
-	}
-
-	if spec.Windows.Network != nil {
-		if schema == 1 {
-			configuration.EndpointList = spec.Windows.Network.EndpointList
-			configuration.AllowUnqualifiedDNSQuery = spec.Windows.Network.AllowUnqualifiedDNSQuery
-			if spec.Windows.Network.DNSSearchList != nil {
-				configuration.DNSSearchList = strings.Join(spec.Windows.Network.DNSSearchList, ",")
-			}
-			configuration.NetworkSharedContainerName = spec.Windows.Network.NetworkSharedContainerName
-		} else {
-			computeSystemV2.Container.Networking = &hcsshim.ContainersResourcesNetworkingV2{
-				AllowUnqualifiedDnsQuery:   spec.Windows.Network.AllowUnqualifiedDNSQuery,
-				NetworkSharedContainerName: spec.Windows.Network.NetworkSharedContainerName,
-				NetworkAdapters:            spec.Windows.Network.EndpointList,
-			}
-			if len(spec.Windows.Network.DNSSearchList) > 0 {
-				computeSystemV2.Container.Networking.DNSSearchList = strings.Join(spec.Windows.Network.DNSSearchList, ",")
-			}
-		}
-	}
-
-	if cs, ok := spec.Windows.CredentialSpec.(string); ok {
-		if schema == 1 {
-			configuration.Credentials = cs
-		} else {
-			return fmt.Errorf("credential spec not implemented yet in v2 schema")
-		}
-	}
-
-	// We must have least two layers in the spec, the bottom one being a
-	// base image, the top one being the RW layer.
-	if spec.Windows.LayerFolders == nil || len(spec.Windows.LayerFolders) < 2 {
-		return fmt.Errorf("OCI spec is invalid - at least two LayerFolders must be supplied to the runtime")
-	}
-
-	if schema == 1 {
-		// Strip off the top-most RW layer as that's passed in separately to HCS
-		configuration.LayerFolderPath = spec.Windows.LayerFolders[len(spec.Windows.LayerFolders)-1]
-	} else {
-		if computeSystemV2.Container.Storage == nil {
-			computeSystemV2.Container.Storage = &hcsshim.ContainersResourcesStorageV2{}
-		}
-	}
-
-	// TODO @jhowardmsft - schema V2. To implement.
-	if configuration.HvPartition {
-		// We don't currently support setting the utility VM image explicitly.
-		// TODO @swernli/jhowardmsft circa RS5, this may be re-locatable.
-		if spec.Windows.HyperV.UtilityVMPath != "" {
-			return errors.New("runtime does not support an explicit utility VM path for Hyper-V containers")
-		}
-
-		// Find the upper-most utility VM image.
-		var uvmImagePath string
-		for _, path := range spec.Windows.LayerFolders[:len(spec.Windows.LayerFolders)-1] {
-			fullPath := filepath.Join(path, "UtilityVM")
-			_, err := os.Stat(fullPath)
-			if err == nil {
-				uvmImagePath = fullPath
-				break
-			}
-			if !os.IsNotExist(err) {
-				return err
-			}
-		}
-		if uvmImagePath == "" {
-			return errors.New("utility VM image could not be found")
-		}
-		configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: uvmImagePath}
-
-		if spec.Root.Path != "" {
-			return errors.New("OCI spec is invalid - Root.Path must be omitted for a Hyper-V container")
-		}
-	} else {
-		const volumeGUIDRegex = `^\\\\\?\\(Volume)\{{0,1}[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}(\}){0,1}\}\\$`
-		if _, err := regexp.MatchString(volumeGUIDRegex, spec.Root.Path); err != nil {
-			return fmt.Errorf(`OCI spec is invalid - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, spec.Root.Path)
-		}
-		// HCS API requires the trailing backslash to be removed
-		if schema == 1 {
-			configuration.VolumePath = spec.Root.Path[:len(spec.Root.Path)-1]
-		} else {
-			computeSystemV2.Container.Storage.Path = spec.Root.Path[:len(spec.Root.Path)-1]
-		}
-	}
-
-	if spec.Root.Readonly {
-		return errors.New(`OCI spec is invalid - Root.Readonly must not be set on Windows`)
-	}
-
-	for _, layerPath := range spec.Windows.LayerFolders[:len(spec.Windows.LayerFolders)-1] {
-		_, filename := filepath.Split(layerPath)
-		g, err := hcsshim.NameToGuid(filename)
-		if err != nil {
-			return err
-		}
-
-		if schema == 1 {
-			configuration.Layers = append(configuration.Layers, hcsshim.Layer{
-				ID:   g.ToString(),
-				Path: layerPath,
-			})
-		} else {
-			computeSystemV2.Container.Storage.Layers = append(computeSystemV2.Container.Storage.Layers, hcsshim.ContainersResourcesLayerV2{
-				Id:   g.ToString(),
-				Path: layerPath,
-			})
-		}
-	}
-
-	// JJH V2 Schema up to here
-	// Add the mounts (volumes, bind mounts etc) to the structure
-	if schema == 1 {
-		var mds []hcsshim.MappedDir
-		var mps []hcsshim.MappedPipe
-		for _, mount := range spec.Mounts {
-			const pipePrefix = `\\.\pipe\`
-			if mount.Type != "" {
-				return fmt.Errorf("OCI spec is invalid - Mount.Type '%s' must not be set", mount.Type)
-			}
-			if strings.HasPrefix(mount.Destination, pipePrefix) {
-				mp := hcsshim.MappedPipe{
-					HostPath:          mount.Source,
-					ContainerPipeName: mount.Destination[len(pipePrefix):],
-				}
-				mps = append(mps, mp)
-			} else {
-				md := hcsshim.MappedDir{
-					HostPath:      mount.Source,
-					ContainerPath: mount.Destination,
-					ReadOnly:      false,
-				}
-				for _, o := range mount.Options {
-					if strings.ToLower(o) == "ro" {
-						md.ReadOnly = true
-					}
-				}
-				mds = append(mds, md)
-			}
-		}
-		configuration.MappedDirectories = mds
-		if len(mps) > 0 && system.GetOSVersion().Build < 16299 { // RS3
-			return errors.New("named pipe mounts are not supported on this version of Windows")
-		}
-		configuration.MappedPipes = mps
-	}
-
-	var (
-		hcsContainer hcsshim.Container
-		err          error
-	)
-	if schema == 1 {
-		hcsContainer, err = hcsshim.CreateContainer(id, configuration)
-	} else {
-		hcsContainer, err = hcsshim.CreateContainerV2(id, computeSystemV2, "") // JJH Add additionalJSON
-	}
-	if err != nil {
-		return err
-	}
+	hcsContainer, err := hcsshim.CreateContainerEx(&hcsshim.CreateOptions{
+		Id:            id,
+		Owner:         "moby",
+		SchemaVersion: schemaVersion,
+		Logger:        logrus.WithField("container", id),
+		Spec:          spec,
+	})
 
 	// Construct a container object for calling start on it.
 	ctr := &container{
@@ -426,7 +115,7 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 		waitCh:       make(chan struct{}),
 	}
 
-	logger.Debug("starting container")
+	c.logger.Debug("starting container")
 	if err = hcsContainer.Start(); err != nil {
 		c.logger.WithError(err).Error("failed to start container")
 		ctr.debugGCS()
@@ -443,223 +132,223 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 	c.containers[id] = ctr
 	c.Unlock()
 
-	logger.Debug("createWindows() completed successfully")
+	c.logger.Debug("createWindows() completed successfully")
 	return nil
 
 }
 
 func (c *client) createLinux(id string, spec *specs.Spec, runtimeOptions interface{}) error {
-	logrus.Debugf("libcontainerd: createLinux(): containerId %s ", id)
-	logger := c.logger.WithField("container", id)
+	//	logrus.Debugf("libcontainerd: createLinux(): containerId %s ", id)
+	//	logger := c.logger.WithField("container", id)
 
-	if runtimeOptions == nil {
-		return fmt.Errorf("lcow option must be supplied to the runtime")
-	}
-	lcowConfig, ok := runtimeOptions.(*opengcs.Config)
-	if !ok {
-		return fmt.Errorf("lcow option must be supplied to the runtime")
-	}
+	//	if runtimeOptions == nil {
+	//		return fmt.Errorf("lcow option must be supplied to the runtime")
+	//	}
+	//	lcowConfig, ok := runtimeOptions.(*opengcs.Config)
+	//	if !ok {
+	//		return fmt.Errorf("lcow option must be supplied to the runtime")
+	//	}
 
-	configuration := &hcsshim.ContainerConfig{
-		HvPartition:   true,
-		Name:          id,
-		SystemType:    "container",
-		ContainerType: "linux",
-		Owner:         defaultOwner,
-		TerminateOnLastHandleClosed: true,
-	}
+	//	configuration := &hcsshim.ContainerConfig{
+	//		HvPartition:   true,
+	//		Name:          id,
+	//		SystemType:    "container",
+	//		ContainerType: "linux",
+	//		Owner:         defaultOwner,
+	//		TerminateOnLastHandleClosed: true,
+	//	}
 
-	if lcowConfig.ActualMode == opengcs.ModeActualVhdx {
-		configuration.HvRuntime = &hcsshim.HvRuntime{
-			ImagePath:          lcowConfig.Vhdx,
-			BootSource:         "Vhd",
-			WritableBootSource: false,
-		}
-	} else {
-		configuration.HvRuntime = &hcsshim.HvRuntime{
-			ImagePath:           lcowConfig.KirdPath,
-			LinuxKernelFile:     lcowConfig.KernelFile,
-			LinuxInitrdFile:     lcowConfig.InitrdFile,
-			LinuxBootParameters: lcowConfig.BootParameters,
-		}
-	}
+	//	if lcowConfig.ActualMode == opengcs.ModeActualVhdx {
+	//		configuration.HvRuntime = &hcsshim.HvRuntime{
+	//			ImagePath:          lcowConfig.Vhdx,
+	//			BootSource:         "Vhd",
+	//			WritableBootSource: false,
+	//		}
+	//	} else {
+	//		configuration.HvRuntime = &hcsshim.HvRuntime{
+	//			ImagePath:           lcowConfig.KirdPath,
+	//			LinuxKernelFile:     lcowConfig.KernelFile,
+	//			LinuxInitrdFile:     lcowConfig.InitrdFile,
+	//			LinuxBootParameters: lcowConfig.BootParameters,
+	//		}
+	//	}
 
-	if spec.Windows == nil {
-		return fmt.Errorf("spec.Windows must not be nil for LCOW containers")
-	}
+	//	if spec.Windows == nil {
+	//		return fmt.Errorf("spec.Windows must not be nil for LCOW containers")
+	//	}
 
-	// We must have least one layer in the spec
-	if spec.Windows.LayerFolders == nil || len(spec.Windows.LayerFolders) == 0 {
-		return fmt.Errorf("OCI spec is invalid - at least one LayerFolders must be supplied to the runtime")
-	}
+	//	// We must have least one layer in the spec
+	//	if spec.Windows.LayerFolders == nil || len(spec.Windows.LayerFolders) == 0 {
+	//		return fmt.Errorf("OCI spec is invalid - at least one LayerFolders must be supplied to the runtime")
+	//	}
 
-	// Strip off the top-most layer as that's passed in separately to HCS
-	configuration.LayerFolderPath = spec.Windows.LayerFolders[len(spec.Windows.LayerFolders)-1]
-	layerFolders := spec.Windows.LayerFolders[:len(spec.Windows.LayerFolders)-1]
+	//	// Strip off the top-most layer as that's passed in separately to HCS
+	//	configuration.LayerFolderPath = spec.Windows.LayerFolders[len(spec.Windows.LayerFolders)-1]
+	//	layerFolders := spec.Windows.LayerFolders[:len(spec.Windows.LayerFolders)-1]
 
-	for _, layerPath := range layerFolders {
-		_, filename := filepath.Split(layerPath)
-		g, err := hcsshim.NameToGuid(filename)
-		if err != nil {
-			return err
-		}
-		configuration.Layers = append(configuration.Layers, hcsshim.Layer{
-			ID:   g.ToString(),
-			Path: filepath.Join(layerPath, "layer.vhd"),
-		})
-	}
+	//	for _, layerPath := range layerFolders {
+	//		_, filename := filepath.Split(layerPath)
+	//		g, err := hcsshim.NameToGuid(filename)
+	//		if err != nil {
+	//			return err
+	//		}
+	//		configuration.Layers = append(configuration.Layers, hcsshim.Layer{
+	//			ID:   g.ToString(),
+	//			Path: filepath.Join(layerPath, "layer.vhd"),
+	//		})
+	//	}
 
-	if spec.Windows.Network != nil {
-		configuration.EndpointList = spec.Windows.Network.EndpointList
-		configuration.AllowUnqualifiedDNSQuery = spec.Windows.Network.AllowUnqualifiedDNSQuery
-		if spec.Windows.Network.DNSSearchList != nil {
-			configuration.DNSSearchList = strings.Join(spec.Windows.Network.DNSSearchList, ",")
-		}
-		configuration.NetworkSharedContainerName = spec.Windows.Network.NetworkSharedContainerName
-	}
+	//	if spec.Windows.Network != nil {
+	//		configuration.EndpointList = spec.Windows.Network.EndpointList
+	//		configuration.AllowUnqualifiedDNSQuery = spec.Windows.Network.AllowUnqualifiedDNSQuery
+	//		if spec.Windows.Network.DNSSearchList != nil {
+	//			configuration.DNSSearchList = strings.Join(spec.Windows.Network.DNSSearchList, ",")
+	//		}
+	//		configuration.NetworkSharedContainerName = spec.Windows.Network.NetworkSharedContainerName
+	//	}
 
-	// Add the mounts (volumes, bind mounts etc) to the structure. We have to do
-	// some translation for both the mapped directories passed into HCS and in
-	// the spec.
-	//
-	// For HCS, we only pass in the mounts from the spec which are type "bind".
-	// Further, the "ContainerPath" field (which is a little mis-leadingly
-	// named when it applies to the utility VM rather than the container in the
-	// utility VM) is moved to under /tmp/gcs/<ID>/binds, where this is passed
-	// by the caller through a 'uvmpath' option.
-	//
-	// We do similar translation for the mounts in the spec by stripping out
-	// the uvmpath option, and translating the Source path to the location in the
-	// utility VM calculated above.
-	//
-	// From inside the utility VM, you would see a 9p mount such as in the following
-	// where a host folder has been mapped to /target. The line with /tmp/gcs/<ID>/binds
-	// specifically:
-	//
-	//	/ # mount
-	//	rootfs on / type rootfs (rw,size=463736k,nr_inodes=115934)
-	//	proc on /proc type proc (rw,relatime)
-	//	sysfs on /sys type sysfs (rw,relatime)
-	//	udev on /dev type devtmpfs (rw,relatime,size=498100k,nr_inodes=124525,mode=755)
-	//	tmpfs on /run type tmpfs (rw,relatime)
-	//	cgroup on /sys/fs/cgroup type cgroup (rw,relatime,cpuset,cpu,cpuacct,blkio,memory,devices,freezer,net_cls,perf_event,net_prio,hugetlb,pids,rdma)
-	//	mqueue on /dev/mqueue type mqueue (rw,relatime)
-	//	devpts on /dev/pts type devpts (rw,relatime,mode=600,ptmxmode=000)
-	//	/binds/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/target on /binds/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/target type 9p (rw,sync,dirsync,relatime,trans=fd,rfdno=6,wfdno=6)
-	//	/dev/pmem0 on /tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/layer0 type ext4 (ro,relatime,block_validity,delalloc,norecovery,barrier,dax,user_xattr,acl)
-	//	/dev/sda on /tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/scratch type ext4 (rw,relatime,block_validity,delalloc,barrier,user_xattr,acl)
-	//	overlay on /tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/rootfs type overlay (rw,relatime,lowerdir=/tmp/base/:/tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/layer0,upperdir=/tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/scratch/upper,workdir=/tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/scratch/work)
-	//
-	//  /tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc # ls -l
-	//	total 16
-	//	drwx------    3 0        0               60 Sep  7 18:54 binds
-	//	-rw-r--r--    1 0        0             3345 Sep  7 18:54 config.json
-	//	drwxr-xr-x   10 0        0             4096 Sep  6 17:26 layer0
-	//	drwxr-xr-x    1 0        0             4096 Sep  7 18:54 rootfs
-	//	drwxr-xr-x    5 0        0             4096 Sep  7 18:54 scratch
-	//
-	//	/tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc # ls -l binds
-	//	total 0
-	//	drwxrwxrwt    2 0        0             4096 Sep  7 16:51 target
+	//	// Add the mounts (volumes, bind mounts etc) to the structure. We have to do
+	//	// some translation for both the mapped directories passed into HCS and in
+	//	// the spec.
+	//	//
+	//	// For HCS, we only pass in the mounts from the spec which are type "bind".
+	//	// Further, the "ContainerPath" field (which is a little mis-leadingly
+	//	// named when it applies to the utility VM rather than the container in the
+	//	// utility VM) is moved to under /tmp/gcs/<ID>/binds, where this is passed
+	//	// by the caller through a 'uvmpath' option.
+	//	//
+	//	// We do similar translation for the mounts in the spec by stripping out
+	//	// the uvmpath option, and translating the Source path to the location in the
+	//	// utility VM calculated above.
+	//	//
+	//	// From inside the utility VM, you would see a 9p mount such as in the following
+	//	// where a host folder has been mapped to /target. The line with /tmp/gcs/<ID>/binds
+	//	// specifically:
+	//	//
+	//	//	/ # mount
+	//	//	rootfs on / type rootfs (rw,size=463736k,nr_inodes=115934)
+	//	//	proc on /proc type proc (rw,relatime)
+	//	//	sysfs on /sys type sysfs (rw,relatime)
+	//	//	udev on /dev type devtmpfs (rw,relatime,size=498100k,nr_inodes=124525,mode=755)
+	//	//	tmpfs on /run type tmpfs (rw,relatime)
+	//	//	cgroup on /sys/fs/cgroup type cgroup (rw,relatime,cpuset,cpu,cpuacct,blkio,memory,devices,freezer,net_cls,perf_event,net_prio,hugetlb,pids,rdma)
+	//	//	mqueue on /dev/mqueue type mqueue (rw,relatime)
+	//	//	devpts on /dev/pts type devpts (rw,relatime,mode=600,ptmxmode=000)
+	//	//	/binds/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/target on /binds/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/target type 9p (rw,sync,dirsync,relatime,trans=fd,rfdno=6,wfdno=6)
+	//	//	/dev/pmem0 on /tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/layer0 type ext4 (ro,relatime,block_validity,delalloc,norecovery,barrier,dax,user_xattr,acl)
+	//	//	/dev/sda on /tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/scratch type ext4 (rw,relatime,block_validity,delalloc,barrier,user_xattr,acl)
+	//	//	overlay on /tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/rootfs type overlay (rw,relatime,lowerdir=/tmp/base/:/tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/layer0,upperdir=/tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/scratch/upper,workdir=/tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc/scratch/work)
+	//	//
+	//	//  /tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc # ls -l
+	//	//	total 16
+	//	//	drwx------    3 0        0               60 Sep  7 18:54 binds
+	//	//	-rw-r--r--    1 0        0             3345 Sep  7 18:54 config.json
+	//	//	drwxr-xr-x   10 0        0             4096 Sep  6 17:26 layer0
+	//	//	drwxr-xr-x    1 0        0             4096 Sep  7 18:54 rootfs
+	//	//	drwxr-xr-x    5 0        0             4096 Sep  7 18:54 scratch
+	//	//
+	//	//	/tmp/gcs/b3ea9126d67702173647ece2744f7c11181c0150e9890fc9a431849838033edc # ls -l binds
+	//	//	total 0
+	//	//	drwxrwxrwt    2 0        0             4096 Sep  7 16:51 target
 
-	mds := []hcsshim.MappedDir{}
-	specMounts := []specs.Mount{}
-	for _, mount := range spec.Mounts {
-		specMount := mount
-		if mount.Type == "bind" {
-			// Strip out the uvmpath from the options
-			updatedOptions := []string{}
-			uvmPath := ""
-			readonly := false
-			for _, opt := range mount.Options {
-				dropOption := false
-				elements := strings.SplitN(opt, "=", 2)
-				switch elements[0] {
-				case "uvmpath":
-					uvmPath = elements[1]
-					dropOption = true
-				case "rw":
-				case "ro":
-					readonly = true
-				case "rbind":
-				default:
-					return fmt.Errorf("unsupported option %q", opt)
-				}
-				if !dropOption {
-					updatedOptions = append(updatedOptions, opt)
-				}
-			}
-			mount.Options = updatedOptions
-			if uvmPath == "" {
-				return fmt.Errorf("no uvmpath for bind mount %+v", mount)
-			}
-			md := hcsshim.MappedDir{
-				HostPath:          mount.Source,
-				ContainerPath:     path.Join(uvmPath, mount.Destination),
-				CreateInUtilityVM: true,
-				ReadOnly:          readonly,
-			}
-			mds = append(mds, md)
-			specMount.Source = path.Join(uvmPath, mount.Destination)
-		}
-		specMounts = append(specMounts, specMount)
-	}
-	configuration.MappedDirectories = mds
+	//	mds := []hcsshim.MappedDir{}
+	//	specMounts := []specs.Mount{}
+	//	for _, mount := range spec.Mounts {
+	//		specMount := mount
+	//		if mount.Type == "bind" {
+	//			// Strip out the uvmpath from the options
+	//			updatedOptions := []string{}
+	//			uvmPath := ""
+	//			readonly := false
+	//			for _, opt := range mount.Options {
+	//				dropOption := false
+	//				elements := strings.SplitN(opt, "=", 2)
+	//				switch elements[0] {
+	//				case "uvmpath":
+	//					uvmPath = elements[1]
+	//					dropOption = true
+	//				case "rw":
+	//				case "ro":
+	//					readonly = true
+	//				case "rbind":
+	//				default:
+	//					return fmt.Errorf("unsupported option %q", opt)
+	//				}
+	//				if !dropOption {
+	//					updatedOptions = append(updatedOptions, opt)
+	//				}
+	//			}
+	//			mount.Options = updatedOptions
+	//			if uvmPath == "" {
+	//				return fmt.Errorf("no uvmpath for bind mount %+v", mount)
+	//			}
+	//			md := hcsshim.MappedDir{
+	//				HostPath:          mount.Source,
+	//				ContainerPath:     path.Join(uvmPath, mount.Destination),
+	//				CreateInUtilityVM: true,
+	//				ReadOnly:          readonly,
+	//			}
+	//			mds = append(mds, md)
+	//			specMount.Source = path.Join(uvmPath, mount.Destination)
+	//		}
+	//		specMounts = append(specMounts, specMount)
+	//	}
+	//	configuration.MappedDirectories = mds
 
-	hcsContainer, err := hcsshim.CreateContainer(id, configuration)
-	if err != nil {
-		return err
-	}
+	//	hcsContainer, err := hcsshim.CreateContainer(id, configuration)
+	//	if err != nil {
+	//		return err
+	//	}
 
-	spec.Mounts = specMounts
+	//	spec.Mounts = specMounts
 
-	// Construct a container object for calling start on it.
-	ctr := &container{
-		id:           id,
-		execs:        make(map[string]*process),
-		isWindows:    false,
-		ociSpec:      spec,
-		hcsContainer: hcsContainer,
-		status:       StatusCreated,
-		waitCh:       make(chan struct{}),
-	}
+	//	// Construct a container object for calling start on it.
+	//	ctr := &container{
+	//		id:           id,
+	//		execs:        make(map[string]*process),
+	//		isWindows:    false,
+	//		ociSpec:      spec,
+	//		hcsContainer: hcsContainer,
+	//		status:       StatusCreated,
+	//		waitCh:       make(chan struct{}),
+	//	}
 
-	// Start the container.
-	logger.Debug("starting container")
-	if err = hcsContainer.Start(); err != nil {
-		c.logger.WithError(err).Error("failed to start container")
-		ctr.debugGCS()
-		if err := c.terminateContainer(ctr); err != nil {
-			c.logger.WithError(err).Error("failed to cleanup after a failed Start")
-		} else {
-			c.logger.Debug("cleaned up after failed Start by calling Terminate")
-		}
-		return err
-	}
-	ctr.debugGCS()
+	//	// Start the container.
+	//	logger.Debug("starting container")
+	//	if err = hcsContainer.Start(); err != nil {
+	//		c.logger.WithError(err).Error("failed to start container")
+	//		ctr.debugGCS()
+	//		if err := c.terminateContainer(ctr); err != nil {
+	//			c.logger.WithError(err).Error("failed to cleanup after a failed Start")
+	//		} else {
+	//			c.logger.Debug("cleaned up after failed Start by calling Terminate")
+	//		}
+	//		return err
+	//	}
+	//	ctr.debugGCS()
 
-	c.Lock()
-	c.containers[id] = ctr
-	c.Unlock()
+	//	c.Lock()
+	//	c.containers[id] = ctr
+	//	c.Unlock()
 
-	c.eventQ.append(id, func() {
-		ei := EventInfo{
-			ContainerID: id,
-		}
-		c.logger.WithFields(logrus.Fields{
-			"container": ctr.id,
-			"event":     EventCreate,
-		}).Info("sending event")
-		err := c.backend.ProcessEvent(id, EventCreate, ei)
-		if err != nil {
-			c.logger.WithError(err).WithFields(logrus.Fields{
-				"container": id,
-				"event":     EventCreate,
-			}).Error("failed to process event")
-		}
-	})
+	//	c.eventQ.append(id, func() {
+	//		ei := EventInfo{
+	//			ContainerID: id,
+	//		}
+	//		c.logger.WithFields(logrus.Fields{
+	//			"container": ctr.id,
+	//			"event":     EventCreate,
+	//		}).Info("sending event")
+	//		err := c.backend.ProcessEvent(id, EventCreate, ei)
+	//		if err != nil {
+	//			c.logger.WithError(err).WithFields(logrus.Fields{
+	//				"container": id,
+	//				"event":     EventCreate,
+	//			}).Error("failed to process event")
+	//		}
+	//	})
 
-	logger.Debug("createLinux() completed successfully")
+	//	logger.Debug("createLinux() completed successfully")
 	return nil
 }
 

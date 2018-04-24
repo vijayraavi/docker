@@ -12,44 +12,44 @@ import (
 )
 
 func createWCOWv2(createOptions *CreateOptions) (Container, error) {
-	if createOptions.lcowOptions != nil {
+	if createOptions.LCOWOptions != nil {
 		return nil, fmt.Errorf("lcowOptions must not be supplied for a v2 schema Windows container request")
 	}
-	if createOptions.spec.Windows != nil && createOptions.spec.Windows.HyperV != nil {
+	if createOptions.Spec.Windows != nil && createOptions.Spec.Windows.HyperV != nil {
 		return createWCOWv2UVM(createOptions)
 	}
 	return createWCOWv2HostedContainer(createOptions)
 }
 
 func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
-	logrus.Debugf("HCSShim: Creating utility VM id=%s", createOptions.id)
+	logrus.Debugf("HCSShim: Creating utility VM id=%s", createOptions.Id)
 
 	iocis := "invalid OCI spec:"
-	if len(createOptions.spec.Windows.LayerFolders) != 1 {
+	if len(createOptions.Spec.Windows.LayerFolders) != 1 {
 		return nil, fmt.Errorf("%s Windows.LayerFolders must have length 1 for a hosting system pointing to a folder containing sandbox.vhdx", iocis)
 	}
-	if len(createOptions.spec.Hostname) > 0 {
+	if len(createOptions.Spec.Hostname) > 0 {
 		return nil, fmt.Errorf("%s Hostname cannot be set for a hosting system", iocis)
 	}
-	if createOptions.spec.Windows.Resources != nil && createOptions.spec.Windows.Resources.CPU != nil && createOptions.spec.Windows.Resources.CPU.Shares != nil {
+	if createOptions.Spec.Windows.Resources != nil && createOptions.Spec.Windows.Resources.CPU != nil && createOptions.Spec.Windows.Resources.CPU.Shares != nil {
 		return nil, fmt.Errorf("%s Windows.Resources.CPU.Shares must not be set for a hosting system", iocis)
 	}
-	if createOptions.spec.Windows.Resources != nil && createOptions.spec.Windows.Resources.CPU != nil && createOptions.spec.Windows.Resources.CPU.Maximum != nil {
+	if createOptions.Spec.Windows.Resources != nil && createOptions.Spec.Windows.Resources.CPU != nil && createOptions.Spec.Windows.Resources.CPU.Maximum != nil {
 		return nil, fmt.Errorf("%s Windows.Resources.CPU.Maximum must not be set for a hosting system", iocis)
 	}
-	if createOptions.spec.Root != nil {
+	if createOptions.Spec.Root != nil {
 		return nil, fmt.Errorf("%s Root must not be set for a hosting system", iocis)
 	}
-	if createOptions.spec.Windows.Resources != nil && createOptions.spec.Windows.Resources.Storage != nil {
+	if createOptions.Spec.Windows.Resources != nil && createOptions.Spec.Windows.Resources.Storage != nil {
 		return nil, fmt.Errorf("%s Windows.Resources.Storage must not be set for a hosting system", iocis)
 	}
-	if createOptions.spec.Windows.CredentialSpec != nil {
+	if createOptions.Spec.Windows.CredentialSpec != nil {
 		return nil, fmt.Errorf("%s Windows.CredentialSpec must not be set for a hosting system", iocis)
 	}
-	if createOptions.spec.Windows.Network != nil {
+	if createOptions.Spec.Windows.Network != nil {
 		return nil, fmt.Errorf("%s Windows.Network must not be set for a hosting system", iocis) // Need to revisit, but blocking everything currently not hooked up
 	}
-	if 0 != len(createOptions.spec.Mounts) {
+	if 0 != len(createOptions.Spec.Mounts) {
 		return nil, fmt.Errorf("%s Mounts must not be set for a hosting system", iocis)
 	}
 
@@ -57,24 +57,24 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 
 	attachments := make(map[string]VirtualMachinesResourcesStorageAttachmentV2)
 	attachments["0"] = VirtualMachinesResourcesStorageAttachmentV2{
-		Path: filepath.Join(createOptions.spec.Windows.LayerFolders[0], "sandbox.vhdx"),
+		Path: filepath.Join(createOptions.Spec.Windows.LayerFolders[0], "sandbox.vhdx"),
 		Type: "VirtualDisk",
 	}
 	scsi := make(map[string]VirtualMachinesResourcesStorageScsiV2)
 	scsi["0"] = VirtualMachinesResourcesStorageScsiV2{Attachments: attachments}
 	memory := int32(2048)
 	processors := int32(1)
-	if createOptions.spec.Windows.Resources != nil {
-		if createOptions.spec.Windows.Resources.Memory != nil && createOptions.spec.Windows.Resources.Memory.Limit != nil {
-			memory = int32(*createOptions.spec.Windows.Resources.Memory.Limit / 1024 / 1024) // OCI spec is in bytes. HCS takes MB
+	if createOptions.Spec.Windows.Resources != nil {
+		if createOptions.Spec.Windows.Resources.Memory != nil && createOptions.Spec.Windows.Resources.Memory.Limit != nil {
+			memory = int32(*createOptions.Spec.Windows.Resources.Memory.Limit / 1024 / 1024) // OCI spec is in bytes. HCS takes MB
 		}
-		if createOptions.spec.Windows.Resources.CPU != nil && createOptions.spec.Windows.Resources.CPU.Count != nil {
-			processors = int32(*createOptions.spec.Windows.Resources.CPU.Count)
+		if createOptions.Spec.Windows.Resources.CPU != nil && createOptions.Spec.Windows.Resources.CPU.Count != nil {
+			processors = int32(*createOptions.Spec.Windows.Resources.CPU.Count)
 		}
 	}
 	uvm := &ComputeSystemV2{
-		Owner:         createOptions.owner,
-		SchemaVersion: &createOptions.schemaVersion,
+		Owner:         createOptions.Owner,
+		SchemaVersion: createOptions.SchemaVersion,
 		VirtualMachine: &VirtualMachineV2{
 			Chipset: &VirtualMachinesResourcesChipsetV2{
 				UEFI: &VirtualMachinesResourcesUefiV2{
@@ -102,7 +102,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 				VirtualSMBShares: []VirtualMachinesResourcesStorageVSmbShareV2{VirtualMachinesResourcesStorageVSmbShareV2{
 					Flags: VsmbFlagPseudoOplocks | VsmbFlagNoDirnotify | VsmbFlagNoLocks | VsmbFlagTakeBackupPrivilege | VsmbFlagReadOnly,
 					Name:  "os",
-					Path:  createOptions.spec.Windows.HyperV.UtilityVMPath,
+					Path:  createOptions.Spec.Windows.HyperV.UtilityVMPath,
 				}},
 				GuestInterface: &VirtualMachinesResourcesGuestInterfaceV2{ConnectToBridge: true},
 			},
@@ -114,7 +114,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 		return nil, err
 	}
 	logrus.Debugf("HCSShim: UVM definition: %s", string(uvmb))
-	uvmContainer, err := createContainer(createOptions.id, string(uvmb), SchemaV20())
+	uvmContainer, err := createContainer(createOptions.Id, string(uvmb), SchemaV20())
 	if err != nil {
 		return nil, err
 	}
@@ -194,16 +194,16 @@ func removeSCSIOnFailure(c Container, controller int, lun int) {
 }
 
 func createWCOWv2HostedContainer(createOptions *CreateOptions) (Container, error) {
-	if createOptions.mountedLayers == nil {
-		return nil, fmt.Errorf("mountedLayers must be supplied")
+	if createOptions.MountedLayers == nil {
+		return nil, fmt.Errorf("MountedLayers parameter must be supplied")
 	}
 	computeSystemV2 := &ComputeSystemV2{
-		Owner:           createOptions.owner,
+		Owner:           createOptions.Owner,
 		SchemaVersion:   SchemaV20(),
-		HostingSystemId: createOptions.hostingSystem.(*container).id,
+		HostingSystemId: createOptions.HostingSystem.(*container).id,
 		HostedSystem: &HostedSystemV2{
 			SchemaVersion: SchemaV20(),
-			Container:     &ContainerV2{Storage: createOptions.mountedLayers},
+			Container:     &ContainerV2{Storage: createOptions.MountedLayers},
 		},
 		ShouldTerminateOnLastHandleClosed: true,
 	}
@@ -212,7 +212,7 @@ func createWCOWv2HostedContainer(createOptions *CreateOptions) (Container, error
 		return nil, err
 	}
 	logrus.Debugf("HCSShim: definition: %s", string(computeSystemV2b))
-	hostedContainer, err := createContainer(createOptions.id, string(computeSystemV2b), SchemaV20())
+	hostedContainer, err := createContainer(createOptions.Id, string(computeSystemV2b), SchemaV20())
 	if err != nil {
 		return nil, err
 	}
@@ -222,15 +222,15 @@ func createWCOWv2HostedContainer(createOptions *CreateOptions) (Container, error
 // specToHCSContainerDocument creates a document suitable for calling HCS to create
 // a container, both hosted and process isolated. It can create both v1 and v2
 // schema.
-func specToHCSContainerDocument(createOptions *CreateOptions) (interface{}, error) {
+func specToHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 	logrus.Debugf("specToHCSContainerDocument")
 
 	v1 := &ContainerConfig{
 		SystemType: "Container",
-		Name:       createOptions.id,
-		Owner:      createOptions.owner,
-		IgnoreFlushesDuringBoot: createOptions.spec.Windows.IgnoreFlushesDuringBoot,
-		HostName:                createOptions.spec.Hostname,
+		Name:       createOptions.Id,
+		Owner:      createOptions.Owner,
+		IgnoreFlushesDuringBoot: createOptions.Spec.Windows.IgnoreFlushesDuringBoot,
+		HostName:                createOptions.Spec.Hostname,
 		HvPartition:             false,
 	}
 
@@ -238,131 +238,131 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (interface{}, erro
 	// IgnoreFlushesDuringBoot is a property of the SCSI attachment for the sandbox. Set when it's hot-added to the utility VM
 	// ID is a property on the create call in V2 rather than part of the schema.
 	v2 := &ComputeSystemV2{
-		Owner:                             createOptions.owner,
+		Owner:                             createOptions.Owner,
 		SchemaVersion:                     SchemaV20(),
 		ShouldTerminateOnLastHandleClosed: true,
 		Container:                         &ContainerV2{Storage: &ContainersResourcesStorageV2{}},
 	}
-	if createOptions.spec.Hostname != "" {
-		v2.Container.GuestOS = &GuestOsV2{HostName: createOptions.spec.Hostname}
+	if createOptions.Spec.Hostname != "" {
+		v2.Container.GuestOS = &GuestOsV2{HostName: createOptions.Spec.Hostname}
 	}
 
-	if createOptions.spec.Windows.Resources != nil {
-		if createOptions.spec.Windows.Resources.CPU != nil {
-			if createOptions.spec.Windows.Resources.CPU.Count != nil ||
-				createOptions.spec.Windows.Resources.CPU.Shares != nil ||
-				createOptions.spec.Windows.Resources.CPU.Maximum != nil {
+	if createOptions.Spec.Windows.Resources != nil {
+		if createOptions.Spec.Windows.Resources.CPU != nil {
+			if createOptions.Spec.Windows.Resources.CPU.Count != nil ||
+				createOptions.Spec.Windows.Resources.CPU.Shares != nil ||
+				createOptions.Spec.Windows.Resources.CPU.Maximum != nil {
 				v2.Container.Processor = &ContainersResourcesProcessorV2{}
 			}
-			if createOptions.spec.Windows.Resources.CPU.Count != nil {
-				cpuCount := *createOptions.spec.Windows.Resources.CPU.Count
+			if createOptions.Spec.Windows.Resources.CPU.Count != nil {
+				cpuCount := *createOptions.Spec.Windows.Resources.CPU.Count
 				hostCPUCount := uint64(numCPU())
 				if cpuCount > hostCPUCount {
-					createOptions.logger.Warnf("Changing requested CPUCount of %d to current number of processors, %d", cpuCount, hostCPUCount)
+					createOptions.Logger.Warnf("Changing requested CPUCount of %d to current number of processors, %d", cpuCount, hostCPUCount)
 					cpuCount = hostCPUCount
 				}
 				v1.ProcessorCount = uint32(cpuCount)
 				v2.Container.Processor.Count = v1.ProcessorCount
 			}
-			if createOptions.spec.Windows.Resources.CPU.Shares != nil {
-				v1.ProcessorWeight = uint64(*createOptions.spec.Windows.Resources.CPU.Shares)
+			if createOptions.Spec.Windows.Resources.CPU.Shares != nil {
+				v1.ProcessorWeight = uint64(*createOptions.Spec.Windows.Resources.CPU.Shares)
 				v2.Container.Processor.Weight = v1.ProcessorWeight
 			}
-			if createOptions.spec.Windows.Resources.CPU.Maximum != nil {
-				v1.ProcessorMaximum = int64(*createOptions.spec.Windows.Resources.CPU.Maximum)
+			if createOptions.Spec.Windows.Resources.CPU.Maximum != nil {
+				v1.ProcessorMaximum = int64(*createOptions.Spec.Windows.Resources.CPU.Maximum)
 				v2.Container.Processor.Maximum = uint64(v1.ProcessorMaximum)
 			}
 		}
-		if createOptions.spec.Windows.Resources.Memory != nil {
-			if createOptions.spec.Windows.Resources.Memory.Limit != nil {
-				v1.MemoryMaximumInMB = int64(*createOptions.spec.Windows.Resources.Memory.Limit) / 1024 / 1024
+		if createOptions.Spec.Windows.Resources.Memory != nil {
+			if createOptions.Spec.Windows.Resources.Memory.Limit != nil {
+				v1.MemoryMaximumInMB = int64(*createOptions.Spec.Windows.Resources.Memory.Limit) / 1024 / 1024
 				v2.Container.Memory = &ContainersResourcesMemoryV2{Maximum: uint64(v1.MemoryMaximumInMB)}
 
 			}
 		}
-		if createOptions.spec.Windows.Resources.Storage != nil {
-			if createOptions.spec.Windows.Resources.Storage.Bps != nil || createOptions.spec.Windows.Resources.Storage.Iops != nil {
+		if createOptions.Spec.Windows.Resources.Storage != nil {
+			if createOptions.Spec.Windows.Resources.Storage.Bps != nil || createOptions.Spec.Windows.Resources.Storage.Iops != nil {
 				v2.Container.Storage.StorageQoS = &ContainersResourcesStorageQoSV2{}
 			}
-			if createOptions.spec.Windows.Resources.Storage.Bps != nil {
-				v1.StorageBandwidthMaximum = *createOptions.spec.Windows.Resources.Storage.Bps
-				v2.Container.Storage.StorageQoS.BandwidthMaximum = *createOptions.spec.Windows.Resources.Storage.Bps
+			if createOptions.Spec.Windows.Resources.Storage.Bps != nil {
+				v1.StorageBandwidthMaximum = *createOptions.Spec.Windows.Resources.Storage.Bps
+				v2.Container.Storage.StorageQoS.BandwidthMaximum = *createOptions.Spec.Windows.Resources.Storage.Bps
 			}
-			if createOptions.spec.Windows.Resources.Storage.Iops != nil {
-				v1.StorageIOPSMaximum = *createOptions.spec.Windows.Resources.Storage.Iops
-				v2.Container.Storage.StorageQoS.IOPSMaximum = *createOptions.spec.Windows.Resources.Storage.Iops
+			if createOptions.Spec.Windows.Resources.Storage.Iops != nil {
+				v1.StorageIOPSMaximum = *createOptions.Spec.Windows.Resources.Storage.Iops
+				v2.Container.Storage.StorageQoS.IOPSMaximum = *createOptions.Spec.Windows.Resources.Storage.Iops
 			}
 		}
 	}
 
 	// TODO V2 networking. Only partial at the moment. v2.Container.Networking.Namespace specifically
-	if createOptions.spec.Windows.Network != nil {
+	if createOptions.Spec.Windows.Network != nil {
 		v2.Container.Networking = &ContainersResourcesNetworkingV2{}
 
-		v1.EndpointList = createOptions.spec.Windows.Network.EndpointList
+		v1.EndpointList = createOptions.Spec.Windows.Network.EndpointList
 		v2.Container.Networking.NetworkAdapters = v1.EndpointList
 
-		v1.AllowUnqualifiedDNSQuery = createOptions.spec.Windows.Network.AllowUnqualifiedDNSQuery
+		v1.AllowUnqualifiedDNSQuery = createOptions.Spec.Windows.Network.AllowUnqualifiedDNSQuery
 		v2.Container.Networking.AllowUnqualifiedDnsQuery = v1.AllowUnqualifiedDNSQuery
 
-		if createOptions.spec.Windows.Network.DNSSearchList != nil {
-			v1.DNSSearchList = strings.Join(createOptions.spec.Windows.Network.DNSSearchList, ",")
+		if createOptions.Spec.Windows.Network.DNSSearchList != nil {
+			v1.DNSSearchList = strings.Join(createOptions.Spec.Windows.Network.DNSSearchList, ",")
 			v2.Container.Networking.DNSSearchList = v1.DNSSearchList
 		}
 
-		v1.NetworkSharedContainerName = createOptions.spec.Windows.Network.NetworkSharedContainerName
+		v1.NetworkSharedContainerName = createOptions.Spec.Windows.Network.NetworkSharedContainerName
 		v2.Container.Networking.NetworkSharedContainerName = v1.NetworkSharedContainerName
 	}
 
 	//	// TODO V2 Credentials not in the schema yet.
-	if cs, ok := createOptions.spec.Windows.CredentialSpec.(string); ok {
+	if cs, ok := createOptions.Spec.Windows.CredentialSpec.(string); ok {
 		v1.Credentials = cs
 	}
 
 	// We must have least two layers in the spec, the bottom one being a
 	// base image, the top one being the RW layer.
-	if createOptions.spec.Windows.LayerFolders == nil || len(createOptions.spec.Windows.LayerFolders) < 2 {
+	if createOptions.Spec.Windows.LayerFolders == nil || len(createOptions.Spec.Windows.LayerFolders) < 2 {
 		return "", fmt.Errorf("invalid spec - not enough layer folders supplied")
 	}
 
-	//	// Strip off the top-most RW layer as that's passed in separately to HCS
-	//	configuration.LayerFolderPath = createOptions.spec.Windows.LayerFolders[len(createOptions.spec.Windows.LayerFolders)-1]
+	// Strip off the top-most RW/Sandbox layer as that's passed in separately to HCS for v1
+	v1.LayerFolderPath = createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
 
-	if createOptions.spec.Windows.HyperV != nil {
+	if createOptions.Spec.Windows.HyperV != nil {
 		v1.HvPartition = true
-		if createOptions.spec.Windows.HyperV.UtilityVMPath == "" {
-			return nil, fmt.Errorf("no utility VM path for Hyper-V containers was supplied to the runtime")
+		if createOptions.Spec.Windows.HyperV.UtilityVMPath == "" {
+			return "", fmt.Errorf("no utility VM path for Hyper-V containers was supplied to the runtime")
 		}
-		v1.HvRuntime = &HvRuntime{ImagePath: createOptions.spec.Windows.HyperV.UtilityVMPath}
+		v1.HvRuntime = &HvRuntime{ImagePath: createOptions.Spec.Windows.HyperV.UtilityVMPath}
 
-		if createOptions.spec.Root != nil && createOptions.spec.Root.Path != "" {
-			return nil, fmt.Errorf("invalid container spec - Root.Path must be omitted for a Hyper-V container")
+		if createOptions.Spec.Root != nil && createOptions.Spec.Root.Path != "" {
+			return "", fmt.Errorf("invalid container spec - Root.Path must be omitted for a Hyper-V container")
 		}
 	} else {
 
-		if createOptions.spec.Root == nil {
-			return nil, fmt.Errorf("invalid container spec - Root must be set")
+		if createOptions.Spec.Root == nil {
+			return "", fmt.Errorf("invalid container spec - Root must be set")
 		}
 		const volumeGUIDRegex = `^\\\\\?\\(Volume)\{{0,1}[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}(\}){0,1}\}\\$`
-		if _, err := regexp.MatchString(volumeGUIDRegex, createOptions.spec.Root.Path); err != nil {
-			return nil, fmt.Errorf(`invalid container spec - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, createOptions.spec.Root.Path)
+		if _, err := regexp.MatchString(volumeGUIDRegex, createOptions.Spec.Root.Path); err != nil {
+			return "", fmt.Errorf(`invalid container spec - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, createOptions.Spec.Root.Path)
 		}
 		// HCS API requires the trailing backslash to be removed
-		if createOptions.spec.Root.Path[:len(createOptions.spec.Root.Path)] == `\` {
-			createOptions.spec.Root.Path = createOptions.spec.Root.Path[:len(createOptions.spec.Root.Path)-1]
+		if createOptions.Spec.Root.Path[:len(createOptions.Spec.Root.Path)] == `\` {
+			createOptions.Spec.Root.Path = createOptions.Spec.Root.Path[:len(createOptions.Spec.Root.Path)-1]
 		}
-		v1.VolumePath = createOptions.spec.Root.Path
+		v1.VolumePath = createOptions.Spec.Root.Path
 	}
 
-	if createOptions.spec.Root != nil && createOptions.spec.Root.Readonly {
-		return nil, fmt.Errorf(`invalid container spec - readonly is not supported`)
+	if createOptions.Spec.Root != nil && createOptions.Spec.Root.Readonly {
+		return "", fmt.Errorf(`invalid container spec - readonly is not supported`)
 	}
 
-	for _, layerPath := range createOptions.spec.Windows.LayerFolders[:len(createOptions.spec.Windows.LayerFolders)-1] {
+	for _, layerPath := range createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1] {
 		_, filename := filepath.Split(layerPath)
 		g, err := NameToGuid(filename)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		v1.Layers = append(v1.Layers, Layer{ID: g.ToString(), Path: layerPath})
 	}
@@ -374,7 +374,7 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (interface{}, erro
 		mdsv2 []ContainersResourcesMappedDirectoryV2
 		mpsv2 []ContainersResourcesMappedPipeV2
 	)
-	for _, mount := range createOptions.spec.Mounts {
+	for _, mount := range createOptions.Spec.Mounts {
 		const pipePrefix = `\\.\pipe\`
 		if mount.Type != "" {
 			return "", fmt.Errorf("invalid container spec - Mount.Type '%s' must not be set", mount.Type)
@@ -404,6 +404,15 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (interface{}, erro
 	v2.Container.MappedPipes = mpsv2
 
 	logrus.Debugf("wcowv1 configuration: %+v", v1)
+	if createOptions.SchemaVersion.isV10() {
+		v1b, err := json.Marshal(v1)
+		if err != nil {
+			return "", err
+		}
+		return string(v1b), nil
+	} else {
+		panic("Not implemented yet")
+	}
 	return "", nil
 }
 
@@ -530,7 +539,7 @@ func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (i
 		Settings: VirtualMachinesResourcesStorageAttachmentV2{
 			Path: hostPath,
 			Type: "VirtualDisk",
-			// TODO Hmmm....  Where do we do this now????  IgnoreFlushes: createOptions.spec.Windows.IgnoreFlushesDuringBoot,
+			// TODO Hmmm....  Where do we do this now????  IgnoreFlushes: createOptions.Spec.Windows.IgnoreFlushesDuringBoot,
 		},
 		ResourceUri: fmt.Sprintf("VirtualMachine/Devices/SCSI/%d/%d", controller, lun),
 		HostedSettings: ContainersResourcesMappedDirectoryV2{

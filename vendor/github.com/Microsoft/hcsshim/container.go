@@ -76,6 +76,60 @@ func init() {
 	}
 }
 
+// TODO This was in libcontainerd. Update this comment.
+
+// Create is the entrypoint to create a container from a spec.
+// Table below shows the fields required for HCS JSON calling parameters,
+// where if not populated, is omitted.
+// +-----------------+--------------------------------------------+---------------------------------------------------+
+// |                 | Isolation=Process                          | Isolation=Hyper-V                                 |
+// +-----------------+--------------------------------------------+---------------------------------------------------+
+// | VolumePath      | \\?\\Volume{GUIDa}                         |                                                   |
+// | LayerFolderPath | %root%\windowsfilter\containerID           |                                                   |
+// | Layers[]        | ID=GUIDb;Path=%root%\windowsfilter\layerID | ID=GUIDb;Path=%root%\windowsfilter\layerID        |
+// | HvRuntime       |                                            | ImagePath=%root%\BaseLayerID\UtilityVM            |
+// +-----------------+--------------------------------------------+---------------------------------------------------+
+//
+// Isolation=Process example:
+//
+// {
+//	"SystemType": "Container",
+//	"Name": "5e0055c814a6005b8e57ac59f9a522066e0af12b48b3c26a9416e23907698776",
+//	"Owner": "docker",
+//	"VolumePath": "\\\\\\\\?\\\\Volume{66d1ef4c-7a00-11e6-8948-00155ddbef9d}",
+//	"IgnoreFlushesDuringBoot": true,
+//	"LayerFolderPath": "C:\\\\control\\\\windowsfilter\\\\5e0055c814a6005b8e57ac59f9a522066e0af12b48b3c26a9416e23907698776",
+//	"Layers": [{
+//		"ID": "18955d65-d45a-557b-bf1c-49d6dfefc526",
+//		"Path": "C:\\\\control\\\\windowsfilter\\\\65bf96e5760a09edf1790cb229e2dfb2dbd0fcdc0bf7451bae099106bfbfea0c"
+//	}],
+//	"HostName": "5e0055c814a6",
+//	"MappedDirectories": [],
+//	"HvPartition": false,
+//	"EndpointList": ["eef2649d-bb17-4d53-9937-295a8efe6f2c"],
+//}
+//
+// Isolation=Hyper-V example:
+//
+//{
+//	"SystemType": "Container",
+//	"Name": "475c2c58933b72687a88a441e7e0ca4bd72d76413c5f9d5031fee83b98f6045d",
+//	"Owner": "docker",
+//	"IgnoreFlushesDuringBoot": true,
+//	"Layers": [{
+//		"ID": "18955d65-d45a-557b-bf1c-49d6dfefc526",
+//		"Path": "C:\\\\control\\\\windowsfilter\\\\65bf96e5760a09edf1790cb229e2dfb2dbd0fcdc0bf7451bae099106bfbfea0c"
+//	}],
+//	"HostName": "475c2c58933b",
+//	"MappedDirectories": [],
+//	"HvPartition": true,
+//	"EndpointList": ["e1bb1e61-d56f-405e-b75d-fd520cefa0cb"],
+//	"DNSSearchList": "a.com,b.com,c.com",
+//	"HvRuntime": {
+//		"ImagePath": "C:\\\\control\\\\windowsfilter\\\\65bf96e5760a09edf1790cb229e2dfb2dbd0fcdc0bf7451bae099106bfbfea0c\\\\UtilityVM"
+//	},
+//}
+
 // CreateContainer creates a new container with the given configuration but does not start it.
 // This is a 'legacy' API used in RS1..RS4 for the v1 Schema
 func CreateContainer(id string, c *ContainerConfig) (Container, error) {

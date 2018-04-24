@@ -51,7 +51,7 @@ func init() {
 	})
 
 	os.Setenv("HCSSHIM_LCOW_DEBUG_ENABLE", "something")
-	nanoImagePath, nanoImageId = getImagePath("microsoft/windowsservercore:latest")
+	nanoImagePath, nanoImageId = getImagePath("microsoft/nanoserver:latest")
 	alpineImagePath, alpineImageId = getImagePath("alpine:latest")
 	busyboxImagePath, busyboxImageId = getImagePath("busybox:latest")
 	busyboxROLayers = getROLayerPaths("busybox:latest")
@@ -99,7 +99,7 @@ func getParent(imageName string) string {
 func createTempDir(t *testing.T) string {
 	tempDir, err := ioutil.TempDir("", "hcsshimtestcase")
 	if err != nil {
-		t.Fatalf("failed to create temporary directory", err)
+		t.Fatalf("failed to create temporary directory: %s", err)
 	}
 	return tempDir
 }
@@ -126,18 +126,18 @@ func createLCOWTempDirWithSandbox(t *testing.T) (string, string) {
 		t.Logf("Creating an LCOW service VM")
 		var err error
 		lcowServiceContainer, err = CreateContainerEx(&CreateOptions{
-			id:            "global",
-			owner:         "unit-test",
-			schemaVersion: SchemaVersion{Major: 1, Minor: 0},
-			logger:        logrus.WithField("module", "hcsshim unit test"),
-			spec:          defaultLinuxSpec(),
-			lcowOptions:   getLCOWOptions(),
+			Id:            "global",
+			Owner:         "unit-test",
+			SchemaVersion: &SchemaVersion{Major: 1, Minor: 0},
+			Logger:        logrus.WithField("module", "hcsshim unit test"),
+			Spec:          defaultLinuxSpec(),
+			LCOWOptions:   getLCOWOptions(),
 		})
 		if err != nil {
 			t.Fatalf("Failed create: %s", err)
 		}
 		if err := lcowServiceContainer.Start(); err != nil {
-			t.Fatal("Failed to start service container: %s", err)
+			t.Fatalf("Failed to start service container: %s", err)
 		}
 	}
 	t.Logf("Creating EXT4 sandbox for LCOW test cases")
@@ -422,11 +422,11 @@ func TestV1Argon(t *testing.T) {
 	defer Unmount([]string{tempDir}, nil, SchemaV10())
 
 	c, err := CreateContainerEx(&CreateOptions{
-		id:            "TestV1Argon",
-		owner:         "unit-test",
-		schemaVersion: SchemaVersion{Major: 1, Minor: 0},
-		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec: &specs.Spec{
+		Id:            "TestV1Argon",
+		Owner:         "unit-test",
+		SchemaVersion: &SchemaVersion{Major: 1, Minor: 0},
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: layers},
 			Root:    &specs.Root{Path: mountPath.(string)},
 		},
@@ -442,16 +442,16 @@ func TestV1Argon(t *testing.T) {
 
 // A v1 WCOW Xenon with a single base layer
 func TestV1XenonWCOW(t *testing.T) {
-	t.Skip("for now")
+	//t.Skip("for now")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
 	c, err := CreateContainerEx(&CreateOptions{
-		id:            "TestV1XenonWCOW",
-		owner:         "unit-test",
-		schemaVersion: SchemaVersion{Major: 1, Minor: 0},
-		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec: &specs.Spec{
+		Id:            "TestV1XenonWCOW",
+		Owner:         "unit-test",
+		SchemaVersion: &SchemaVersion{Major: 1, Minor: 0},
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{nanoImagePath, tempDir},
 				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(nanoImagePath, "UtilityVM")},
@@ -469,20 +469,20 @@ func TestV1XenonWCOW(t *testing.T) {
 // A v1 LCOW
 // TODO LCOW doesn't work currently
 func TestV1XenonLCOW(t *testing.T) {
-	//t.Skip("for now")
+	t.Skip("for now")
 	tempDir, _ := createLCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
 	c, err := CreateContainerEx(&CreateOptions{
-		id:            "TestV1XenonLCOW",
-		owner:         "unit-test",
-		schemaVersion: SchemaVersion{Major: 1, Minor: 0},
-		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec: &specs.Spec{
+		Id:            "TestV1XenonLCOW",
+		Owner:         "unit-test",
+		SchemaVersion: &SchemaVersion{Major: 1, Minor: 0},
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: []string{alpineImagePath, tempDir}},
 			Linux:   &specs.Linux{},
 		},
-		lcowOptions: getLCOWOptions(),
+		LCOWOptions: getLCOWOptions(),
 	})
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
@@ -508,11 +508,11 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	defer os.RemoveAll(uvmScratchDir)
 
 	uvm, err := CreateContainerEx(&CreateOptions{
-		id:            uvmID,
-		owner:         "unit-test",
-		schemaVersion: *SchemaV20(),
-		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec: &specs.Spec{
+		Id:            uvmID,
+		Owner:         "unit-test",
+		SchemaVersion: SchemaV20(),
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
 				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(nanoImagePath, `UtilityVM\Files`)},
@@ -531,12 +531,12 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	containerAScratchDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(containerAScratchDir)
 	xenonA, err := CreateContainerEx(&CreateOptions{
-		id:            "containerA",
-		owner:         "unit-test",
-		hostingSystem: uvm,
-		schemaVersion: *SchemaV20(),
-		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec: &specs.Spec{
+		Id:            "containerA",
+		Owner:         "unit-test",
+		HostingSystem: uvm,
+		SchemaVersion: SchemaV20(),
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{nanoImagePath, containerAScratchDir},
 			},
@@ -550,12 +550,12 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	containerBScratchDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(containerBScratchDir)
 	xenonB, err := CreateContainerEx(&CreateOptions{
-		id:            "containerB",
-		owner:         "unit-test",
-		hostingSystem: uvm,
-		schemaVersion: *SchemaV20(),
-		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec: &specs.Spec{
+		Id:            "containerB",
+		Owner:         "unit-test",
+		HostingSystem: uvm,
+		SchemaVersion: SchemaV20(),
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{nanoImagePath, containerBScratchDir},
 			},
@@ -590,11 +590,11 @@ func TestV2XenonWCOW(t *testing.T) {
 	defer os.RemoveAll(uvmScratchDir)
 
 	uvm, err := CreateContainerEx(&CreateOptions{
-		id:            uvmID,
-		owner:         "unit-test",
-		schemaVersion: *SchemaV20(),
-		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec: &specs.Spec{
+		Id:            uvmID,
+		Owner:         "unit-test",
+		SchemaVersion: SchemaV20(),
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
 				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(nanoImagePath, `UtilityVM\Files`)},
@@ -630,13 +630,13 @@ func TestV2XenonWCOW(t *testing.T) {
 	// Start the container
 	defer os.RemoveAll(containerScratchDir)
 	xenon, err := CreateContainerEx(&CreateOptions{
-		id:            "container",
-		owner:         "unit-test",
-		hostingSystem: uvm,
-		schemaVersion: *SchemaV20(),
-		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
-		mountedLayers: mountedLayers,
+		Id:            "container",
+		Owner:         "unit-test",
+		HostingSystem: uvm,
+		SchemaVersion: SchemaV20(),
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
+		MountedLayers: mountedLayers,
 	})
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)
@@ -664,11 +664,11 @@ func TestV2XenonWCOWWithRemount(t *testing.T) {
 	defer os.RemoveAll(uvmScratchDir)
 
 	uvm, err := CreateContainerEx(&CreateOptions{
-		id:            uvmID,
-		owner:         "unit-test",
-		schemaVersion: *SchemaV20(),
-		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec: &specs.Spec{
+		Id:            uvmID,
+		Owner:         "unit-test",
+		SchemaVersion: SchemaV20(),
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
 				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(nanoImagePath, `UtilityVM\Files`)},
@@ -704,13 +704,13 @@ func TestV2XenonWCOWWithRemount(t *testing.T) {
 	// Create the first container
 	defer os.RemoveAll(containerScratchDir)
 	xenon, err := CreateContainerEx(&CreateOptions{
-		id:            "container",
-		owner:         "unit-test",
-		hostingSystem: uvm,
-		schemaVersion: *SchemaV20(),
-		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
-		mountedLayers: mountedLayers,
+		Id:            "container",
+		Owner:         "unit-test",
+		HostingSystem: uvm,
+		SchemaVersion: SchemaV20(),
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
+		MountedLayers: mountedLayers,
 	})
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)
@@ -732,13 +732,13 @@ func TestV2XenonWCOWWithRemount(t *testing.T) {
 
 	// Create an identical second container and verify it works too.
 	xenon2, err := CreateContainerEx(&CreateOptions{
-		id:            "container",
-		owner:         "unit-test",
-		hostingSystem: uvm,
-		schemaVersion: *SchemaV20(),
-		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
-		mountedLayers: mountedLayers,
+		Id:            "container",
+		Owner:         "unit-test",
+		HostingSystem: uvm,
+		SchemaVersion: SchemaV20(),
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
+		MountedLayers: mountedLayers,
 	})
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)
@@ -765,11 +765,11 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 	uvmMemory := uint64(1 * 1024 * 1024 * 1024)
 	uvmCPUCount := uint64(2)
 	uvm, err := CreateContainerEx(&CreateOptions{
-		id:            uvmID,
-		owner:         "unit-test",
-		schemaVersion: *SchemaV20(),
-		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec: &specs.Spec{
+		Id:            uvmID,
+		Owner:         "unit-test",
+		SchemaVersion: SchemaV20(),
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
 				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(nanoImagePath, `UtilityVM\Files`)},
@@ -811,13 +811,13 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 
 	// Create the container
 	xenon, err := CreateContainerEx(&CreateOptions{
-		id:            "containerA",
-		owner:         "unit-test",
-		hostingSystem: uvm,
-		schemaVersion: *SchemaV20(),
-		logger:        logrus.WithField("module", "hcsshim unit test"),
-		spec:          &specs.Spec{}, //Windows: &specs.Windows{LayerFolders: layerFolders}},
-		mountedLayers: mountedLayers,
+		Id:            "containerA",
+		Owner:         "unit-test",
+		HostingSystem: uvm,
+		SchemaVersion: SchemaV20(),
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec:          &specs.Spec{}, //Windows: &specs.Windows{LayerFolders: layerFolders}},
+		MountedLayers: mountedLayers,
 	})
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)

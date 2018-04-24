@@ -14,33 +14,33 @@ func createLCOWv1(createOptions *CreateOptions) (Container, error) {
 
 	configuration := &ContainerConfig{
 		HvPartition:   true,
-		Name:          createOptions.id,
+		Name:          createOptions.Id,
 		SystemType:    "container",
 		ContainerType: "linux",
-		Owner:         createOptions.owner,
+		Owner:         createOptions.Owner,
 		TerminateOnLastHandleClosed: true,
 	}
 	configuration.HvRuntime = &HvRuntime{
-		ImagePath:           createOptions.lcowOptions.KirdPath,
-		LinuxKernelFile:     createOptions.lcowOptions.KernelFile,
-		LinuxInitrdFile:     createOptions.lcowOptions.InitrdFile,
-		LinuxBootParameters: createOptions.lcowOptions.BootParameters,
+		ImagePath:           createOptions.LCOWOptions.KirdPath,
+		LinuxKernelFile:     createOptions.LCOWOptions.KernelFile,
+		LinuxInitrdFile:     createOptions.LCOWOptions.InitrdFile,
+		LinuxBootParameters: createOptions.LCOWOptions.BootParameters,
 	}
 	//	}
 
-	if createOptions.spec.Windows == nil {
+	if createOptions.Spec.Windows == nil {
 		return nil, fmt.Errorf("spec.Windows must not be nil for LCOW containers")
 	}
 
 	//	// We must have least one layer in the spec
-	//	if createOptions.spec.Windows.LayerFolders == nil || len(createOptions.spec.Windows.LayerFolders) == 0 {
+	//	if createOptions.Spec.Windows.LayerFolders == nil || len(createOptions.Spec.Windows.LayerFolders) == 0 {
 	//		return nil, fmt.Errorf("OCI spec is invalid - at least one LayerFolders must be supplied to the runtime")
 	//	}
 
 	// Strip off the top-most layer as that's passed in separately to HCS
-	if len(createOptions.spec.Windows.LayerFolders) > 0 {
-		configuration.LayerFolderPath = createOptions.spec.Windows.LayerFolders[len(createOptions.spec.Windows.LayerFolders)-1]
-		layerFolders := createOptions.spec.Windows.LayerFolders[:len(createOptions.spec.Windows.LayerFolders)-1]
+	if len(createOptions.Spec.Windows.LayerFolders) > 0 {
+		configuration.LayerFolderPath = createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
+		layerFolders := createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1]
 
 		for _, layerPath := range layerFolders {
 			_, filename := filepath.Split(layerPath)
@@ -55,13 +55,13 @@ func createLCOWv1(createOptions *CreateOptions) (Container, error) {
 		}
 	}
 
-	if createOptions.spec.Windows.Network != nil {
-		configuration.EndpointList = createOptions.spec.Windows.Network.EndpointList
-		configuration.AllowUnqualifiedDNSQuery = createOptions.spec.Windows.Network.AllowUnqualifiedDNSQuery
-		if createOptions.spec.Windows.Network.DNSSearchList != nil {
-			configuration.DNSSearchList = strings.Join(createOptions.spec.Windows.Network.DNSSearchList, ",")
+	if createOptions.Spec.Windows.Network != nil {
+		configuration.EndpointList = createOptions.Spec.Windows.Network.EndpointList
+		configuration.AllowUnqualifiedDNSQuery = createOptions.Spec.Windows.Network.AllowUnqualifiedDNSQuery
+		if createOptions.Spec.Windows.Network.DNSSearchList != nil {
+			configuration.DNSSearchList = strings.Join(createOptions.Spec.Windows.Network.DNSSearchList, ",")
 		}
-		configuration.NetworkSharedContainerName = createOptions.spec.Windows.Network.NetworkSharedContainerName
+		configuration.NetworkSharedContainerName = createOptions.Spec.Windows.Network.NetworkSharedContainerName
 	}
 
 	// Add the mounts (volumes, bind mounts etc) to the structure. We have to do
@@ -110,7 +110,7 @@ func createLCOWv1(createOptions *CreateOptions) (Container, error) {
 
 	mds := []MappedDir{}
 	specMounts := []specs.Mount{}
-	for _, mount := range createOptions.spec.Mounts {
+	for _, mount := range createOptions.Spec.Mounts {
 		specMount := mount
 		if mount.Type == "bind" {
 			// Strip out the uvmpath from the options
@@ -152,14 +152,14 @@ func createLCOWv1(createOptions *CreateOptions) (Container, error) {
 	}
 	configuration.MappedDirectories = mds
 
-	container, err := CreateContainer(createOptions.id, configuration)
+	container, err := CreateContainer(createOptions.Id, configuration)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO - Not sure why after CreateContainer, but that's how I coded it in libcontainerd and it worked....
-	createOptions.spec.Mounts = specMounts
+	createOptions.Spec.Mounts = specMounts
 
-	createOptions.logger.Debug("createLCOWv1() completed successfully")
+	createOptions.Logger.Debug("createLCOWv1() completed successfully")
 	return container, nil
 }

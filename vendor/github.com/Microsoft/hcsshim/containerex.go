@@ -139,7 +139,7 @@ func (container *container) CreateProcessEx(opts *CreateProcessEx) (Process, *By
 		if copiedByteCounts.In, err = copyWithTimeout(processStdin,
 			opts.Stdin,
 			opts.ByteCounts.In,
-			fmt.Sprintf("CreateProcessEx: to stdin of qs", commandLine)); err != nil {
+			fmt.Sprintf("CreateProcessEx: to stdin of %q", commandLine)); err != nil {
 			return nil, nil, err
 		}
 
@@ -248,14 +248,14 @@ func copyWithTimeout(dst io.Writer, src io.Reader, size int64, context string) (
 // CreateOptions are the complete set of fields required to call any of the
 // Create* APIs in HCSShim.
 type CreateOptions struct {
-	id            string                        // Identifier for the container
-	hostingSystem Container                     // Container object if creating a hosted system
-	owner         string                        // Arbitrary string determining the owner
-	schemaVersion SchemaVersion                 // Schema version of the create request
-	spec          *specs.Spec                   // Definition of the container or utility VM
-	lcowOptions   *LCOWOptions                  // Configuration of an LCOW utility VM. ??Should these be part of OCI?? // What about annotations to put these in?
-	logger        *logrus.Entry                 // For logging
-	mountedLayers *ContainersResourcesStorageV2 // For v2 Xenon - TODO for Argon too....
+	Id            string                        // Identifier for the container
+	HostingSystem Container                     // Container object if creating a hosted system
+	Owner         string                        // Arbitrary string determining the owner
+	SchemaVersion *SchemaVersion                // Schema version of the create request
+	Spec          *specs.Spec                   // Definition of the container or utility VM
+	LCOWOptions   *LCOWOptions                  // Configuration of an LCOW utility VM. ??Should these be part of OCI?? // What about annotations to put these in?
+	Logger        *logrus.Entry                 // For logging
+	MountedLayers *ContainersResourcesStorageV2 // For v2 Xenon - TODO for Argon too....
 }
 
 // CreateWindowsUVMSandbox is a helper to create a sandbox for a Windows utility VM
@@ -306,28 +306,31 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 
 	logrus.Debugf("CreateContainerEx %+v", createOptions)
 
-	if err := createOptions.schemaVersion.isSupported(); err != nil {
+	if createOptions.SchemaVersion == nil {
+		return nil, fmt.Errorf("SchemaVersion must be supplied")
+	}
+	if err := createOptions.SchemaVersion.isSupported(); err != nil {
 		return nil, err
 	}
-	if createOptions.id == "" {
-		return nil, fmt.Errorf("id must be supplied")
+	if createOptions.Id == "" {
+		return nil, fmt.Errorf("Id must be supplied")
 	}
-	if createOptions.owner == "" {
-		return nil, fmt.Errorf("owner must be supplied")
+	if createOptions.Owner == "" {
+		return nil, fmt.Errorf("Owner must be supplied")
 	}
-	if createOptions.logger == nil {
-		return nil, fmt.Errorf("logger must be supplied")
+	if createOptions.Logger == nil {
+		return nil, fmt.Errorf("Logger must be supplied")
 	}
-	if createOptions.spec == nil {
-		return nil, fmt.Errorf("spec must be supplied")
+	if createOptions.Spec == nil {
+		return nil, fmt.Errorf("Spec must be supplied")
 	}
-	//logger := createOptions.logger.WithField("container", createOptions.id)
-	createOptions.logger = createOptions.logger.WithField("container", createOptions.id)
+	//logger := createOptions.Logger.WithField("container", createOptions.Id)
+	createOptions.Logger = createOptions.Logger.WithField("container", createOptions.Id)
 
 	// The v1 schema way of creating a container. Back compat for RS1..RS4
-	if createOptions.schemaVersion.isV10() {
+	if createOptions.SchemaVersion.isV10() {
 		logrus.Debugf("Is a V1 schema call")
-		if createOptions.hostingSystem != nil {
+		if createOptions.HostingSystem != nil {
 			return nil, fmt.Errorf("hostingSystem must not be supplied for a v1 schema request")
 		}
 
@@ -338,31 +341,31 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		//
 		// TODO: @darrenstahlmsft fix this once the OCI spec is updated to
 		// support layer folder paths for LCOW
-		if createOptions.spec.Linux == nil {
+		if createOptions.Spec.Linux == nil {
 			logrus.Debugf("Is a V1 WCOW Argon or Xenon")
 
-			if createOptions.spec.Windows == nil {
+			if createOptions.Spec.Windows == nil {
 				return nil, fmt.Errorf("containerSpec 'Windows' field must be populated")
 			}
-			if createOptions.lcowOptions != nil {
+			if createOptions.LCOWOptions != nil {
 				return nil, fmt.Errorf("lcowOptions must not be supplied for a v1 schema Windows container request")
 			}
 			v1Configuration, err := specToHCSContainerDocument(createOptions)
 			if err != nil {
 				return nil, err
 			}
-			return CreateContainer(createOptions.id, v1Configuration.(*ContainerConfig))
+			return createContainer(createOptions.Id, v1Configuration, SchemaV10())
 		}
 
 		logrus.Debugf("Is a V1 LCOW")
-		if createOptions.lcowOptions == nil {
+		if createOptions.LCOWOptions == nil {
 			return nil, fmt.Errorf("lcowOptions must be supplied for a v1 schema Linux container request")
 		}
 		return createLCOWv1(createOptions)
 	}
 
 	logrus.Debugf("HCSShim: Processing v2 schema call")
-	if createOptions.spec.Linux == nil {
+	if createOptions.Spec.Linux == nil {
 		logrus.Debugf("Is a V2 WCOW Argon or Xenon")
 		return createWCOWv2(createOptions)
 	}
