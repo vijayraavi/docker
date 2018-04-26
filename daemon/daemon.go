@@ -698,8 +698,7 @@ func NewDaemon(config *config.Config, registryService registry.Service, containe
 	if runtime.GOOS == "windows" {
 		d.graphDrivers[runtime.GOOS] = "windowsfilter"
 		if system.LCOWSupported() {
-			// JJH HACK HACK HACK
-			//d.graphDrivers["linux"] = "lcow"
+			d.graphDrivers["linux"] = "lcow"
 		}
 	} else {
 		driverName := os.Getenv("DOCKER_DRIVER")

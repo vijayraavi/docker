@@ -3,6 +3,7 @@ package hcsshim
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -26,7 +27,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 
 	iocis := "invalid OCI spec:"
 	if len(createOptions.Spec.Windows.LayerFolders) != 1 {
-		return nil, fmt.Errorf("%s Windows.LayerFolders must have length 1 for a hosting system pointing to a folder containing sandbox.vhdx", iocis)
+		return nil, fmt.Errorf("%s Windows.LayerFolders must have length 1 for a hosting system, pointing to a folder containing sandbox.vhdx", iocis)
 	}
 	if len(createOptions.Spec.Hostname) > 0 {
 		return nil, fmt.Errorf("%s Hostname cannot be set for a hosting system", iocis)
@@ -329,15 +330,39 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 	v1.LayerFolderPath = createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
 
 	if createOptions.Spec.Windows.HyperV != nil {
-		v1.HvPartition = true
-		if createOptions.Spec.Windows.HyperV.UtilityVMPath == "" {
-			return "", fmt.Errorf("no utility VM path for Hyper-V containers was supplied to the runtime")
+
+		if createOptions.SchemaVersion.IsV10() {
+			v1.HvPartition = true
+			if createOptions.Spec.Windows.HyperV.UtilityVMPath != "" {
+				v1.HvRuntime = &HvRuntime{ImagePath: createOptions.Spec.Windows.HyperV.UtilityVMPath}
+			} else {
+
+				// Find the upper-most utility VM image.
+				var uvmImagePath string
+				for _, path := range createOptions.Spec.Windows.LayerFolders {
+					fullPath := filepath.Join(path, "UtilityVM")
+					_, err := os.Stat(fullPath)
+					if err == nil {
+						uvmImagePath = fullPath
+						break
+					}
+					if !os.IsNotExist(err) {
+						return "", err
+					}
+				}
+				if uvmImagePath == "" {
+					return "", fmt.Errorf("utility VM image could not be found")
+				}
+				v1.HvRuntime = &HvRuntime{ImagePath: uvmImagePath}
+			}
 		}
-		v1.HvRuntime = &HvRuntime{ImagePath: createOptions.Spec.Windows.HyperV.UtilityVMPath}
+
+		// TODO V2 version of above. Note it's the VSMBFS boot path and UtilityVM\Files
 
 		if createOptions.Spec.Root != nil && createOptions.Spec.Root.Path != "" {
 			return "", fmt.Errorf("invalid container spec - Root.Path must be omitted for a Hyper-V container")
 		}
+
 	} else {
 
 		if createOptions.Spec.Root == nil {
@@ -348,10 +373,7 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 			return "", fmt.Errorf(`invalid container spec - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, createOptions.Spec.Root.Path)
 		}
 		// HCS API requires the trailing backslash to be removed
-		if createOptions.Spec.Root.Path[:len(createOptions.Spec.Root.Path)] == `\` {
-			createOptions.Spec.Root.Path = createOptions.Spec.Root.Path[:len(createOptions.Spec.Root.Path)-1]
-		}
-		v1.VolumePath = createOptions.Spec.Root.Path
+		v1.VolumePath = createOptions.Spec.Root.Path[:len(createOptions.Spec.Root.Path)-1]
 	}
 
 	if createOptions.Spec.Root != nil && createOptions.Spec.Root.Readonly {
@@ -403,8 +425,7 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 	v1.MappedPipes = mpsv1
 	v2.Container.MappedPipes = mpsv2
 
-	logrus.Debugf("wcowv1 configuration: %+v", v1)
-	if createOptions.SchemaVersion.isV10() {
+	if createOptions.SchemaVersion.IsV10() {
 		v1b, err := json.Marshal(v1)
 		if err != nil {
 			return "", err
@@ -428,7 +449,7 @@ func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (i
 	if err := sv.isSupported(); err != nil {
 		return nil, err
 	}
-	if sv.isV10() {
+	if sv.IsV10() {
 		if len(layerFolders) < 2 {
 			return nil, fmt.Errorf("need at least two layers - base and sandbox")
 		}
@@ -584,7 +605,7 @@ func Unmount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) 
 	if err := sv.isSupported(); err != nil {
 		return err
 	}
-	if sv.isV10() {
+	if sv.IsV10() {
 		// V1, we only need to have the sandbox.
 		if len(layerFolders) < 1 {
 			return fmt.Errorf("need at least one layer for Unmount")

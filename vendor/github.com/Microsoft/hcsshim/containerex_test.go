@@ -55,6 +55,7 @@ func init() {
 	alpineImagePath, alpineImageId = getImagePath("alpine:latest")
 	busyboxImagePath, busyboxImageId = getImagePath("busybox:latest")
 	busyboxROLayers = getROLayerPaths("busybox:latest")
+	fmt.Println(getROLayerPaths("microsoft/windowsservercore:1709"))
 }
 
 func getImagePath(imageName string) (string, string) {
@@ -442,7 +443,7 @@ func TestV1Argon(t *testing.T) {
 
 // A v1 WCOW Xenon with a single base layer
 func TestV1XenonWCOW(t *testing.T) {
-	//t.Skip("for now")
+	t.Skip("for now")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -454,7 +455,33 @@ func TestV1XenonWCOW(t *testing.T) {
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{nanoImagePath, tempDir},
-				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(nanoImagePath, "UtilityVM")},
+				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(nanoImagePath, `UtilityVM`)},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed create: %s", err)
+	}
+	startContainer(t, c)
+	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
+	stopContainer(t, c)
+}
+
+// A v1 WCOW Xenon with a single base layer but let HCSShim find the utility VM path
+func TestV1XenonWCOWNoUVMPath(t *testing.T) {
+	t.Skip("for now")
+	tempDir := createWCOWTempDirWithSandbox(t)
+	defer os.RemoveAll(tempDir)
+
+	c, err := CreateContainerEx(&CreateOptions{
+		Id:            "TestV1XenonWCOWNoUVMPath",
+		Owner:         "unit-test",
+		SchemaVersion: &SchemaVersion{Major: 1, Minor: 0},
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
+			Windows: &specs.Windows{
+				LayerFolders: []string{nanoImagePath, tempDir},
+				HyperV:       &specs.WindowsHyperV{},
 			},
 		},
 	})
@@ -578,7 +605,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 
 // A single WCOW xenon
 func TestV2XenonWCOW(t *testing.T) {
-	t.Skip("Skipping for now")
+	//	t.Skip("Skipping for now")
 	uvmID := "Testv2XenonWCOW_UVM"
 	uvmScratchDir, err := ioutil.TempDir("", "uvmScratch")
 	if err != nil {

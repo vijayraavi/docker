@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -40,6 +40,7 @@ type container struct {
 	isWindows           bool
 	manualStopRequested bool
 	hcsContainer        hcsshim.Container
+	hcsUVM              hcsshim.Container
 
 	id            string
 	status        Status
@@ -90,43 +91,84 @@ func (c *client) Create(_ context.Context, id string, spec *specs.Spec, runtimeO
 func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions interface{}) error {
 	//logger := c.logger.WithField("container", id)
 
-	schemaVersion := hcsshim.SchemaV10()
-	// Will be RS5 only. TODO @jhowardmsft
-	if os.Getenv("ENABLE_HCS_V2_SCHEMA") != "" && system.GetOSVersion().Build >= 17656 {
-		//		schemaVersion = hcsshim.SchemaV20()
-	}
-
-	hcsContainer, err := hcsshim.CreateContainerEx(&hcsshim.CreateOptions{
-		Id:            id,
-		Owner:         "moby",
-		SchemaVersion: schemaVersion,
-		Logger:        logrus.WithField("container", id),
-		Spec:          spec,
-	})
-
-	// Construct a container object for calling start on it.
 	ctr := &container{
-		id:           id,
-		execs:        make(map[string]*process),
-		isWindows:    true,
-		ociSpec:      spec,
-		hcsContainer: hcsContainer,
-		status:       StatusCreated,
-		waitCh:       make(chan struct{}),
+		id:        id,
+		execs:     make(map[string]*process),
+		isWindows: true,
+		ociSpec:   spec,
+		status:    StatusCreated,
+		waitCh:    make(chan struct{}),
 	}
 
-	c.logger.Debug("starting container")
-	if err = hcsContainer.Start(); err != nil {
-		c.logger.WithError(err).Error("failed to start container")
-		ctr.debugGCS()
-		if err := c.terminateContainer(ctr); err != nil {
-			c.logger.WithError(err).Error("failed to cleanup after a failed Start")
-		} else {
-			c.logger.Debug("cleaned up after failed Start by calling Terminate")
-		}
-		return err
+	schemaVersion := hcsshim.SchemaV10()
+	// TODO @jhowardmsft Version Number for RS5 RTM and possibly hide behind environment variable?
+	if system.GetOSVersion().Build >= 17656 {
+		schemaVersion = hcsshim.SchemaV20()
 	}
-	ctr.debugGCS()
+
+	if schemaVersion.IsV20() {
+
+		// TODO How do we tell this is a xenon?
+
+		uvmID := fmt.Sprintf("%s_uvm", id)
+		uvmScratchDir := `c:\foobar`
+
+		// Create a utility VM scratch
+		// TODO: Not layerfolder[0]. Need to search though. Also avoid nil pointer dereferencing
+		if err := hcsshim.CreateWindowsUVMSandbox(spec.Windows.LayerFolders[0], uvmScratchDir, uvmID); err != nil {
+			return err
+		}
+
+		// Create a utility VM
+		uvm, err := hcsshim.CreateContainerEx(&hcsshim.CreateOptions{
+			Id:            uvmID,
+			Owner:         "moby",
+			SchemaVersion: schemaVersion,
+			Logger:        logrus.WithField("container", id),
+			Spec: &specs.Spec{
+				Windows: &specs.Windows{
+					LayerFolders: []string{uvmScratchDir},
+					// TODO CUrrently this is requires
+					HyperV:    &specs.WindowsHyperV{filepath.Join(spec.Windows.LayerFolders[0], `UtilityVM\Files`)},
+					Resources: spec.Windows.Resources,
+				},
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create utility VM: %s", err)
+		}
+		ctr.hcsUVM = uvm
+
+		// Start utility VM
+		if err := uvm.Start(); err != nil {
+			return fmt.Errorf("failed to start utility VM: %s", err)
+		}
+	}
+
+	//	hcsContainer, err := hcsshim.CreateContainerEx(&hcsshim.CreateOptions{
+	//		Id:            id,
+	//		Owner:         "moby",
+	//		SchemaVersion: schemaVersion,
+	//		Logger:        logrus.WithField("container", id),
+	//		Spec:          spec,
+	//	})
+	//	if err != nil {
+	//		return fmt.Errorf("failed to create container: %s", err)
+	//	}
+	//	ctr.hcsContainer = hcsContainer
+
+	//	c.logger.Debug("starting container")
+	//	if err = hcsContainer.Start(); err != nil {
+	//		c.logger.WithError(err).Error("failed to start container")
+	//		ctr.debugGCS()
+	//		if err := c.terminateContainer(ctr); err != nil {
+	//			c.logger.WithError(err).Error("failed to cleanup after a failed Start")
+	//		} else {
+	//			c.logger.Debug("cleaned up after failed Start by calling Terminate")
+	//		}
+	//		return err
+	//	}
+	//	ctr.debugGCS()
 
 	c.Lock()
 	c.containers[id] = ctr

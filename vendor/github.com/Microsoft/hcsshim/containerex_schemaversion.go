@@ -20,19 +20,19 @@ func (sv *SchemaVersion) isSupported() error {
 	return fmt.Errorf("unsupported schema version %d.%d", sv.Major, sv.Minor)
 }
 
-// isV10 determines if a given schema version object is 1.0. This was the only thing
+// IsV10 determines if a given schema version object is 1.0. This was the only thing
 // supported in RS1..3. It lives on in RS5, but will be deprecated in a future release.
-func (sv *SchemaVersion) isV10() bool {
+func (sv *SchemaVersion) IsV10() bool {
 	if sv.Major == 1 && sv.Minor == 0 {
 		return true
 	}
 	return false
 }
 
-// isV20 determines if a given schema version object is 2.0. This was introduced in
+// IsV20 determines if a given schema version object is 2.0. This was introduced in
 // RS4, but not fully implemented. Recommended for applications using HCS in RS5
 // onwards.
-func (sv *SchemaVersion) isV20() bool {
+func (sv *SchemaVersion) IsV20() bool {
 	if sv.Major == 2 && sv.Minor == 0 {
 		return true
 	}

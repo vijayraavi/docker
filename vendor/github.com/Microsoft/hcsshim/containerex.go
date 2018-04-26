@@ -303,9 +303,6 @@ func CreateWindowsUVMSandbox(imagePath, destDirectory, vmID string) error {
 // - Error indication
 
 func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
-
-	logrus.Debugf("CreateContainerEx %+v", createOptions)
-
 	if createOptions.SchemaVersion == nil {
 		return nil, fmt.Errorf("SchemaVersion must be supplied")
 	}
@@ -328,8 +325,7 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 	createOptions.Logger = createOptions.Logger.WithField("container", createOptions.Id)
 
 	// The v1 schema way of creating a container. Back compat for RS1..RS4
-	if createOptions.SchemaVersion.isV10() {
-		logrus.Debugf("Is a V1 schema call")
+	if createOptions.SchemaVersion.IsV10() {
 		if createOptions.HostingSystem != nil {
 			return nil, fmt.Errorf("hostingSystem must not be supplied for a v1 schema request")
 		}
@@ -342,8 +338,6 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		// TODO: @darrenstahlmsft fix this once the OCI spec is updated to
 		// support layer folder paths for LCOW
 		if createOptions.Spec.Linux == nil {
-			logrus.Debugf("Is a V1 WCOW Argon or Xenon")
-
 			if createOptions.Spec.Windows == nil {
 				return nil, fmt.Errorf("containerSpec 'Windows' field must be populated")
 			}
@@ -364,9 +358,7 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		return createLCOWv1(createOptions)
 	}
 
-	logrus.Debugf("HCSShim: Processing v2 schema call")
 	if createOptions.Spec.Linux == nil {
-		logrus.Debugf("Is a V2 WCOW Argon or Xenon")
 		return createWCOWv2(createOptions)
 	}
 
