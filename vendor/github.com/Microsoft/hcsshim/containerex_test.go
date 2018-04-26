@@ -539,6 +539,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 		Owner:         "unit-test",
 		SchemaVersion: SchemaV20(),
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		IsHost:        true,
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
@@ -621,6 +622,7 @@ func TestV2XenonWCOW(t *testing.T) {
 		Owner:         "unit-test",
 		SchemaVersion: SchemaV20(),
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		IsHost:        true,
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
@@ -695,6 +697,7 @@ func TestV2XenonWCOWWithRemount(t *testing.T) {
 		Owner:         "unit-test",
 		SchemaVersion: SchemaV20(),
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		IsHost:        true,
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
@@ -796,6 +799,7 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 		Owner:         "unit-test",
 		SchemaVersion: SchemaV20(),
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		IsHost:        true,
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},

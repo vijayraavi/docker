@@ -16,7 +16,7 @@ func createWCOWv2(createOptions *CreateOptions) (Container, error) {
 	if createOptions.LCOWOptions != nil {
 		return nil, fmt.Errorf("lcowOptions must not be supplied for a v2 schema Windows container request")
 	}
-	if createOptions.Spec.Windows != nil && createOptions.Spec.Windows.HyperV != nil {
+	if createOptions.IsHost {
 		return createWCOWv2UVM(createOptions)
 	}
 	return createWCOWv2HostedContainer(createOptions)
@@ -114,7 +114,6 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	logrus.Debugf("HCSShim: UVM definition: %s", string(uvmb))
 	uvmContainer, err := createContainer(createOptions.Id, string(uvmb), SchemaV20())
 	if err != nil {
 		return nil, err
@@ -201,7 +200,7 @@ func createWCOWv2HostedContainer(createOptions *CreateOptions) (Container, error
 	computeSystemV2 := &ComputeSystemV2{
 		Owner:           createOptions.Owner,
 		SchemaVersion:   SchemaV20(),
-		HostingSystemId: createOptions.HostingSystem.(*container).id,
+		HostingSystemId: createOptions.UVM.(*container).id,
 		HostedSystem: &HostedSystemV2{
 			SchemaVersion: SchemaV20(),
 			Container:     &ContainerV2{Storage: createOptions.MountedLayers},
@@ -441,10 +440,13 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 // Layer folder are in order: base, [rolayer1..rolayern,] sandbox
 // TODO: Extend for LCOW?
 //
-// v1: Returns the mount path on the host as a volume GUID. It's pointless doing this for Xenon.
+// v1: Argon WCOW: Returns the mount path on the host as a volume GUID.
+// v1: Xenon WCOW: Done internally in HCS, so no point calling doing anything here.
 // v2: Xenon WCOW: Returns a CombinedLayersV2 structure where ContainerRootPath is a folder
 //                 inside the utility VM which is a GUID mapping of the sandbox folder. Each
 //                 of the layers are the VSMB locations where the read-only layers are mounted.
+
+// TODO Should this return a string or an object? More efficient as object, but requires more client work to marshall it again.
 func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (interface{}, error) {
 	if err := sv.isSupported(); err != nil {
 		return nil, err
@@ -488,14 +490,16 @@ func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (i
 
 	// 	Add each read-only layers as a VSMB share. In each case, the ResourceUri will end in a GUID based on the folder path.
 	//  Each VSMB share is ref-counted so that multiple containers in the same utility VM can share them.
+	// TODO OK check here.
 	c := hostingSystem.(*container)
 	c.vsmbShares.Lock()
 	if c.vsmbShares.guids == nil {
 		c.vsmbShares.guids = make(map[string]int)
 	}
 	var vsmbAdded []string
+	logrus.Debugln("hcsshim::Mount v2 for hosted system")
 	for _, layerPath := range layerFolders[:len(layerFolders)-1] {
-		logrus.Debugf("Processing layerPath %s as read-only VSMB share", layerPath)
+		logrus.Debugf("hcsshim::Mount %s as VSMB share", layerPath)
 		_, filename := filepath.Split(layerPath)
 		guid, err := NameToGuid(filename)
 		if err != nil {
@@ -504,7 +508,6 @@ func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (i
 			return nil, err
 		}
 		if _, ok := c.vsmbShares.guids[guid.ToString()]; !ok {
-			logrus.Debugf("Processing layerPath %s: Perfoming modify to add VSMB share", layerPath)
 			modification := &ModifySettingsRequestV2{
 				ResourceType: ResourceTypeVSmbShare,
 				RequestType:  RequestTypeAdd,
@@ -523,9 +526,9 @@ func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (i
 			c.vsmbShares.guids[guid.ToString()] = 1
 		} else {
 			c.vsmbShares.guids[guid.ToString()]++
-			logrus.Debugf("Processing layerPath %s: Incremented refcount to: %d", layerPath, c.vsmbShares.guids[guid.ToString()])
 		}
 		vsmbAdded = append(vsmbAdded, guid.ToString())
+		logrus.Debugf("HCSShim::Mount %s: refcount=%d", layerPath, c.vsmbShares.guids[guid.ToString()])
 	}
 	c.vsmbShares.Unlock()
 
@@ -540,7 +543,6 @@ func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (i
 		return nil, err
 	}
 	hostPath := filepath.Join(layerFolders[len(layerFolders)-1], "sandbox.vhdx")
-	logrus.Debugln("hostPath=", hostPath)
 	containerPath := fmt.Sprintf(`C:\%s`, containerPathGUID.ToString())
 	controller, lun, err := allocateSCSI(c, hostPath, containerPath)
 	if err != nil {
@@ -575,7 +577,6 @@ func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (i
 
 	// 	Load the filter at the C:\<GUID> location calculated above. We pass into this request each of the
 	// 	read-only layer folders.
-
 	layers := []ContainersResourcesLayerV2{}
 	for _, vsmb := range vsmbAdded {
 		layers = append(layers, ContainersResourcesLayerV2{
@@ -598,6 +599,7 @@ func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (i
 		return nil, err
 	}
 
+	logrus.Debugln("HCSShim::Mount Succeeded")
 	return combinedLayers, nil
 }
 

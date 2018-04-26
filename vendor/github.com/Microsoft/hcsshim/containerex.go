@@ -248,8 +248,13 @@ func copyWithTimeout(dst io.Writer, src io.Reader, size int64, context string) (
 // CreateOptions are the complete set of fields required to call any of the
 // Create* APIs in HCSShim.
 type CreateOptions struct {
-	Id            string                        // Identifier for the container
-	HostingSystem Container                     // Container object if creating a hosted system
+	Id string // Identifier for the container
+
+	// TODO. Would be good to get this as an ID if possible. But not sure.
+	UVM Container // Container object representing the utility VM
+
+	IsHost bool // If this is host for other containers
+
 	Owner         string                        // Arbitrary string determining the owner
 	SchemaVersion *SchemaVersion                // Schema version of the create request
 	Spec          *specs.Spec                   // Definition of the container or utility VM
@@ -326,8 +331,8 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 
 	// The v1 schema way of creating a container. Back compat for RS1..RS4
 	if createOptions.SchemaVersion.IsV10() {
-		if createOptions.HostingSystem != nil {
-			return nil, fmt.Errorf("hostingSystem must not be supplied for a v1 schema request")
+		if createOptions.UVM != nil {
+			return nil, fmt.Errorf("UVM must not be supplied for a v1 schema request")
 		}
 
 		// spec.Linux must be nil for Windows containers, but spec.Windows

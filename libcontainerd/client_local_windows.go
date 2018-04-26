@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -70,7 +71,7 @@ func (c *client) Version(ctx context.Context) (containerd.Version, error) {
 	return containerd.Version{}, errors.New("not implemented on Windows")
 }
 
-func (c *client) Create(_ context.Context, id string, spec *specs.Spec, runtimeOptions interface{}) error {
+func (c *client) Create(ctx context.Context, id string, spec *specs.Spec, runtimeOptions interface{}) error {
 	if ctr := c.getContainer(id); ctr != nil {
 		return errors.WithStack(newConflictError("id already in use"))
 	}
@@ -91,6 +92,16 @@ func (c *client) Create(_ context.Context, id string, spec *specs.Spec, runtimeO
 func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions interface{}) error {
 	//logger := c.logger.WithField("container", id)
 
+	if spec.Windows == nil {
+		return fmt.Errorf("Windows part of OCI spec must be populated")
+	}
+
+	schemaVersion := hcsshim.SchemaV10()
+	// TODO @jhowardmsft Version Number for RS5 RTM and possibly hide behind environment variable?
+	if system.GetOSVersion().Build >= 17656 {
+		schemaVersion = hcsshim.SchemaV20()
+	}
+
 	ctr := &container{
 		id:        id,
 		execs:     make(map[string]*process),
@@ -100,75 +111,107 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 		waitCh:    make(chan struct{}),
 	}
 
-	schemaVersion := hcsshim.SchemaV10()
-	// TODO @jhowardmsft Version Number for RS5 RTM and possibly hide behind environment variable?
-	if system.GetOSVersion().Build >= 17656 {
-		schemaVersion = hcsshim.SchemaV20()
+	containerCreateOptions := &hcsshim.CreateOptions{
+		Id:            id,
+		Owner:         "moby",
+		SchemaVersion: schemaVersion,
+		Logger:        logrus.WithField("container", id),
+		Spec:          spec,
 	}
 
 	if schemaVersion.IsV20() {
+		if spec.Windows.HyperV != nil {
+			uvmID := fmt.Sprintf("%s_uvm", id)
+			uvmScratchDir := `c:\foobar` // TODO
 
-		// TODO How do we tell this is a xenon?
+			// Find the upper-most utility VM image.
+			var uvmImagePath string
+			for _, path := range spec.Windows.LayerFolders {
+				_, err := os.Stat(filepath.Join(path, `UtilityVM\Files`))
+				if err == nil {
+					uvmImagePath = path
+					break
+				}
+				if !os.IsNotExist(err) {
+					return err
+				}
+			}
+			if uvmImagePath == "" {
+				return fmt.Errorf("utility VM image could not be found in layers")
+			}
 
-		uvmID := fmt.Sprintf("%s_uvm", id)
-		uvmScratchDir := `c:\foobar`
+			// Create a utility VM scratch
+			if err := hcsshim.CreateWindowsUVMSandbox(uvmImagePath, uvmScratchDir, uvmID); err != nil {
+				return err
+			}
 
-		// Create a utility VM scratch
-		// TODO: Not layerfolder[0]. Need to search though. Also avoid nil pointer dereferencing
-		if err := hcsshim.CreateWindowsUVMSandbox(spec.Windows.LayerFolders[0], uvmScratchDir, uvmID); err != nil {
-			return err
-		}
-
-		// Create a utility VM
-		uvm, err := hcsshim.CreateContainerEx(&hcsshim.CreateOptions{
-			Id:            uvmID,
-			Owner:         "moby",
-			SchemaVersion: schemaVersion,
-			Logger:        logrus.WithField("container", id),
-			Spec: &specs.Spec{
-				Windows: &specs.Windows{
-					LayerFolders: []string{uvmScratchDir},
-					// TODO CUrrently this is requires
-					HyperV:    &specs.WindowsHyperV{filepath.Join(spec.Windows.LayerFolders[0], `UtilityVM\Files`)},
-					Resources: spec.Windows.Resources,
+			// Create a utility VM
+			uvm, err := hcsshim.CreateContainerEx(&hcsshim.CreateOptions{
+				Id:            uvmID,
+				Owner:         "moby",
+				SchemaVersion: schemaVersion,
+				Logger:        logrus.WithField("container", id),
+				IsHost:        true,
+				Spec: &specs.Spec{
+					Windows: &specs.Windows{
+						LayerFolders: []string{uvmScratchDir},
+						HyperV:       &specs.WindowsHyperV{filepath.Join(uvmImagePath, `UtilityVM\Files`)}, // TODO CUrrently this is required
+						Resources:    spec.Windows.Resources,
+					},
 				},
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create utility VM: %s", err)
-		}
-		ctr.hcsUVM = uvm
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create utility VM: %s", err)
+			}
+			ctr.hcsUVM = uvm
+			containerCreateOptions.HostingSystem = uvm
 
-		// Start utility VM
-		if err := uvm.Start(); err != nil {
-			return fmt.Errorf("failed to start utility VM: %s", err)
-		}
+			// Start utility VM
+			if err := uvm.Start(); err != nil {
+				return fmt.Errorf("failed to start utility VM: %s", err)
+			}
+
+			// Mount the storage in the utility VM
+			cls, err := hcsshim.Mount(spec.Windows.LayerFolders, uvm, schemaVersion)
+			if err != nil {
+				uvm.Terminate()
+				return fmt.Errorf("failed to mount container storage: %s", err)
+			}
+			combinedLayers := cls.(hcsshim.CombinedLayersV2)
+			containerCreateOptions.MountedLayers = &hcsshim.ContainersResourcesStorageV2{
+				Layers: combinedLayers.Layers,
+				Path:   combinedLayers.ContainerRootPath,
+			}
+
+		} // If a Hyper-V container
 	}
 
-	//	hcsContainer, err := hcsshim.CreateContainerEx(&hcsshim.CreateOptions{
-	//		Id:            id,
-	//		Owner:         "moby",
-	//		SchemaVersion: schemaVersion,
-	//		Logger:        logrus.WithField("container", id),
-	//		Spec:          spec,
-	//	})
-	//	if err != nil {
-	//		return fmt.Errorf("failed to create container: %s", err)
-	//	}
-	//	ctr.hcsContainer = hcsContainer
+	logrus.Debugln("Calling CreateContainerEx")
+	hcsContainer, err := hcsshim.CreateContainerEx(containerCreateOptions)
+	if err != nil {
+		logrus.Debugf("failed to create container: %s", err)
+		if ctr.hcsUVM != nil {
+			ctr.hcsUVM.Terminate()
+		}
+		return fmt.Errorf("failed to create container: %s", err)
+	}
+	ctr.hcsContainer = hcsContainer
 
-	//	c.logger.Debug("starting container")
-	//	if err = hcsContainer.Start(); err != nil {
-	//		c.logger.WithError(err).Error("failed to start container")
-	//		ctr.debugGCS()
-	//		if err := c.terminateContainer(ctr); err != nil {
-	//			c.logger.WithError(err).Error("failed to cleanup after a failed Start")
-	//		} else {
-	//			c.logger.Debug("cleaned up after failed Start by calling Terminate")
-	//		}
-	//		return err
-	//	}
-	//	ctr.debugGCS()
+	c.logger.Debug("Starting container")
+	if err = hcsContainer.Start(); err != nil {
+		c.logger.WithError(err).Error("failed to start container")
+		ctr.debugGCS()
+		if err := c.terminateContainer(ctr); err != nil {
+			c.logger.WithError(err).Error("failed to cleanup after a failed Start")
+		} else {
+			c.logger.Debug("cleaned up after failed Start by calling Terminate")
+		}
+		if ctr.hcsUVM != nil {
+			ctr.hcsUVM.Terminate()
+		}
+		return err
+	}
+	ctr.debugGCS()
 
 	c.Lock()
 	c.containers[id] = ctr
@@ -923,6 +966,7 @@ func (c *client) DeleteTask(ctx context.Context, containerID string) (uint32, ti
 }
 
 func (c *client) Delete(_ context.Context, containerID string) error {
+	logrus.Debugf("Delete: %s", containerID)
 	c.Lock()
 	defer c.Unlock()
 	ctr := c.containers[containerID]
