@@ -295,12 +295,18 @@ func (daemon *Daemon) createSpecWindowsFields(c *container.Container, s *specs.S
 		if s.Windows.Resources == nil {
 			s.Windows.Resources = &specs.WindowsResources{}
 		}
-		s.Windows.Resources.CPU = &specs.WindowsCPUResources{
-			Maximum: &cpuMaximum,
-			Shares:  &cpuShares,
-			Count:   &cpuCount,
+		s.Windows.Resources.CPU = &specs.WindowsCPUResources{}
+		if cpuMaximum != 0 {
+			s.Windows.Resources.CPU.Maximum = &cpuMaximum
+		}
+		if cpuCount != 0 {
+			s.Windows.Resources.CPU.Count = &cpuCount
+		}
+		if cpuShares != 0 {
+			s.Windows.Resources.CPU.Shares = &cpuShares
 		}
 	}
+
 	if c.HostConfig.IOMaximumBandwidth != 0 || c.HostConfig.IOMaximumIOps != 0 {
 		if s.Windows.Resources == nil {
 			s.Windows.Resources = &specs.WindowsResources{}

@@ -1,5 +1,12 @@
 package hcsshim
 
+//func reverseLayers(layers []string) {
+//	last := len(layers) - 1
+//	for i := 0; i < len(layers)/2; i++ {
+//		layers[i], layers[last-i] = layers[last-i], layers[i]
+//	}
+//}
+
 import (
 	"bytes"
 	"encoding/hex"
@@ -248,19 +255,15 @@ func copyWithTimeout(dst io.Writer, src io.Reader, size int64, context string) (
 // CreateOptions are the complete set of fields required to call any of the
 // Create* APIs in HCSShim.
 type CreateOptions struct {
-	Id string // Identifier for the container
-
-	// TODO. Would be good to get this as an ID if possible. But not sure.
-	UVM Container // Container object representing the utility VM
-
-	IsHost bool // If this is host for other containers
-
-	Owner         string                        // Arbitrary string determining the owner
-	SchemaVersion *SchemaVersion                // Schema version of the create request
-	Spec          *specs.Spec                   // Definition of the container or utility VM
-	LCOWOptions   *LCOWOptions                  // Configuration of an LCOW utility VM. ??Should these be part of OCI?? // What about annotations to put these in?
-	Logger        *logrus.Entry                 // For logging
-	MountedLayers *ContainersResourcesStorageV2 // For v2 Xenon - TODO for Argon too....
+	Id              string                        // Identifier for the container
+	IsHostingSystem bool                          // If this is host (utility VM) for other containers
+	HostingSystem   Container                     // Container object representing the utility VM
+	Owner           string                        // Arbitrary string determining the owner
+	SchemaVersion   *SchemaVersion                // Schema version of the create request
+	Spec            *specs.Spec                   // Definition of the container or utility VM
+	LCOWOptions     *LCOWOptions                  // Configuration of an LCOW utility VM. ??Should these be part of OCI?? // What about annotations to put these in?
+	Logger          *logrus.Entry                 // For logging
+	MountedLayers   *ContainersResourcesStorageV2 // For v2 Xenon - TODO for Argon too....
 }
 
 // CreateWindowsUVMSandbox is a helper to create a sandbox for a Windows utility VM
@@ -326,48 +329,81 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 	if createOptions.Spec == nil {
 		return nil, fmt.Errorf("Spec must be supplied")
 	}
+	// TODO All this logger stuff
 	//logger := createOptions.Logger.WithField("container", createOptions.Id)
 	createOptions.Logger = createOptions.Logger.WithField("container", createOptions.Id)
 
-	// The v1 schema way of creating a container. Back compat for RS1..RS4
 	if createOptions.SchemaVersion.IsV10() {
-		if createOptions.UVM != nil {
-			return nil, fmt.Errorf("UVM must not be supplied for a v1 schema request")
+		if createOptions.HostingSystem != nil {
+			return nil, fmt.Errorf("HostingSystem must not be supplied for a v1 schema request")
 		}
-
-		// spec.Linux must be nil for Windows containers, but spec.Windows
-		// will be filled in regardless of container platform.  This is a
-		// temporary workaround due to LCOW requiring layer folder paths,
-		// which are stored under spec.Windows.
-		//
-		// TODO: @darrenstahlmsft fix this once the OCI spec is updated to
-		// support layer folder paths for LCOW
-		if createOptions.Spec.Linux == nil {
-			if createOptions.Spec.Windows == nil {
-				return nil, fmt.Errorf("containerSpec 'Windows' field must be populated")
-			}
-			if createOptions.LCOWOptions != nil {
-				return nil, fmt.Errorf("lcowOptions must not be supplied for a v1 schema Windows container request")
-			}
-			v1Configuration, err := specToHCSContainerDocument(createOptions)
-			if err != nil {
-				return nil, err
-			}
-			return createContainer(createOptions.Id, v1Configuration, SchemaV10())
+		if createOptions.LCOWOptions != nil {
+			return nil, fmt.Errorf("lcowOptions must not be supplied for a v1 schema Windows container request")
 		}
-
-		logrus.Debugf("Is a V1 LCOW")
-		if createOptions.LCOWOptions == nil {
-			return nil, fmt.Errorf("lcowOptions must be supplied for a v1 schema Linux container request")
+	}
+	if createOptions.Spec.Linux != nil {
+		if createOptions.Spec.Windows == nil {
+			return nil, fmt.Errorf("containerSpec 'Windows' field must container layer folders for a Linux container")
 		}
-		return createLCOWv1(createOptions)
+		if createOptions.SchemaVersion.IsV10() {
+			return createLCOWv1(createOptions)
+		} else {
+			// TODO v2 LCOW
+			panic("LCOW v2 not implemented")
+		}
 	}
 
-	if createOptions.Spec.Linux == nil {
-		return createWCOWv2(createOptions)
+	// Is a WCOW request.
+	hcsDocument, err := CreateHCSContainerDocument(createOptions)
+	if err != nil {
+		return nil, err
+	}
+	return createContainer(createOptions.Id, hcsDocument, createOptions.SchemaVersion)
+}
+
+// UVMResourcesFromContainerSpec takes a container spec and generates a
+// resources structure suitable for creating a utility VM to host the container.
+// This is really only relevant for a client that is running a single container
+// in a utility VM using the v2 schema. It implements logic which for the v1 schema
+// was implemented internally in HCS.
+func UVMResourcesFromContainerSpec(spec *specs.Spec) (*specs.WindowsResources, error) {
+	// TODO Move to a non-Windows file
+	// TODO: Processors. File bug. V2 schema for VM doesn't allow weight/limit, just on compute system.
+
+	if spec == nil && spec.Linux != nil { // TODO
+		return nil, fmt.Errorf("UVMResourcesFromContainerSpec not supported for LCOW yet")
 	}
 
-	// TODO: LCOWv2
+	if spec == nil || spec.Windows == nil {
+		return nil, fmt.Errorf("invalid spec")
+	}
+	var uvmCPUCount uint64 = 2
+	var uvmMemoryMB uint64 = 512
+	uvmResources := &specs.WindowsResources{
+		Memory: &specs.WindowsMemoryResources{},
+		CPU:    &specs.WindowsCPUResources{Count: &uvmCPUCount},
+	}
+	if numCPU() == 1 {
+		uvmCPUCount = 1
+	}
+	if spec.Windows.Resources != nil {
+		if spec.Windows.Resources.CPU != nil && spec.Windows.Resources.CPU.Count != nil {
+			uvmCPUCount = *spec.Windows.Resources.CPU.Count
+		}
+		if spec.Windows.Resources.Memory.Limit != nil {
+			uvmMemoryMB = (*spec.Windows.Resources.Memory.Limit) / 1024 / 1024
+		}
+	}
 
-	return nil, fmt.Errorf("invalid request - could not determine what to do")
+	// Add 256MB and round up to nearest 512MB
+	uvmMemoryMB += 256
+	if uvmMemoryMB%512 > 0 {
+		uvmMemoryMB += (512 - (uvmMemoryMB % 512))
+	}
+	uvmMemoryBytes := uvmMemoryMB * 1024 * 1024
+	uvmResources.Memory.Limit = &uvmMemoryBytes
+
+	logrus.Debugf("hcsshim: uvmResources: Memory %d MB CPUs %d", uvmMemoryMB, *uvmResources.CPU.Count)
+
+	return uvmResources, nil
 }

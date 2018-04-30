@@ -411,7 +411,7 @@ func defaultLinuxSpec() *specs.Spec {
 
 // A v1 Argon with a single base layer
 func TestV1Argon(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -420,7 +420,7 @@ func TestV1Argon(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
 	}
-	defer Unmount([]string{tempDir}, nil, SchemaV10())
+	defer Unmount(layers, nil, SchemaV10(), UnmountOperationAll)
 
 	c, err := CreateContainerEx(&CreateOptions{
 		Id:            "TestV1Argon",
@@ -428,8 +428,9 @@ func TestV1Argon(t *testing.T) {
 		SchemaVersion: &SchemaVersion{Major: 1, Minor: 0},
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
-			Windows: &specs.Windows{LayerFolders: layers},
-			Root:    &specs.Root{Path: mountPath.(string)},
+			Hostname: "v1argontest",
+			Windows:  &specs.Windows{LayerFolders: layers},
+			Root:     &specs.Root{Path: mountPath.(string)},
 		},
 	})
 	if err != nil {
@@ -443,7 +444,7 @@ func TestV1Argon(t *testing.T) {
 
 // A v1 WCOW Xenon with a single base layer
 func TestV1XenonWCOW(t *testing.T) {
-	t.Skip("for now")
+	//t.Skip("for now")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -520,6 +521,39 @@ func TestV1XenonLCOW(t *testing.T) {
 	c.Terminate()
 }
 
+// A v2 Argon with a single base layer
+func TestV2Argon(t *testing.T) {
+	//t.Skip("fornow")
+	tempDir := createWCOWTempDirWithSandbox(t)
+	defer os.RemoveAll(tempDir)
+
+	layers := []string{nanoImagePath, tempDir}
+	mountPath, err := Mount(layers, nil, SchemaV20())
+	if err != nil {
+		t.Fatalf("failed to mount container storage: %s", err)
+	}
+	defer Unmount(layers, nil, SchemaV20(), UnmountOperationAll)
+
+	c, err := CreateContainerEx(&CreateOptions{
+		Id:            "TestV2Argon",
+		Owner:         "unit-test",
+		SchemaVersion: SchemaV20(),
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
+			Hostname: "v2argontest",
+			Windows:  &specs.Windows{LayerFolders: layers},
+			Root:     &specs.Root{Path: mountPath.(string)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed create: %s", err)
+	}
+	startContainer(t, c)
+	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
+	stopContainer(t, c)
+	c.Terminate()
+}
+
 // Two v2 WCOW containers in the same UVM, each with a single base layer
 // TODO: Unmounting
 func TestV2XenonWCOWTwoContainers(t *testing.T) {
@@ -535,11 +569,11 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	defer os.RemoveAll(uvmScratchDir)
 
 	uvm, err := CreateContainerEx(&CreateOptions{
-		Id:            uvmID,
-		Owner:         "unit-test",
-		SchemaVersion: SchemaV20(),
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
-		IsHost:        true,
+		Id:              uvmID,
+		Owner:           "unit-test",
+		SchemaVersion:   SchemaV20(),
+		Logger:          logrus.WithField("module", "hcsshim unit test"),
+		IsHostingSystem: true,
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
@@ -604,9 +638,14 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	xenonB.Terminate()
 }
 
+// TODO: Test UVMResourcesFromContainerSpec
+func TestUVMSizing(t *testing.T) {
+
+}
+
 // A single WCOW xenon
 func TestV2XenonWCOW(t *testing.T) {
-	//	t.Skip("Skipping for now")
+	//t.Skip("Skipping for now")
 	uvmID := "Testv2XenonWCOW_UVM"
 	uvmScratchDir, err := ioutil.TempDir("", "uvmScratch")
 	if err != nil {
@@ -618,11 +657,11 @@ func TestV2XenonWCOW(t *testing.T) {
 	defer os.RemoveAll(uvmScratchDir)
 
 	uvm, err := CreateContainerEx(&CreateOptions{
-		Id:            uvmID,
-		Owner:         "unit-test",
-		SchemaVersion: SchemaV20(),
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
-		IsHost:        true,
+		Id:              uvmID,
+		Owner:           "unit-test",
+		SchemaVersion:   SchemaV20(),
+		Logger:          logrus.WithField("module", "hcsshim unit test"),
+		IsHostingSystem: true,
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
@@ -651,7 +690,7 @@ func TestV2XenonWCOW(t *testing.T) {
 		Path:   combinedLayers.ContainerRootPath,
 	}
 	defer func() {
-		if err := Unmount(layerFolders, uvm, SchemaV20()); err != nil {
+		if err := Unmount(layerFolders, uvm, SchemaV20(), UnmountOperationAll); err != nil {
 			t.Fatalf("failed to unmount container storage: %s", err)
 		}
 	}()
@@ -693,11 +732,11 @@ func TestV2XenonWCOWWithRemount(t *testing.T) {
 	defer os.RemoveAll(uvmScratchDir)
 
 	uvm, err := CreateContainerEx(&CreateOptions{
-		Id:            uvmID,
-		Owner:         "unit-test",
-		SchemaVersion: SchemaV20(),
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
-		IsHost:        true,
+		Id:              uvmID,
+		Owner:           "unit-test",
+		SchemaVersion:   SchemaV20(),
+		Logger:          logrus.WithField("module", "hcsshim unit test"),
+		IsHostingSystem: true,
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
@@ -726,7 +765,7 @@ func TestV2XenonWCOWWithRemount(t *testing.T) {
 		Path:   combinedLayers.ContainerRootPath,
 	}
 	defer func() {
-		if err := Unmount(layerFolders, uvm, SchemaV20()); err != nil {
+		if err := Unmount(layerFolders, uvm, SchemaV20(), UnmountOperationAll); err != nil {
 			t.Fatalf("failed to unmount container storage: %s", err)
 		}
 	}()
@@ -753,7 +792,7 @@ func TestV2XenonWCOWWithRemount(t *testing.T) {
 	xenon.Terminate()
 
 	// Now unmount and remount to exactly the same places
-	if err := Unmount(layerFolders, uvm, SchemaV20()); err != nil {
+	if err := Unmount(layerFolders, uvm, SchemaV20(), UnmountOperationAll); err != nil {
 		t.Fatalf("failed to unmount container storage: %s", err)
 	}
 	if _, err = Mount(layerFolders, uvm, SchemaV20()); err != nil {
@@ -795,11 +834,11 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 	uvmMemory := uint64(1 * 1024 * 1024 * 1024)
 	uvmCPUCount := uint64(2)
 	uvm, err := CreateContainerEx(&CreateOptions{
-		Id:            uvmID,
-		Owner:         "unit-test",
-		SchemaVersion: SchemaV20(),
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
-		IsHost:        true,
+		Id:              uvmID,
+		Owner:           "unit-test",
+		SchemaVersion:   SchemaV20(),
+		Logger:          logrus.WithField("module", "hcsshim unit test"),
+		IsHostingSystem: true,
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},

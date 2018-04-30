@@ -12,14 +12,26 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func createWCOWv2(createOptions *CreateOptions) (Container, error) {
-	if createOptions.LCOWOptions != nil {
-		return nil, fmt.Errorf("lcowOptions must not be supplied for a v2 schema Windows container request")
+// UVMFolderFromLayerFolders searches a set of layer folders which are indexed
+// from base layer at the bottom through sandbox at the top, finding the uppermost
+// layer containing the image.
+// This is inconsistent between v1 and v2.
+func UVMFolderFromLayerFolders(layerFolders []string) (string, error) {
+	var uvmFolder string
+	for _, layerFolder := range layerFolders {
+		_, err := os.Stat(filepath.Join(layerFolder, `UtilityVM`))
+		if err == nil {
+			uvmFolder = layerFolder
+			break
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
 	}
-	if createOptions.IsHost {
-		return createWCOWv2UVM(createOptions)
+	if uvmFolder == "" {
+		return "", fmt.Errorf("utility VM folder could not be found in layers")
 	}
-	return createWCOWv2HostedContainer(createOptions)
+	return uvmFolder, nil
 }
 
 func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
@@ -63,8 +75,11 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 	}
 	scsi := make(map[string]VirtualMachinesResourcesStorageScsiV2)
 	scsi["0"] = VirtualMachinesResourcesStorageScsiV2{Attachments: attachments}
-	memory := int32(2048)
-	processors := int32(1)
+	memory := int32(1024)
+	processors := int32(2)
+	if numCPU() == 1 {
+		processors = 1
+	}
 	if createOptions.Spec.Windows.Resources != nil {
 		if createOptions.Spec.Windows.Resources.Memory != nil && createOptions.Spec.Windows.Resources.Memory.Limit != nil {
 			memory = int32(*createOptions.Spec.Windows.Resources.Memory.Limit / 1024 / 1024) // OCI spec is in bytes. HCS takes MB
@@ -101,7 +116,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 				// Add networking here.... TODO
 				SCSI: scsi,
 				VirtualSMBShares: []VirtualMachinesResourcesStorageVSmbShareV2{VirtualMachinesResourcesStorageVSmbShareV2{
-					Flags: VsmbFlagPseudoOplocks | VsmbFlagNoDirnotify | VsmbFlagNoLocks | VsmbFlagTakeBackupPrivilege | VsmbFlagReadOnly,
+					Flags: VsmbFlagReadOnly | VsmbFlagPseudoOplocks | VsmbFlagTakeBackupPrivilege | VsmbFlagCacheIO | VsmbFlagShareRead,
 					Name:  "os",
 					Path:  createOptions.Spec.Windows.HyperV.UtilityVMPath,
 				}},
@@ -116,6 +131,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 	}
 	uvmContainer, err := createContainer(createOptions.Id, string(uvmb), SchemaV20())
 	if err != nil {
+		logrus.Debugln("failed to create UVM: ", err)
 		return nil, err
 	}
 	uvmContainer.(*container).scsiLocations.hostPath[0][0] = attachments["0"].Path
@@ -193,58 +209,44 @@ func removeSCSIOnFailure(c Container, controller int, lun int) {
 	}
 }
 
-func createWCOWv2HostedContainer(createOptions *CreateOptions) (Container, error) {
-	if createOptions.MountedLayers == nil {
-		return nil, fmt.Errorf("MountedLayers parameter must be supplied")
-	}
-	computeSystemV2 := &ComputeSystemV2{
-		Owner:           createOptions.Owner,
-		SchemaVersion:   SchemaV20(),
-		HostingSystemId: createOptions.UVM.(*container).id,
-		HostedSystem: &HostedSystemV2{
-			SchemaVersion: SchemaV20(),
-			Container:     &ContainerV2{Storage: createOptions.MountedLayers},
-		},
-		ShouldTerminateOnLastHandleClosed: true,
-	}
-	computeSystemV2b, err := json.Marshal(computeSystemV2)
-	if err != nil {
-		return nil, err
-	}
-	logrus.Debugf("HCSShim: definition: %s", string(computeSystemV2b))
-	hostedContainer, err := createContainer(createOptions.Id, string(computeSystemV2b), SchemaV20())
-	if err != nil {
-		return nil, err
-	}
-	return hostedContainer, nil
-}
-
-// specToHCSContainerDocument creates a document suitable for calling HCS to create
+// CreateHCSContainerDocument creates a document suitable for calling HCS to create
 // a container, both hosted and process isolated. It can create both v1 and v2
-// schema.
-func specToHCSContainerDocument(createOptions *CreateOptions) (string, error) {
-	logrus.Debugf("specToHCSContainerDocument")
+// schema. This is exported just in case a client could find it useful, but
+// not strictly necessary as it will be called by CreateContainerEx()
+func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
+	logrus.Debugf("createHCSContainerDocument")
+
+	// TODO: Make this safe if exported so no null pointer dereferences.
+	// TODO: Should this be a Windows function explicitly in the name
 
 	v1 := &ContainerConfig{
 		SystemType: "Container",
 		Name:       createOptions.Id,
 		Owner:      createOptions.Owner,
 		IgnoreFlushesDuringBoot: createOptions.Spec.Windows.IgnoreFlushesDuringBoot,
-		HostName:                createOptions.Spec.Hostname,
 		HvPartition:             false,
 	}
 
-	// TODO: Fill in HostingSystemId and HostedSystem outside
 	// IgnoreFlushesDuringBoot is a property of the SCSI attachment for the sandbox. Set when it's hot-added to the utility VM
 	// ID is a property on the create call in V2 rather than part of the schema.
 	v2 := &ComputeSystemV2{
 		Owner:                             createOptions.Owner,
 		SchemaVersion:                     SchemaV20(),
 		ShouldTerminateOnLastHandleClosed: true,
-		Container:                         &ContainerV2{Storage: &ContainersResourcesStorageV2{}},
 	}
+	v2Container := &ContainerV2{}
+	if createOptions.HostingSystem == nil {
+		v2Container.Storage = &ContainersResourcesStorageV2{}
+	} else {
+		if createOptions.MountedLayers == nil {
+			return "", fmt.Errorf("v2 schema call for a hosted container must supply mounted layers")
+		}
+		v2Container.Storage = createOptions.MountedLayers
+	}
+
 	if createOptions.Spec.Hostname != "" {
-		v2.Container.GuestOS = &GuestOsV2{HostName: createOptions.Spec.Hostname}
+		v1.HostName = createOptions.Spec.Hostname
+		v2Container.GuestOS = &GuestOsV2{HostName: createOptions.Spec.Hostname}
 	}
 
 	if createOptions.Spec.Windows.Resources != nil {
@@ -252,7 +254,7 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 			if createOptions.Spec.Windows.Resources.CPU.Count != nil ||
 				createOptions.Spec.Windows.Resources.CPU.Shares != nil ||
 				createOptions.Spec.Windows.Resources.CPU.Maximum != nil {
-				v2.Container.Processor = &ContainersResourcesProcessorV2{}
+				v2Container.Processor = &ContainersResourcesProcessorV2{}
 			}
 			if createOptions.Spec.Windows.Resources.CPU.Count != nil {
 				cpuCount := *createOptions.Spec.Windows.Resources.CPU.Count
@@ -262,56 +264,56 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 					cpuCount = hostCPUCount
 				}
 				v1.ProcessorCount = uint32(cpuCount)
-				v2.Container.Processor.Count = v1.ProcessorCount
+				v2Container.Processor.Count = v1.ProcessorCount
 			}
 			if createOptions.Spec.Windows.Resources.CPU.Shares != nil {
 				v1.ProcessorWeight = uint64(*createOptions.Spec.Windows.Resources.CPU.Shares)
-				v2.Container.Processor.Weight = v1.ProcessorWeight
+				v2Container.Processor.Weight = v1.ProcessorWeight
 			}
 			if createOptions.Spec.Windows.Resources.CPU.Maximum != nil {
 				v1.ProcessorMaximum = int64(*createOptions.Spec.Windows.Resources.CPU.Maximum)
-				v2.Container.Processor.Maximum = uint64(v1.ProcessorMaximum)
+				v2Container.Processor.Maximum = uint64(v1.ProcessorMaximum)
 			}
 		}
 		if createOptions.Spec.Windows.Resources.Memory != nil {
 			if createOptions.Spec.Windows.Resources.Memory.Limit != nil {
 				v1.MemoryMaximumInMB = int64(*createOptions.Spec.Windows.Resources.Memory.Limit) / 1024 / 1024
-				v2.Container.Memory = &ContainersResourcesMemoryV2{Maximum: uint64(v1.MemoryMaximumInMB)}
+				v2Container.Memory = &ContainersResourcesMemoryV2{Maximum: uint64(v1.MemoryMaximumInMB)}
 
 			}
 		}
 		if createOptions.Spec.Windows.Resources.Storage != nil {
 			if createOptions.Spec.Windows.Resources.Storage.Bps != nil || createOptions.Spec.Windows.Resources.Storage.Iops != nil {
-				v2.Container.Storage.StorageQoS = &ContainersResourcesStorageQoSV2{}
+				v2Container.Storage.StorageQoS = &ContainersResourcesStorageQoSV2{}
 			}
 			if createOptions.Spec.Windows.Resources.Storage.Bps != nil {
 				v1.StorageBandwidthMaximum = *createOptions.Spec.Windows.Resources.Storage.Bps
-				v2.Container.Storage.StorageQoS.BandwidthMaximum = *createOptions.Spec.Windows.Resources.Storage.Bps
+				v2Container.Storage.StorageQoS.BandwidthMaximum = *createOptions.Spec.Windows.Resources.Storage.Bps
 			}
 			if createOptions.Spec.Windows.Resources.Storage.Iops != nil {
 				v1.StorageIOPSMaximum = *createOptions.Spec.Windows.Resources.Storage.Iops
-				v2.Container.Storage.StorageQoS.IOPSMaximum = *createOptions.Spec.Windows.Resources.Storage.Iops
+				v2Container.Storage.StorageQoS.IOPSMaximum = *createOptions.Spec.Windows.Resources.Storage.Iops
 			}
 		}
 	}
 
 	// TODO V2 networking. Only partial at the moment. v2.Container.Networking.Namespace specifically
 	if createOptions.Spec.Windows.Network != nil {
-		v2.Container.Networking = &ContainersResourcesNetworkingV2{}
+		v2Container.Networking = &ContainersResourcesNetworkingV2{}
 
 		v1.EndpointList = createOptions.Spec.Windows.Network.EndpointList
-		v2.Container.Networking.NetworkAdapters = v1.EndpointList
+		v2Container.Networking.NetworkAdapters = v1.EndpointList
 
 		v1.AllowUnqualifiedDNSQuery = createOptions.Spec.Windows.Network.AllowUnqualifiedDNSQuery
-		v2.Container.Networking.AllowUnqualifiedDnsQuery = v1.AllowUnqualifiedDNSQuery
+		v2Container.Networking.AllowUnqualifiedDnsQuery = v1.AllowUnqualifiedDNSQuery
 
 		if createOptions.Spec.Windows.Network.DNSSearchList != nil {
 			v1.DNSSearchList = strings.Join(createOptions.Spec.Windows.Network.DNSSearchList, ",")
-			v2.Container.Networking.DNSSearchList = v1.DNSSearchList
+			v2Container.Networking.DNSSearchList = v1.DNSSearchList
 		}
 
 		v1.NetworkSharedContainerName = createOptions.Spec.Windows.Network.NetworkSharedContainerName
-		v2.Container.Networking.NetworkSharedContainerName = v1.NetworkSharedContainerName
+		v2Container.Networking.NetworkSharedContainerName = v1.NetworkSharedContainerName
 	}
 
 	//	// TODO V2 Credentials not in the schema yet.
@@ -319,51 +321,46 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		v1.Credentials = cs
 	}
 
-	// We must have least two layers in the spec, the bottom one being a
-	// base image, the top one being the RW layer.
+	// We must have least two layers in the spec, the first one being a
+	// base image, the last one being the RW layer.
+
+	//
+	//
+	//
+	//
+	//
+	//
+	//
+	//
+	//
+	//
+	// 4/30 JJH UP TO HERE
+	//
+	//
+	//
+	//
+	// Failing from docker hyper-v container. (v2 call), ald also on TestV2XenonWCOW. We need to skip this and some code below for creating the UVM
+	//
+	//
+	//
+	//
+	//
+	//
+	//
+	//
+	//
+	//
+	//
+	//
 	if createOptions.Spec.Windows.LayerFolders == nil || len(createOptions.Spec.Windows.LayerFolders) < 2 {
 		return "", fmt.Errorf("invalid spec - not enough layer folders supplied")
 	}
 
 	// Strip off the top-most RW/Sandbox layer as that's passed in separately to HCS for v1
+	// TODO Should this be inside the check below?
 	v1.LayerFolderPath = createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
 
-	if createOptions.Spec.Windows.HyperV != nil {
-
-		if createOptions.SchemaVersion.IsV10() {
-			v1.HvPartition = true
-			if createOptions.Spec.Windows.HyperV.UtilityVMPath != "" {
-				v1.HvRuntime = &HvRuntime{ImagePath: createOptions.Spec.Windows.HyperV.UtilityVMPath}
-			} else {
-
-				// Find the upper-most utility VM image.
-				var uvmImagePath string
-				for _, path := range createOptions.Spec.Windows.LayerFolders {
-					fullPath := filepath.Join(path, "UtilityVM")
-					_, err := os.Stat(fullPath)
-					if err == nil {
-						uvmImagePath = fullPath
-						break
-					}
-					if !os.IsNotExist(err) {
-						return "", err
-					}
-				}
-				if uvmImagePath == "" {
-					return "", fmt.Errorf("utility VM image could not be found")
-				}
-				v1.HvRuntime = &HvRuntime{ImagePath: uvmImagePath}
-			}
-		}
-
-		// TODO V2 version of above. Note it's the VSMBFS boot path and UtilityVM\Files
-
-		if createOptions.Spec.Root != nil && createOptions.Spec.Root.Path != "" {
-			return "", fmt.Errorf("invalid container spec - Root.Path must be omitted for a Hyper-V container")
-		}
-
-	} else {
-
+	if createOptions.Spec.Windows.HyperV == nil {
 		if createOptions.Spec.Root == nil {
 			return "", fmt.Errorf("invalid container spec - Root must be set")
 		}
@@ -371,8 +368,28 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		if _, err := regexp.MatchString(volumeGUIDRegex, createOptions.Spec.Root.Path); err != nil {
 			return "", fmt.Errorf(`invalid container spec - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, createOptions.Spec.Root.Path)
 		}
-		// HCS API requires the trailing backslash to be removed
-		v1.VolumePath = createOptions.Spec.Root.Path[:len(createOptions.Spec.Root.Path)-1]
+		rootPath := createOptions.Spec.Root.Path
+		if rootPath[len(rootPath)-1] != '\\' {
+			rootPath = fmt.Sprintf(`%s\`, rootPath) // Be nice to clients and make sure well-formed for back-compat
+		}
+		v1.VolumePath = rootPath[:len(rootPath)-1] // Strip the trailing backslash. Required for v1. Sigh.
+		v2Container.Storage.Path = rootPath
+	} else {
+		if createOptions.Spec.Root != nil && createOptions.Spec.Root.Path != "" {
+			return "", fmt.Errorf("invalid container spec - Root.Path must be omitted for a Hyper-V container")
+		}
+		if createOptions.SchemaVersion.IsV10() {
+			v1.HvPartition = true
+			if createOptions.Spec.Windows.HyperV.UtilityVMPath != "" {
+				v1.HvRuntime = &HvRuntime{ImagePath: createOptions.Spec.Windows.HyperV.UtilityVMPath}
+			} else {
+				uvmImagePath, err := UVMFolderFromLayerFolders(createOptions.Spec.Windows.LayerFolders)
+				if err != nil {
+					return "", err
+				}
+				v1.HvRuntime = &HvRuntime{ImagePath: uvmImagePath}
+			}
+		}
 	}
 
 	if createOptions.Spec.Root != nil && createOptions.Spec.Root.Readonly {
@@ -386,6 +403,7 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 			return "", err
 		}
 		v1.Layers = append(v1.Layers, Layer{ID: g.ToString(), Path: layerPath})
+		v2Container.Storage.Layers = append(v2Container.Storage.Layers, ContainersResourcesLayerV2{Id: g.ToString(), Path: layerPath})
 	}
 
 	// Add the mounts as mapped directories or mapped pipes
@@ -417,41 +435,58 @@ func specToHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		}
 	}
 	v1.MappedDirectories = mdsv1
-	v2.Container.MappedDirectories = mdsv2
+	v2Container.MappedDirectories = mdsv2
 	if len(mpsv1) > 0 && GetOSVersion().Build < 16299 { // RS3
 		return "", fmt.Errorf("named pipe mounts are not supported on this version of Windows")
 	}
 	v1.MappedPipes = mpsv1
-	v2.Container.MappedPipes = mpsv2
+	v2Container.MappedPipes = mpsv2
+
+	// Where do we put the v2Container object - as a HostedSystem for a Xenon, or directly in the schema for an Argon.
+	if createOptions.HostingSystem == nil {
+		v2.Container = v2Container
+	} else {
+		v2.HostingSystemId = createOptions.HostingSystem.(*container).id
+		v2.HostedSystem = &HostedSystemV2{
+			SchemaVersion: SchemaV20(),
+			Container:     v2Container,
+		}
+	}
 
 	if createOptions.SchemaVersion.IsV10() {
 		v1b, err := json.Marshal(v1)
 		if err != nil {
 			return "", err
 		}
+		logrus.Debugln("hcsshim: HCS Document:", string(v1b))
 		return string(v1b), nil
 	} else {
-		panic("Not implemented yet")
+		v2b, err := json.Marshal(v2)
+		if err != nil {
+			return "", err
+		}
+		logrus.Debugln("hcsshim: HCS Document:", string(v2b))
+		return string(v2b), nil
 	}
-	return "", nil
 }
 
 // Mount is a helper for clients to hide all the complexity of layer mounting
 // Layer folder are in order: base, [rolayer1..rolayern,] sandbox
 // TODO: Extend for LCOW?
 //
-// v1: Argon WCOW: Returns the mount path on the host as a volume GUID.
-// v1: Xenon WCOW: Done internally in HCS, so no point calling doing anything here.
-// v2: Xenon WCOW: Returns a CombinedLayersV2 structure where ContainerRootPath is a folder
-//                 inside the utility VM which is a GUID mapping of the sandbox folder. Each
-//                 of the layers are the VSMB locations where the read-only layers are mounted.
+// v1/v2: Argon WCOW: Returns the mount path on the host as a volume GUID.
+// v1:    Xenon WCOW: Done internally in HCS, so no point calling doing anything here.
+// v2:    Xenon WCOW: Returns a CombinedLayersV2 structure where ContainerRootPath is a folder
+//                    inside the utility VM which is a GUID mapping of the sandbox folder. Each
+//                    of the layers are the VSMB locations where the read-only layers are mounted.
 
 // TODO Should this return a string or an object? More efficient as object, but requires more client work to marshall it again.
 func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (interface{}, error) {
 	if err := sv.isSupported(); err != nil {
 		return nil, err
 	}
-	if sv.IsV10() {
+	if sv.IsV10() ||
+		(sv.IsV20() && hostingSystem == nil) {
 		if len(layerFolders) < 2 {
 			return nil, fmt.Errorf("need at least two layers - base and sandbox")
 		}
@@ -482,11 +517,7 @@ func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (i
 		return mountPath, nil
 	}
 
-	// v2 schema.
-
-	if hostingSystem == nil {
-		return nil, fmt.Errorf("Not implemented v2 mounting argon-style")
-	}
+	// V2 UVM
 
 	// 	Add each read-only layers as a VSMB share. In each case, the ResourceUri will end in a GUID based on the folder path.
 	//  Each VSMB share is ref-counted so that multiple containers in the same utility VM can share them.
@@ -513,7 +544,7 @@ func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (i
 				RequestType:  RequestTypeAdd,
 				Settings: VirtualMachinesResourcesStorageVSmbShareV2{
 					Name:  guid.ToString(),
-					Flags: VsmbFlagReadOnly | VsmbFlagPseudoOplocks | VsmbFlagTakeBackupPrivilege,
+					Flags: VsmbFlagReadOnly | VsmbFlagPseudoOplocks | VsmbFlagTakeBackupPrivilege | VsmbFlagCacheIO | VsmbFlagShareRead,
 					Path:  layerPath,
 				},
 				ResourceUri: fmt.Sprintf("virtualmachine/devices/virtualsmbshares/%s", guid.ToString()),
@@ -603,12 +634,31 @@ func Mount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) (i
 	return combinedLayers, nil
 }
 
-func Unmount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) error {
+// UnmountOperation is used when calling Unmount() to determine what type of unmount is
+// required. In V1 schema, this must be UnmountOperationAll. In V2, client can
+// be more optimal and only unmount what they need which can be a minor performance
+// improvement (eg if you know only one container is running in a utility VM, and
+// the UVM is about to be torn down, there's no need to unmount the VSMB shares,
+// just SCSI to have a consistent file system).
+type UnmountOperation uint
+
+const (
+	UnmountOperationSCSI = 0x01
+	UnmountOperationVSMB = 0x02
+	UnmountOperationAll  = UnmountOperationSCSI | UnmountOperationVSMB
+)
+
+// Unmount is a helper for clients to hide all the complexity of layer unmounting
+func Unmount(layerFolders []string, hostingSystem Container, sv *SchemaVersion, op UnmountOperation) error {
 	if err := sv.isSupported(); err != nil {
 		return err
 	}
-	if sv.IsV10() {
-		// V1, we only need to have the sandbox.
+	if sv.IsV10() || (sv.IsV20() && hostingSystem == nil) {
+		if op != UnmountOperationAll {
+			return fmt.Errorf("Only UnmountOperationAll is supported in the v1 schema, or for v2 schema argons")
+		}
+
+		// We only need to have the sandbox.
 		if len(layerFolders) < 1 {
 			return fmt.Errorf("need at least one layer for Unmount")
 		}
@@ -621,9 +671,7 @@ func Unmount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) 
 		return DeactivateLayer(di, id)
 	}
 
-	if hostingSystem == nil {
-		return fmt.Errorf("Not implemented v2 mounting argon-style")
-	}
+	// V2 Xenon
 
 	// Base+Sandbox as a minimum. This is different to v1 which only requires the sandbox
 	if len(layerFolders) < 2 {
@@ -633,45 +681,47 @@ func Unmount(layerFolders []string, hostingSystem Container, sv *SchemaVersion) 
 	var retError error
 	c := hostingSystem.(*container)
 
-	// Unload the storage filter
-	_, sandboxPath := filepath.Split(layerFolders[len(layerFolders)-1])
-	containerPathGUID, err := NameToGuid(sandboxPath)
-	if err != nil {
-		logrus.Warnf("may leak a sandbox in %s as nametoguid failed: %s", err)
-	} else {
-		combinedLayersModification := &ModifySettingsRequestV2{
-			ResourceType:   ResourceTypeCombinedLayers,
-			RequestType:    RequestTypeRemove,
-			HostedSettings: CombinedLayersV2{ContainerRootPath: fmt.Sprintf(`C:\%s`, containerPathGUID.ToString())},
-		}
-		if err := hostingSystem.Modify(combinedLayersModification); err != nil {
-			logrus.Errorf(err.Error())
-		}
-	}
-
-	// Hot remove the sandbox from the SCSI controller
-	c.scsiLocations.Lock()
-	hostSandboxFile := filepath.Join(layerFolders[len(layerFolders)-1], "sandbox.vhdx")
-	controller, lun, err := findSCSIAttachment(c, hostSandboxFile)
-	if err != nil {
-		logrus.Warnf("sandbox %s is not attached to SCSI - cannot remove!", hostSandboxFile)
-	} else {
-		if err := removeSCSI(c, controller, lun, fmt.Sprintf(`C:\%s`, containerPathGUID.ToString())); err != nil {
-			e := fmt.Errorf("failed to remove SCSI %s: %s", hostSandboxFile, err)
-			logrus.Debugln(e)
-			if retError == nil {
-				retError = e
-			} else {
-				retError = errors.Wrapf(retError, e.Error())
+	// Unload the storage filter followed by the SCSI sandbox
+	if (op | UnmountOperationSCSI) == UnmountOperationSCSI {
+		_, sandboxPath := filepath.Split(layerFolders[len(layerFolders)-1])
+		containerPathGUID, err := NameToGuid(sandboxPath)
+		if err != nil {
+			logrus.Warnf("may leak a sandbox in %s as nametoguid failed: %s", err)
+		} else {
+			combinedLayersModification := &ModifySettingsRequestV2{
+				ResourceType:   ResourceTypeCombinedLayers,
+				RequestType:    RequestTypeRemove,
+				HostedSettings: CombinedLayersV2{ContainerRootPath: fmt.Sprintf(`C:\%s`, containerPathGUID.ToString())},
+			}
+			if err := hostingSystem.Modify(combinedLayersModification); err != nil {
+				logrus.Errorf(err.Error())
 			}
 		}
+
+		// Hot remove the sandbox from the SCSI controller
+		c.scsiLocations.Lock()
+		hostSandboxFile := filepath.Join(layerFolders[len(layerFolders)-1], "sandbox.vhdx")
+		controller, lun, err := findSCSIAttachment(c, hostSandboxFile)
+		if err != nil {
+			logrus.Warnf("sandbox %s is not attached to SCSI - cannot remove!", hostSandboxFile)
+		} else {
+			if err := removeSCSI(c, controller, lun, fmt.Sprintf(`C:\%s`, containerPathGUID.ToString())); err != nil {
+				e := fmt.Errorf("failed to remove SCSI %s: %s", hostSandboxFile, err)
+				logrus.Debugln(e)
+				if retError == nil {
+					retError = e
+				} else {
+					retError = errors.Wrapf(retError, e.Error())
+				}
+			}
+		}
+		c.scsiLocations.Unlock()
 	}
-	c.scsiLocations.Unlock()
 
 	// Remove each of the read-only layers from VSMB. These's are ref-counted and
 	// only removed once the count drops to zero. This allows multiple containers
 	// to share layers.
-	if len(layerFolders) > 1 {
+	if len(layerFolders) > 1 && (op|UnmountOperationVSMB) == UnmountOperationVSMB {
 		c.vsmbShares.Lock()
 		if c.vsmbShares.guids == nil {
 			c.vsmbShares.guids = make(map[string]int)

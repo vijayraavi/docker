@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -72,6 +71,7 @@ func (c *client) Version(ctx context.Context) (containerd.Version, error) {
 }
 
 func (c *client) Create(ctx context.Context, id string, spec *specs.Spec, runtimeOptions interface{}) error {
+	logrus.Debugf("Context: %+v", ctx) // TODO JJH Interim. Want to know what's in this.
 	if ctr := c.getContainer(id); ctr != nil {
 		return errors.WithStack(newConflictError("id already in use"))
 	}
@@ -89,6 +89,14 @@ func (c *client) Create(ctx context.Context, id string, spec *specs.Spec, runtim
 	return c.createLinux(id, spec, runtimeOptions)
 }
 
+func useSchemaV20() bool {
+	// TODO @jhowardmsft Version Number for RS5 RTM and possibly hide behind environment variable?
+	if system.GetOSVersion().Build >= 17656 {
+		return true
+	}
+	return false
+}
+
 func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions interface{}) error {
 	//logger := c.logger.WithField("container", id)
 
@@ -97,8 +105,7 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 	}
 
 	schemaVersion := hcsshim.SchemaV10()
-	// TODO @jhowardmsft Version Number for RS5 RTM and possibly hide behind environment variable?
-	if system.GetOSVersion().Build >= 17656 {
+	if useSchemaV20() {
 		schemaVersion = hcsshim.SchemaV20()
 	}
 
@@ -124,39 +131,34 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 			uvmID := fmt.Sprintf("%s_uvm", id)
 			uvmScratchDir := `c:\foobar` // TODO
 
-			// Find the upper-most utility VM image.
-			var uvmImagePath string
-			for _, path := range spec.Windows.LayerFolders {
-				_, err := os.Stat(filepath.Join(path, `UtilityVM\Files`))
-				if err == nil {
-					uvmImagePath = path
-					break
-				}
-				if !os.IsNotExist(err) {
-					return err
-				}
-			}
-			if uvmImagePath == "" {
-				return fmt.Errorf("utility VM image could not be found in layers")
-			}
-
-			// Create a utility VM scratch
-			if err := hcsshim.CreateWindowsUVMSandbox(uvmImagePath, uvmScratchDir, uvmID); err != nil {
+			uvmLayerFolder, err := hcsshim.UVMFolderFromLayerFolders(spec.Windows.LayerFolders)
+			if err != nil {
 				return err
 			}
 
-			// Create a utility VM
+			// Create a scratch for the UVM to boot from
+			if err := hcsshim.CreateWindowsUVMSandbox(uvmLayerFolder, uvmScratchDir, uvmID); err != nil {
+				return err
+			}
+
+			// Calculate the UVM sizing
+			uvmResources, err := hcsshim.UVMResourcesFromContainerSpec(spec)
+			if err != nil {
+				return err
+			}
+
+			// Create it
 			uvm, err := hcsshim.CreateContainerEx(&hcsshim.CreateOptions{
-				Id:            uvmID,
-				Owner:         "moby",
-				SchemaVersion: schemaVersion,
-				Logger:        logrus.WithField("container", id),
-				IsHost:        true,
+				Id:              uvmID,
+				Owner:           "moby",
+				SchemaVersion:   schemaVersion,
+				Logger:          logrus.WithField("container", id),
+				IsHostingSystem: true,
 				Spec: &specs.Spec{
 					Windows: &specs.Windows{
 						LayerFolders: []string{uvmScratchDir},
-						HyperV:       &specs.WindowsHyperV{filepath.Join(uvmImagePath, `UtilityVM\Files`)}, // TODO CUrrently this is required
-						Resources:    spec.Windows.Resources,
+						HyperV:       &specs.WindowsHyperV{filepath.Join(uvmLayerFolder, `UtilityVM\Files`)}, // TODO CUrrently this is required
+						Resources:    uvmResources,
 					},
 				},
 			})
@@ -166,12 +168,11 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 			ctr.hcsUVM = uvm
 			containerCreateOptions.HostingSystem = uvm
 
-			// Start utility VM
 			if err := uvm.Start(); err != nil {
 				return fmt.Errorf("failed to start utility VM: %s", err)
 			}
 
-			// Mount the storage in the utility VM
+			// Mount the containers storage in the UVM
 			cls, err := hcsshim.Mount(spec.Windows.LayerFolders, uvm, schemaVersion)
 			if err != nil {
 				uvm.Terminate()
@@ -182,7 +183,6 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 				Layers: combinedLayers.Layers,
 				Path:   combinedLayers.ContainerRootPath,
 			}
-
 		} // If a Hyper-V container
 	}
 
@@ -201,7 +201,7 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 	if err = hcsContainer.Start(); err != nil {
 		c.logger.WithError(err).Error("failed to start container")
 		ctr.debugGCS()
-		if err := c.terminateContainer(ctr); err != nil {
+		if err := c.terminateContainer(ctr.id, ctr.hcsContainer); err != nil {
 			c.logger.WithError(err).Error("failed to cleanup after a failed Start")
 		} else {
 			c.logger.Debug("cleaned up after failed Start by calling Terminate")
@@ -1049,45 +1049,61 @@ func (c *client) getProcess(containerID, processID string) (*container, *process
 
 func (c *client) shutdownContainer(ctr *container) error {
 	const shutdownTimeout = time.Minute * 5
-	err := ctr.hcsContainer.Shutdown()
-
-	if hcsshim.IsPending(err) {
-		err = ctr.hcsContainer.WaitTimeout(shutdownTimeout)
-	} else if hcsshim.IsAlreadyStopped(err) {
-		err = nil
+	returnError := ctr.hcsContainer.Shutdown()
+	if hcsshim.IsPending(returnError) {
+		returnError = ctr.hcsContainer.WaitTimeout(shutdownTimeout)
+	} else if hcsshim.IsAlreadyStopped(returnError) {
+		returnError = nil
 	}
 
-	if err != nil {
-		c.logger.WithError(err).WithField("container", ctr.id).
-			Debug("failed to shutdown container, terminating it")
-		terminateErr := c.terminateContainer(ctr)
+	// We terminate the container if the attempt at shutdown failed
+	if returnError != nil {
+		c.logger.WithError(returnError).WithField("container", ctr.id).Debug("failed to shutdown container, terminating it")
+		terminateErr := c.terminateContainer(ctr.id, ctr.hcsContainer)
 		if terminateErr != nil {
-			c.logger.WithError(terminateErr).WithField("container", ctr.id).
-				Error("failed to shutdown container, and subsequent terminate also failed")
-			return fmt.Errorf("%s: subsequent terminate failed %s", err, terminateErr)
+			c.logger.WithError(terminateErr).WithField("container", ctr.id).Error("failed to shutdown container, and subsequent terminate also failed")
+			returnError = fmt.Errorf("%s: subsequent terminate failed %s", returnError, terminateErr)
 		}
-		return err
 	}
 
-	return nil
+	// Handle the utility VM lifetime in v2. Once the containers sandbox is unmounted, we just shoot it. We don't need to unmount VSMB (minor optimisation)
+	if ctr.hcsUVM != nil {
+		if unmountErr := hcsshim.Unmount(ctr.ociSpec.Windows.LayerFolders, ctr.hcsUVM, hcsshim.SchemaV20(), hcsshim.UnmountOperationSCSI); unmountErr != nil {
+			c.logger.WithError(unmountErr).WithField("container", ctr.id).Error("failed to unmount storage from utility VM")
+			if returnError == nil {
+				returnError = unmountErr
+			} else {
+				returnError = fmt.Errorf("%s: subsequent UVM storage unmount failed %s", returnError, unmountErr)
+			}
+		}
+
+		uvmID := fmt.Sprintf("%s_uvm", ctr.id)
+		if terminateUVMError := c.terminateContainer(uvmID, ctr.hcsUVM); terminateUVMError != nil {
+			c.logger.WithError(terminateUVMError).WithField("container", uvmID).Error("failed to terminate utility VM")
+			if returnError == nil {
+				returnError = terminateUVMError
+			} else {
+				returnError = fmt.Errorf("%s subsequent terminate UVM failed %s", returnError, terminateUVMError)
+			}
+		}
+	}
+
+	return returnError
 }
 
-func (c *client) terminateContainer(ctr *container) error {
+func (c *client) terminateContainer(id string, hcsObject hcsshim.Container) error {
 	const terminateTimeout = time.Minute * 5
-	err := ctr.hcsContainer.Terminate()
+	err := hcsObject.Terminate()
 
 	if hcsshim.IsPending(err) {
-		err = ctr.hcsContainer.WaitTimeout(terminateTimeout)
+		err = hcsObject.WaitTimeout(terminateTimeout)
 	} else if hcsshim.IsAlreadyStopped(err) {
 		err = nil
 	}
-
 	if err != nil {
-		c.logger.WithError(err).WithField("container", ctr.id).
-			Debug("failed to terminate container")
+		c.logger.WithError(err).WithField("container", id).Debug("failed to terminate container")
 		return err
 	}
-
 	return nil
 }
 
