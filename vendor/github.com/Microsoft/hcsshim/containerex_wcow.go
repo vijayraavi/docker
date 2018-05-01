@@ -22,15 +22,19 @@ func UVMFolderFromLayerFolders(layerFolders []string) (string, error) {
 		_, err := os.Stat(filepath.Join(layerFolder, `UtilityVM`))
 		if err == nil {
 			uvmFolder = layerFolder
-			break
+			continue
 		}
 		if !os.IsNotExist(err) {
 			return "", err
+		}
+		if os.IsNotExist(err) {
+			break
 		}
 	}
 	if uvmFolder == "" {
 		return "", fmt.Errorf("utility VM folder could not be found in layers")
 	}
+	logrus.Debugln("hcsshim: UVMFolderFromLayerFolders: %s", uvmFolder)
 	return uvmFolder, nil
 }
 
@@ -340,6 +344,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 	//
 	//
 	// Failing from docker hyper-v container. (v2 call), ald also on TestV2XenonWCOW. We need to skip this and some code below for creating the UVM
+	// Probably need to reverse some layers too.
 	//
 	//
 	//
@@ -372,7 +377,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		if rootPath[len(rootPath)-1] != '\\' {
 			rootPath = fmt.Sprintf(`%s\`, rootPath) // Be nice to clients and make sure well-formed for back-compat
 		}
-		v1.VolumePath = rootPath[:len(rootPath)-1] // Strip the trailing backslash. Required for v1. Sigh.
+		v1.VolumePath = rootPath[:len(rootPath)-1] // Strip the trailing backslash. Required for v1.
 		v2Container.Storage.Path = rootPath
 	} else {
 		if createOptions.Spec.Root != nil && createOptions.Spec.Root.Path != "" {

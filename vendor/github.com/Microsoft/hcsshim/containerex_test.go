@@ -51,11 +51,14 @@ func init() {
 	})
 
 	os.Setenv("HCSSHIM_LCOW_DEBUG_ENABLE", "something")
-	nanoImagePath, nanoImageId = getImagePath("microsoft/nanoserver:latest")
-	alpineImagePath, alpineImageId = getImagePath("alpine:latest")
-	busyboxImagePath, busyboxImageId = getImagePath("busybox:latest")
-	busyboxROLayers = getROLayerPaths("busybox:latest")
+	//nanoImagePath, nanoImageId = getImagePath("microsoft/windowsservercore:latest")
+	//alpineImagePath, alpineImageId = getImagePath("alpine:latest")
+	//busyboxImagePath, busyboxImageId = getImagePath("microsoft/windowsservercore:1709")
+	//busyboxROLayers = getROLayerPaths("microsof")
+	// docker info -f '{{.DockerRootDir}}'
+
 	fmt.Println(getROLayerPaths("microsoft/windowsservercore:1709"))
+	panic("jjh")
 }
 
 func getImagePath(imageName string) (string, string) {
@@ -411,7 +414,7 @@ func defaultLinuxSpec() *specs.Spec {
 
 // A v1 Argon with a single base layer
 func TestV1Argon(t *testing.T) {
-	//t.Skip("fornow")
+	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -444,7 +447,7 @@ func TestV1Argon(t *testing.T) {
 
 // A v1 WCOW Xenon with a single base layer
 func TestV1XenonWCOW(t *testing.T) {
-	//t.Skip("for now")
+	t.Skip("for now")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -523,7 +526,7 @@ func TestV1XenonLCOW(t *testing.T) {
 
 // A v2 Argon with a single base layer
 func TestV2Argon(t *testing.T) {
-	//t.Skip("fornow")
+	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
