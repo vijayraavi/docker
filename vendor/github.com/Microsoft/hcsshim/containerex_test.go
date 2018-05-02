@@ -698,23 +698,6 @@ func TestV2XenonWCOW(t *testing.T) {
 	// Mount the containers storage in the utility VM
 	containerScratchDir := createWCOWTempDirWithSandbox(t)
 	layerFolders := append(layersBusybox, containerScratchDir)
-	cls, err := Mount(layerFolders, uvm, SchemaV20())
-	if err != nil {
-		t.Fatalf("failed to mount container storage: %s", err)
-	}
-	combinedLayers := cls.(CombinedLayersV2)
-	mountedLayers := &ContainersResourcesStorageV2{
-		Layers: combinedLayers.Layers,
-		Path:   combinedLayers.ContainerRootPath,
-	}
-
-	logrus.Debugln("Mounted Layers:", mountedLayers)
-
-	defer func() {
-		if err := Unmount(layerFolders, uvm, SchemaV20(), UnmountOperationAll); err != nil {
-			t.Fatalf("failed to unmount container storage: %s", err)
-		}
-	}()
 
 	// Start the container
 	defer os.RemoveAll(containerScratchDir)
@@ -724,12 +707,12 @@ func TestV2XenonWCOW(t *testing.T) {
 		HostingSystem: uvm,
 		SchemaVersion: SchemaV20(),
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
-		Spec:          &specs.Spec{Windows: &specs.Windows{}}, //  Windows: &specs.Windows{LayerFolders: layerFolders}},
-		MountedLayers: mountedLayers,
+		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
 	})
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)
 	}
+	defer Unmount(layerFolders, uvm, SchemaV20(), UnmountOperationAll)
 
 	// Start/stop the containers
 	startContainer(t, xenon)
@@ -738,106 +721,105 @@ func TestV2XenonWCOW(t *testing.T) {
 	xenon.Terminate()
 }
 
-// This verifies the container storage is unmounted correctly so that a second
-// container can be started from the same storage.
-func TestV2XenonWCOWWithRemount(t *testing.T) {
-	t.Skip("Skipping for now")
-	uvmID := "Testv2XenonWCOWWithRestart_UVM"
-	uvmScratchDir, err := ioutil.TempDir("", "uvmScratch")
-	if err != nil {
-		t.Fatalf("Failed create temporary directory: %s", err)
-	}
-	if err := CreateWindowsUVMSandbox(layersNanoserver[0], uvmScratchDir, uvmID); err != nil {
-		t.Fatalf("Failed create Windows UVM Sandbox: %s", err)
-	}
-	defer os.RemoveAll(uvmScratchDir)
+//// This verifies the container storage is unmounted correctly so that a second
+//// container can be started from the same storage.
+//func TestV2XenonWCOWWithRemount(t *testing.T) {
+////	t.Skip("Skipping for now")
+//	uvmID := "Testv2XenonWCOWWithRestart_UVM"
+//	uvmScratchDir, err := ioutil.TempDir("", "uvmScratch")
+//	if err != nil {
+//		t.Fatalf("Failed create temporary directory: %s", err)
+//	}
+//	if err := CreateWindowsUVMSandbox(layersNanoserver[0], uvmScratchDir, uvmID); err != nil {
+//		t.Fatalf("Failed create Windows UVM Sandbox: %s", err)
+//	}
+//	defer os.RemoveAll(uvmScratchDir)
 
-	uvm, err := CreateContainerEx(&CreateOptions{
-		Id:              uvmID,
-		Owner:           "unit-test",
-		SchemaVersion:   SchemaV20(),
-		Logger:          logrus.WithField("module", "hcsshim unit test"),
-		IsHostingSystem: true,
-		Spec: &specs.Spec{
-			Windows: &specs.Windows{
-				LayerFolders: []string{uvmScratchDir},
-				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(layersNanoserver[0], `UtilityVM\Files`)},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Failed create UVM: %s", err)
-	}
-	defer uvm.Terminate()
-	if err := uvm.Start(); err != nil {
-		t.Fatalf("Failed start utility VM: %s", err)
-	}
+//	uvm, err := CreateContainerEx(&CreateOptions{
+//		Id:              uvmID,
+//		Owner:           "unit-test",
+//		SchemaVersion:   SchemaV20(),
+//		Logger:          logrus.WithField("module", "hcsshim unit test"),
+//		IsHostingSystem: true,
+//		Spec: &specs.Spec{
+//			Windows: &specs.Windows{
+//				LayerFolders: []string{uvmScratchDir},
+//				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(layersNanoserver[0], `UtilityVM\Files`)},
+//			},
+//		},
+//	})
+//	if err != nil {
+//		t.Fatalf("Failed create UVM: %s", err)
+//	}
+//	defer uvm.Terminate()
+//	if err := uvm.Start(); err != nil {
+//		t.Fatalf("Failed start utility VM: %s", err)
+//	}
 
-	// Mount the containers storage in the utility VM
-	containerScratchDir := createWCOWTempDirWithSandbox(t)
-	layerFolders := append(layersNanoserver, containerScratchDir)
-	cls, err := Mount(layerFolders, uvm, SchemaV20())
-	if err != nil {
-		t.Fatalf("failed to mount container storage: %s", err)
-	}
-	combinedLayers := cls.(CombinedLayersV2)
-	mountedLayers := &ContainersResourcesStorageV2{
-		Layers: combinedLayers.Layers,
-		Path:   combinedLayers.ContainerRootPath,
-	}
-	defer func() {
-		if err := Unmount(layerFolders, uvm, SchemaV20(), UnmountOperationAll); err != nil {
-			t.Fatalf("failed to unmount container storage: %s", err)
-		}
-	}()
+//	// Mount the containers storage in the utility VM
+//	containerScratchDir := createWCOWTempDirWithSandbox(t)
+//	layerFolders := append(layersNanoserver, containerScratchDir)
+//	cls, err := Mount(layerFolders, uvm, SchemaV20())
+//	if err != nil {
+//		t.Fatalf("failed to mount container storage: %s", err)
+//	}
+//	combinedLayers := cls.(CombinedLayersV2)
+//	mountedLayers := &ContainersResourcesStorageV2{
+//		Layers: combinedLayers.Layers,
+//		Path:   combinedLayers.ContainerRootPath,
+//	}
+//	defer func() {
+//		if err := Unmount(layerFolders, uvm, SchemaV20(), UnmountOperationAll); err != nil {
+//			t.Fatalf("failed to unmount container storage: %s", err)
+//		}
+//	}()
 
-	// Create the first container
-	defer os.RemoveAll(containerScratchDir)
-	xenon, err := CreateContainerEx(&CreateOptions{
-		Id:            "container",
-		Owner:         "unit-test",
-		HostingSystem: uvm,
-		SchemaVersion: SchemaV20(),
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
-		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
-		MountedLayers: mountedLayers,
-	})
-	if err != nil {
-		t.Fatalf("CreateContainerEx failed: %s", err)
-	}
+//	// Create the first container
+//	defer os.RemoveAll(containerScratchDir)
+//	xenon, err := CreateContainerEx(&CreateOptions{
+//		Id:            "container",
+//		Owner:         "unit-test",
+//		HostingSystem: uvm,
+//		SchemaVersion: SchemaV20(),
+//		Logger:        logrus.WithField("module", "hcsshim unit test"),
+//		Spec:          &specs.Spec{Windows: &specs.Windows{}}, // No layerfolders as we mounted them ourself.
+//	})
+//	if err != nil {
+//		t.Fatalf("CreateContainerEx failed: %s", err)
+//	}
 
-	// Start/stop the first container
-	startContainer(t, xenon)
-	runCommand(t, xenon, "cmd /s /c echo TestV2XenonWCOWFirstStart", `c:\`, "TestV2XenonWCOWFirstStart")
-	stopContainer(t, xenon)
-	xenon.Terminate()
+//	// Start/stop the first container
+//	startContainer(t, xenon)
+//	runCommand(t, xenon, "cmd /s /c echo TestV2XenonWCOWFirstStart", `c:\`, "TestV2XenonWCOWFirstStart")
+//	stopContainer(t, xenon)
+//	xenon.Terminate()
 
-	// Now unmount and remount to exactly the same places
-	if err := Unmount(layerFolders, uvm, SchemaV20(), UnmountOperationAll); err != nil {
-		t.Fatalf("failed to unmount container storage: %s", err)
-	}
-	if _, err = Mount(layerFolders, uvm, SchemaV20()); err != nil {
-		t.Fatalf("failed to mount container storage: %s", err)
-	}
+//	// Now unmount and remount to exactly the same places
+//	if err := Unmount(layerFolders, uvm, SchemaV20(), UnmountOperationAll); err != nil {
+//		t.Fatalf("failed to unmount container storage: %s", err)
+//	}
+//	if _, err = Mount(layerFolders, uvm, SchemaV20()); err != nil {
+//		t.Fatalf("failed to mount container storage: %s", err)
+//	}
 
-	// Create an identical second container and verify it works too.
-	xenon2, err := CreateContainerEx(&CreateOptions{
-		Id:            "container",
-		Owner:         "unit-test",
-		HostingSystem: uvm,
-		SchemaVersion: SchemaV20(),
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
-		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
-		MountedLayers: mountedLayers,
-	})
-	if err != nil {
-		t.Fatalf("CreateContainerEx failed: %s", err)
-	}
-	startContainer(t, xenon2)
-	runCommand(t, xenon2, "cmd /s /c echo TestV2XenonWCOWAfterRemount", `c:\`, "TestV2XenonWCOWAfterRemount")
-	stopContainer(t, xenon2)
-	xenon2.Terminate()
-}
+//	// Create an identical second container and verify it works too.
+//	xenon2, err := CreateContainerEx(&CreateOptions{
+//		Id:            "container",
+//		Owner:         "unit-test",
+//		HostingSystem: uvm,
+//		SchemaVersion: SchemaV20(),
+//		Logger:        logrus.WithField("module", "hcsshim unit test"),
+//		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
+//		MountedLayers: mountedLayers,
+//	})
+//	if err != nil {
+//		t.Fatalf("CreateContainerEx failed: %s", err)
+//	}
+//	startContainer(t, xenon2)
+//	runCommand(t, xenon2, "cmd /s /c echo TestV2XenonWCOWAfterRemount", `c:\`, "TestV2XenonWCOWAfterRemount")
+//	stopContainer(t, xenon2)
+//	xenon2.Terminate()
+//}
 
 // TestCreateContainerExv2XenonWCOWMultiLayer creates a V2 Xenon having multiple image layers
 func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
@@ -888,18 +870,6 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 	containerAScratchDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(containerAScratchDir)
 
-	// Mount the storage in the utility VM
-	layerFolders := append(layersBusybox, containerAScratchDir)
-	cls, err := Mount(layerFolders, uvm, SchemaV20())
-	if err != nil {
-		t.Fatalf("failed to mount container storage: %s", err)
-	}
-	combinedLayers := cls.(CombinedLayersV2)
-	mountedLayers := &ContainersResourcesStorageV2{
-		Layers: combinedLayers.Layers,
-		Path:   combinedLayers.ContainerRootPath,
-	}
-
 	// Create the container
 	xenon, err := CreateContainerEx(&CreateOptions{
 		Id:            "containerA",
@@ -907,8 +877,7 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 		HostingSystem: uvm,
 		SchemaVersion: SchemaV20(),
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
-		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
-		MountedLayers: mountedLayers,
+		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: append(layersBusybox, containerAScratchDir)}},
 	})
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)

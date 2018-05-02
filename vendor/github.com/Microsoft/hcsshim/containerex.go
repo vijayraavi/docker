@@ -49,15 +49,14 @@ func findSCSIAttachment(container *container, findThisHostPath string) (int, int
 // CreateOptions are the complete set of fields required to call any of the
 // Create* APIs in HCSShim.
 type CreateOptions struct {
-	Id              string                        // Identifier for the container
-	IsHostingSystem bool                          // If this is host (utility VM) for other containers
-	HostingSystem   Container                     // Container object representing the utility VM
-	Owner           string                        // Arbitrary string determining the owner
-	SchemaVersion   *SchemaVersion                // Schema version of the create request
-	Spec            *specs.Spec                   // Definition of the container or utility VM
-	LCOWOptions     *LCOWOptions                  // Configuration of an LCOW utility VM. ??Should these be part of OCI?? // What about annotations to put these in?
-	Logger          *logrus.Entry                 // For logging
-	MountedLayers   *ContainersResourcesStorageV2 // For v2 Xenon. This should go in the OCI spec somehow
+	Id              string         // Identifier for the container
+	IsHostingSystem bool           // If this is host (utility VM) for other containers
+	HostingSystem   Container      // Container object representing the utility VM
+	Owner           string         // Arbitrary string determining the owner
+	SchemaVersion   *SchemaVersion // Schema version of the create request
+	Spec            *specs.Spec    // Definition of the container or utility VM
+	LCOWOptions     *LCOWOptions   // Configuration of an LCOW utility VM. ??Should these be part of OCI?? // What about annotations to put these in?
+	Logger          *logrus.Entry  // For logging
 
 	// Note: In the spec, the LayerFolders must be arranged in the same way in which
 	// moby configures them: layern, layern-1,...,layer2,layer1,sandbox
