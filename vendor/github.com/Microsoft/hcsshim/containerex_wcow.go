@@ -22,19 +22,16 @@ func UVMFolderFromLayerFolders(layerFolders []string) (string, error) {
 		_, err := os.Stat(filepath.Join(layerFolder, `UtilityVM`))
 		if err == nil {
 			uvmFolder = layerFolder
-			continue
+			break
 		}
 		if !os.IsNotExist(err) {
 			return "", err
-		}
-		if os.IsNotExist(err) {
-			break
 		}
 	}
 	if uvmFolder == "" {
 		return "", fmt.Errorf("utility VM folder could not be found in layers")
 	}
-	logrus.Debugln("hcsshim: UVMFolderFromLayerFolders: %s", uvmFolder)
+	logrus.Debugf("hcsshim: UVMFolderFromLayerFolders: %s", uvmFolder)
 	return uvmFolder, nil
 }
 
@@ -218,17 +215,25 @@ func removeSCSIOnFailure(c Container, controller int, lun int) {
 // schema. This is exported just in case a client could find it useful, but
 // not strictly necessary as it will be called by CreateContainerEx()
 func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
-	logrus.Debugf("createHCSContainerDocument")
+	logrus.Debugf("hcsshim: CreateHCSContainerDocument")
 
 	// TODO: Make this safe if exported so no null pointer dereferences.
 	// TODO: Should this be a Windows function explicitly in the name
 
+	if createOptions.Spec == nil {
+		return "", fmt.Errorf("cannot create HCS container document - OCI spec is missing")
+	}
+
+	if createOptions.Spec.Windows == nil {
+		return "", fmt.Errorf("cannot create HCS container document - OCI spec Windows section is missing ")
+	}
+
 	v1 := &ContainerConfig{
-		SystemType: "Container",
-		Name:       createOptions.Id,
-		Owner:      createOptions.Owner,
-		IgnoreFlushesDuringBoot: createOptions.Spec.Windows.IgnoreFlushesDuringBoot,
+		SystemType:              "Container",
+		Name:                    createOptions.Id,
+		Owner:                   createOptions.Owner,
 		HvPartition:             false,
+		IgnoreFlushesDuringBoot: createOptions.Spec.Windows.IgnoreFlushesDuringBoot,
 	}
 
 	// IgnoreFlushesDuringBoot is a property of the SCSI attachment for the sandbox. Set when it's hot-added to the utility VM
@@ -325,74 +330,49 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		v1.Credentials = cs
 	}
 
-	// We must have least two layers in the spec, the first one being a
-	// base image, the last one being the RW layer.
+	// We must have least two layers in the spec - a base and RW layer.
 
-	//
-	//
-	//
-	//
-	//
-	//
-	//
-	//
-	//
-	//
-	// 4/30 JJH UP TO HERE
-	//
-	//
-	//
-	//
-	// Failing from docker hyper-v container. (v2 call), ald also on TestV2XenonWCOW. We need to skip this and some code below for creating the UVM
-	// Probably need to reverse some layers too.
-	//
-	//
-	//
-	//
-	//
-	//
-	//
-	//
-	//
-	//
-	//
-	//
-	if createOptions.Spec.Windows.LayerFolders == nil || len(createOptions.Spec.Windows.LayerFolders) < 2 {
-		return "", fmt.Errorf("invalid spec - not enough layer folders supplied")
-	}
+	// TODO JJH HACK HACK. Only want to check this if not a hosting system. I think. As the layers are passed in through mountedLayers
 
-	// Strip off the top-most RW/Sandbox layer as that's passed in separately to HCS for v1
-	// TODO Should this be inside the check below?
-	v1.LayerFolderPath = createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
+	//	if createOptions.Spec.Windows.LayerFolders == nil || len(createOptions.Spec.Windows.LayerFolders) < 2 {
+	//		return "", fmt.Errorf("invalid spec - not enough layer folders supplied")
+	//	}
 
-	if createOptions.Spec.Windows.HyperV == nil {
-		if createOptions.Spec.Root == nil {
-			return "", fmt.Errorf("invalid container spec - Root must be set")
-		}
-		const volumeGUIDRegex = `^\\\\\?\\(Volume)\{{0,1}[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}(\}){0,1}\}\\$`
-		if _, err := regexp.MatchString(volumeGUIDRegex, createOptions.Spec.Root.Path); err != nil {
-			return "", fmt.Errorf(`invalid container spec - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, createOptions.Spec.Root.Path)
-		}
-		rootPath := createOptions.Spec.Root.Path
-		if rootPath[len(rootPath)-1] != '\\' {
-			rootPath = fmt.Sprintf(`%s\`, rootPath) // Be nice to clients and make sure well-formed for back-compat
-		}
-		v1.VolumePath = rootPath[:len(rootPath)-1] // Strip the trailing backslash. Required for v1.
-		v2Container.Storage.Path = rootPath
-	} else {
-		if createOptions.Spec.Root != nil && createOptions.Spec.Root.Path != "" {
-			return "", fmt.Errorf("invalid container spec - Root.Path must be omitted for a Hyper-V container")
-		}
-		if createOptions.SchemaVersion.IsV10() {
-			v1.HvPartition = true
-			if createOptions.Spec.Windows.HyperV.UtilityVMPath != "" {
-				v1.HvRuntime = &HvRuntime{ImagePath: createOptions.Spec.Windows.HyperV.UtilityVMPath}
-			} else {
-				uvmImagePath, err := UVMFolderFromLayerFolders(createOptions.Spec.Windows.LayerFolders)
-				if err != nil {
-					return "", err
+	if createOptions.HostingSystem == nil { // ie Not a v2 xenon
+
+		// Strip off the top-most RW/Sandbox layer as that's passed in separately to HCS for v1
+		// TODO Should this be inside the check below?
+		v1.LayerFolderPath = createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
+
+		if createOptions.Spec.Windows.HyperV == nil {
+			if createOptions.Spec.Root == nil {
+				return "", fmt.Errorf("invalid container spec - Root must be set")
+			}
+			const volumeGUIDRegex = `^\\\\\?\\(Volume)\{{0,1}[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}(\}){0,1}\}\\$`
+			if _, err := regexp.MatchString(volumeGUIDRegex, createOptions.Spec.Root.Path); err != nil {
+				return "", fmt.Errorf(`invalid container spec - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, createOptions.Spec.Root.Path)
+			}
+			rootPath := createOptions.Spec.Root.Path
+			if rootPath[len(rootPath)-1] != '\\' {
+				rootPath = fmt.Sprintf(`%s\`, rootPath) // Be nice to clients and make sure well-formed for back-compat
+			}
+			v1.VolumePath = rootPath[:len(rootPath)-1] // Strip the trailing backslash. Required for v1.
+			v2Container.Storage.Path = rootPath
+		} else {
+			if createOptions.Spec.Root != nil && createOptions.Spec.Root.Path != "" {
+				return "", fmt.Errorf("invalid container spec - Root.Path must be omitted for a Hyper-V container")
+			}
+			if createOptions.SchemaVersion.IsV10() {
+				v1.HvPartition = true
+				if createOptions.Spec.Windows.HyperV.UtilityVMPath != "" {
+					v1.HvRuntime = &HvRuntime{ImagePath: createOptions.Spec.Windows.HyperV.UtilityVMPath}
+				} else {
+					uvmImagePath, err := UVMFolderFromLayerFolders(createOptions.Spec.Windows.LayerFolders)
+					if err != nil {
+						return "", err
+					}
+					v1.HvRuntime = &HvRuntime{ImagePath: uvmImagePath}
 				}
-				v1.HvRuntime = &HvRuntime{ImagePath: uvmImagePath}
 			}
 		}
 	}
@@ -401,14 +381,16 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		return "", fmt.Errorf(`invalid container spec - readonly is not supported`)
 	}
 
-	for _, layerPath := range createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1] {
-		_, filename := filepath.Split(layerPath)
-		g, err := NameToGuid(filename)
-		if err != nil {
-			return "", err
+	if createOptions.HostingSystem == nil { // ie Not a v2 xenon. As the mounted layers were passed in instead.
+		for _, layerPath := range createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1] {
+			_, filename := filepath.Split(layerPath)
+			g, err := NameToGuid(filename)
+			if err != nil {
+				return "", err
+			}
+			v1.Layers = append(v1.Layers, Layer{ID: g.ToString(), Path: layerPath})
+			v2Container.Storage.Layers = append(v2Container.Storage.Layers, ContainersResourcesLayerV2{Id: g.ToString(), Path: layerPath})
 		}
-		v1.Layers = append(v1.Layers, Layer{ID: g.ToString(), Path: layerPath})
-		v2Container.Storage.Layers = append(v2Container.Storage.Layers, ContainersResourcesLayerV2{Id: g.ToString(), Path: layerPath})
 	}
 
 	// Add the mounts as mapped directories or mapped pipes
@@ -447,7 +429,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 	v1.MappedPipes = mpsv1
 	v2Container.MappedPipes = mpsv2
 
-	// Where do we put the v2Container object - as a HostedSystem for a Xenon, or directly in the schema for an Argon.
+	// Put the v2Container object as a HostedSystem for a Xenon, or directly in the schema for an Argon.
 	if createOptions.HostingSystem == nil {
 		v2.Container = v2Container
 	} else {

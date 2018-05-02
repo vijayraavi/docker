@@ -57,7 +57,13 @@ type CreateOptions struct {
 	Spec            *specs.Spec                   // Definition of the container or utility VM
 	LCOWOptions     *LCOWOptions                  // Configuration of an LCOW utility VM. ??Should these be part of OCI?? // What about annotations to put these in?
 	Logger          *logrus.Entry                 // For logging
-	MountedLayers   *ContainersResourcesStorageV2 // For v2 Xenon - TODO for Argon too....
+	MountedLayers   *ContainersResourcesStorageV2 // For v2 Xenon. This should go in the OCI spec somehow
+
+	// Note: In the spec, the LayerFolders must be arranged in the same way in which
+	// moby configures them: layern, layern-1,...,layer2,layer1,sandbox
+	// where layer1 is the base read-only layer, layern is the top-most read-only
+	// layer, and sandbox is the RW layer.
+
 }
 
 // CreateWindowsUVMSandbox is a helper to create a sandbox for a Windows utility VM

@@ -14,7 +14,7 @@ package hcsshim
 
 import (
 	"bytes"
-	"fmt"
+	"encoding/json"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -30,13 +30,12 @@ import (
 
 var (
 	// Obtained from docker - for the base images used in the tests
-	nanoImagePath    string
-	nanoImageId      string
-	alpineImagePath  string
-	alpineImageId    string
-	busyboxImagePath string // github.com/jhowardmsft/busybox. Just an arbitrary multi-layer iamge  // TODO We could build a simple image in here.
-	busyboxImageId   string
-	busyboxROLayers  []string
+	//	nanoImagePath    string
+	alpineImagePath string
+	//busyboxImagePath string
+	//busyboxROLayers  []string
+	layersNanoserver []string
+	layersBusybox    []string // github.com/jhowardmsft/busybox. Just an arbitrary multi-layer iamge  // TODO We could build a simple image in here.
 
 	cacheSandboxFile     = ""      // LCOW ext4 sandbox file
 	cacheSandboxDir      = ""      // LCOW ext4 sandbox directory
@@ -51,52 +50,37 @@ func init() {
 	})
 
 	os.Setenv("HCSSHIM_LCOW_DEBUG_ENABLE", "something")
-	//nanoImagePath, nanoImageId = getImagePath("microsoft/windowsservercore:latest")
-	//alpineImagePath, alpineImageId = getImagePath("alpine:latest")
-	//busyboxImagePath, busyboxImageId = getImagePath("microsoft/windowsservercore:1709")
-	//busyboxROLayers = getROLayerPaths("microsof")
-	// docker info -f '{{.DockerRootDir}}'
-
-	fmt.Println(getROLayerPaths("microsoft/windowsservercore:1709"))
-	panic("jjh")
+	layersNanoserver = getLayers("microsoft/nanoserver:latest")
+	layersBusybox = getLayers("microsoft/windowsservercore")
 }
 
-func getImagePath(imageName string) (string, string) {
+func getLayerChain(layerFolder string) []string {
+	jPath := filepath.Join(layerFolder, "layerchain.json")
+	content, err := ioutil.ReadFile(jPath)
+	if os.IsNotExist(err) {
+		panic("layerchain not found")
+	} else if err != nil {
+		panic("failed to read layerchain")
+	}
+
+	var layerChain []string
+	err = json.Unmarshal(content, &layerChain)
+	if err != nil {
+		panic("failed to unmarshal layerchain")
+	}
+	return layerChain
+}
+
+func getLayers(imageName string) []string {
 	cmd := exec.Command("docker", "inspect", imageName, "-f", `"{{.GraphDriver.Data.dir}}"`)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		p := fmt.Sprintf("failed to get base image path for %s from docker. Daemon must be running and image installed", imageName)
-		panic(p)
+		panic("failed to get layers. Is the daemon running?")
 	}
 	imagePath := strings.Replace(strings.TrimSpace(out.String()), `"`, ``, -1)
-	imageId := filepath.Base(imagePath)
-	return imagePath, imageId
-}
-
-func getROLayerPaths(imageName string) []string {
-	var roLayerPaths []string
-	for {
-		imagePath, _ := getImagePath(imageName)
-		parent := getParent(imageName)
-		roLayerPaths = append(roLayerPaths, imagePath)
-		if parent == "" {
-			break
-		}
-		imageName = parent
-	}
-	return roLayerPaths
-}
-
-func getParent(imageName string) string {
-	cmd := exec.Command("docker", "inspect", imageName, "-f", `"{{.Parent}}"`)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		p := fmt.Sprintf("failed to get base image path for %s from docker. Daemon must be running and image installed", imageName)
-		panic(p)
-	}
-	return strings.Replace(strings.TrimSpace(out.String()), `"`, ``, -1)
+	layers := getLayerChain(imagePath)
+	return append([]string{imagePath}, layers...)
 }
 
 // createTempDir creates a temporary directory for use by a container.
@@ -116,7 +100,7 @@ func createTempDir(t *testing.T) string {
 func createWCOWTempDirWithSandbox(t *testing.T) string {
 	tempDir := createTempDir(t)
 	di := DriverInfo{HomeDir: filepath.Dir(tempDir)}
-	if err := CreateSandboxLayer(di, filepath.Base(tempDir), nanoImageId, []string{nanoImagePath}); err != nil {
+	if err := CreateSandboxLayer(di, filepath.Base(tempDir), filepath.Base(layersNanoserver[0]), layersNanoserver[:1]); err != nil {
 		t.Fatalf("Failed CreateSandboxLayer: %s", err)
 	}
 	return tempDir
@@ -418,7 +402,7 @@ func TestV1Argon(t *testing.T) {
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
-	layers := []string{nanoImagePath, tempDir}
+	layers := append(layersNanoserver, tempDir)
 	mountPath, err := Mount(layers, nil, SchemaV10())
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
@@ -458,8 +442,8 @@ func TestV1XenonWCOW(t *testing.T) {
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
-				LayerFolders: []string{nanoImagePath, tempDir},
-				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(nanoImagePath, `UtilityVM`)},
+				LayerFolders: append(layersNanoserver, tempDir),
+				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(layersNanoserver[0], `UtilityVM`)},
 			},
 		},
 	})
@@ -484,7 +468,7 @@ func TestV1XenonWCOWNoUVMPath(t *testing.T) {
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
-				LayerFolders: []string{nanoImagePath, tempDir},
+				LayerFolders: append(layersNanoserver, tempDir),
 				HyperV:       &specs.WindowsHyperV{},
 			},
 		},
@@ -530,7 +514,7 @@ func TestV2Argon(t *testing.T) {
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
-	layers := []string{nanoImagePath, tempDir}
+	layers := append(layersNanoserver, tempDir)
 	mountPath, err := Mount(layers, nil, SchemaV20())
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
@@ -557,6 +541,39 @@ func TestV2Argon(t *testing.T) {
 	c.Terminate()
 }
 
+// A v2 Argon with multiple layers
+func TestV2ArgonMultipleBaseLayers(t *testing.T) {
+	t.Skip("fornow")
+	tempDir := createWCOWTempDirWithSandbox(t)
+	defer os.RemoveAll(tempDir)
+
+	layers := append(layersBusybox, tempDir)
+	mountPath, err := Mount(layers, nil, SchemaV20())
+	if err != nil {
+		t.Fatalf("failed to mount container storage: %s", err)
+	}
+	defer Unmount(layers, nil, SchemaV20(), UnmountOperationAll)
+
+	c, err := CreateContainerEx(&CreateOptions{
+		Id:            "TestV2ArgonMultipleBaseLayers",
+		Owner:         "unit-test",
+		SchemaVersion: SchemaV20(),
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
+			Hostname: "v2argonmltest",
+			Windows:  &specs.Windows{LayerFolders: layers},
+			Root:     &specs.Root{Path: mountPath.(string)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed create: %s", err)
+	}
+	startContainer(t, c)
+	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
+	stopContainer(t, c)
+	c.Terminate()
+}
+
 // Two v2 WCOW containers in the same UVM, each with a single base layer
 // TODO: Unmounting
 func TestV2XenonWCOWTwoContainers(t *testing.T) {
@@ -566,7 +583,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed create temporary directory: %s", err)
 	}
-	if err := CreateWindowsUVMSandbox(nanoImagePath, uvmScratchDir, uvmID); err != nil {
+	if err := CreateWindowsUVMSandbox(layersNanoserver[0], uvmScratchDir, uvmID); err != nil {
 		t.Fatalf("Failed create Windows UVM Sandbox: %s", err)
 	}
 	defer os.RemoveAll(uvmScratchDir)
@@ -580,7 +597,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
-				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(nanoImagePath, `UtilityVM\Files`)},
+				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(layersNanoserver[0], `UtilityVM\Files`)},
 			},
 		},
 	})
@@ -602,9 +619,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 		SchemaVersion: SchemaV20(),
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
-			Windows: &specs.Windows{
-				LayerFolders: []string{nanoImagePath, containerAScratchDir},
-			},
+			Windows: &specs.Windows{LayerFolders: append(layersNanoserver, containerAScratchDir)},
 		},
 	})
 	if err != nil {
@@ -621,9 +636,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 		SchemaVersion: SchemaV20(),
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
-			Windows: &specs.Windows{
-				LayerFolders: []string{nanoImagePath, containerBScratchDir},
-			},
+			Windows: &specs.Windows{LayerFolders: append(layersNanoserver, containerBScratchDir)},
 		},
 	})
 	if err != nil {
@@ -654,11 +667,13 @@ func TestV2XenonWCOW(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed create temporary directory: %s", err)
 	}
-	if err := CreateWindowsUVMSandbox(nanoImagePath, uvmScratchDir, uvmID); err != nil {
+	logrus.Debugln(layersBusybox)
+	if err := CreateWindowsUVMSandbox(layersBusybox[0], uvmScratchDir, uvmID); err != nil {
 		t.Fatalf("Failed create Windows UVM Sandbox: %s", err)
 	}
 	defer os.RemoveAll(uvmScratchDir)
 
+	// TODO: Stefan's test created this with flags 16785. I do 16407.
 	uvm, err := CreateContainerEx(&CreateOptions{
 		Id:              uvmID,
 		Owner:           "unit-test",
@@ -668,7 +683,7 @@ func TestV2XenonWCOW(t *testing.T) {
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
-				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(nanoImagePath, `UtilityVM\Files`)},
+				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(layersBusybox[0], `UtilityVM\Files`)},
 			},
 		},
 	})
@@ -682,7 +697,7 @@ func TestV2XenonWCOW(t *testing.T) {
 
 	// Mount the containers storage in the utility VM
 	containerScratchDir := createWCOWTempDirWithSandbox(t)
-	layerFolders := []string{nanoImagePath, containerScratchDir}
+	layerFolders := append(layersBusybox, containerScratchDir)
 	cls, err := Mount(layerFolders, uvm, SchemaV20())
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
@@ -692,6 +707,9 @@ func TestV2XenonWCOW(t *testing.T) {
 		Layers: combinedLayers.Layers,
 		Path:   combinedLayers.ContainerRootPath,
 	}
+
+	logrus.Debugln("Mounted Layers:", mountedLayers)
+
 	defer func() {
 		if err := Unmount(layerFolders, uvm, SchemaV20(), UnmountOperationAll); err != nil {
 			t.Fatalf("failed to unmount container storage: %s", err)
@@ -706,7 +724,7 @@ func TestV2XenonWCOW(t *testing.T) {
 		HostingSystem: uvm,
 		SchemaVersion: SchemaV20(),
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
-		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
+		Spec:          &specs.Spec{Windows: &specs.Windows{}}, //  Windows: &specs.Windows{LayerFolders: layerFolders}},
 		MountedLayers: mountedLayers,
 	})
 	if err != nil {
@@ -729,7 +747,7 @@ func TestV2XenonWCOWWithRemount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed create temporary directory: %s", err)
 	}
-	if err := CreateWindowsUVMSandbox(nanoImagePath, uvmScratchDir, uvmID); err != nil {
+	if err := CreateWindowsUVMSandbox(layersNanoserver[0], uvmScratchDir, uvmID); err != nil {
 		t.Fatalf("Failed create Windows UVM Sandbox: %s", err)
 	}
 	defer os.RemoveAll(uvmScratchDir)
@@ -743,7 +761,7 @@ func TestV2XenonWCOWWithRemount(t *testing.T) {
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
-				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(nanoImagePath, `UtilityVM\Files`)},
+				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(layersNanoserver[0], `UtilityVM\Files`)},
 			},
 		},
 	})
@@ -757,7 +775,7 @@ func TestV2XenonWCOWWithRemount(t *testing.T) {
 
 	// Mount the containers storage in the utility VM
 	containerScratchDir := createWCOWTempDirWithSandbox(t)
-	layerFolders := []string{nanoImagePath, containerScratchDir}
+	layerFolders := append(layersNanoserver, containerScratchDir)
 	cls, err := Mount(layerFolders, uvm, SchemaV20())
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
@@ -829,7 +847,7 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed create temporary directory: %s", err)
 	}
-	if err := CreateWindowsUVMSandbox(nanoImagePath, uvmScratchDir, uvmID); err != nil {
+	if err := CreateWindowsUVMSandbox(layersNanoserver[0], uvmScratchDir, uvmID); err != nil {
 		t.Fatalf("Failed create Windows UVM Sandbox: %s", err)
 	}
 	defer os.RemoveAll(uvmScratchDir)
@@ -845,7 +863,7 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
-				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(nanoImagePath, `UtilityVM\Files`)},
+				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(layersNanoserver[0], `UtilityVM\Files`)},
 				Resources: &specs.WindowsResources{
 					Memory: &specs.WindowsMemoryResources{
 						Limit: &uvmMemory,
@@ -871,7 +889,7 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 	defer os.RemoveAll(containerAScratchDir)
 
 	// Mount the storage in the utility VM
-	layerFolders := append(busyboxROLayers, containerAScratchDir)
+	layerFolders := append(layersBusybox, containerAScratchDir)
 	cls, err := Mount(layerFolders, uvm, SchemaV20())
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
@@ -889,7 +907,7 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 		HostingSystem: uvm,
 		SchemaVersion: SchemaV20(),
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
-		Spec:          &specs.Spec{}, //Windows: &specs.Windows{LayerFolders: layerFolders}},
+		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
 		MountedLayers: mountedLayers,
 	})
 	if err != nil {
