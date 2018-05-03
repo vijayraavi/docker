@@ -8,77 +8,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// removeVSMB removes a VSMB share from a utility VM. The mutex must be
-// held when calling this function
-func removeVSMB(c Container, id string) error {
-	logrus.Debugf("HCSShim: Removing vsmb %s", id)
-	if _, ok := c.(*container).vsmbShares.guids[id]; !ok {
-		return fmt.Errorf("failed to remove vsmbShare %s as it is not in utility VM %s", id, c.(*container).id)
-	} else {
-		logrus.Debugf("VSMB: %s refcount: %d", id, c.(*container).vsmbShares.guids[id])
-		c.(*container).vsmbShares.guids[id]--
-		if c.(*container).vsmbShares.guids[id] == 0 {
-			delete(c.(*container).vsmbShares.guids, id)
-			modification := &ModifySettingsRequestV2{
-				ResourceType: ResourceTypeVSmbShare,
-				RequestType:  RequestTypeRemove,
-				// TODO: https://microsoft.visualstudio.com/OS/_queries?_a=edit&id=17031676&triage=true. Settings should not be required, just ResourceUri
-				Settings:    VirtualMachinesResourcesStorageVSmbShareV2{Name: id},
-				ResourceUri: fmt.Sprintf("virtualmachine/devices/virtualsmbshares/%s", id),
-			}
-			if err := c.Modify(modification); err != nil {
-				return fmt.Errorf("failed to remove vsmbShare %s from utility VM %s after refcount dropped to zero: %s", id, c.(*container).id, err)
-			}
-		}
-	}
-	return nil
-}
-
-// removeVSMBOnMountFailure is a helper to roll-back any VSMB shares added to a utility VM on a failure path
-func removeVSMBOnMountFailure(c Container, toRemove []string) {
-	if len(toRemove) == 0 {
-		return
-	}
-	c.(*container).vsmbShares.Lock()
-	defer c.(*container).vsmbShares.Unlock()
-	for _, vsmbShare := range toRemove {
-		if err := removeVSMB(c, vsmbShare); err != nil {
-			logrus.Warnf("Possibly leaked vsmbshare on error removal path: %s", err)
-		}
-	}
-}
-
-// removeSCSI removes a mapped virtual disk from a containers SCSI controller. The mutex
-// MUST be held when calling this function
-func removeSCSI(c Container, controller int, lun int, containerPath string) error {
-	scsiModification := &ModifySettingsRequestV2{
-		ResourceType: ResourceTypeMappedVirtualDisk,
-		RequestType:  RequestTypeRemove,
-		ResourceUri:  fmt.Sprintf("VirtualMachine/Devices/SCSI/%d/%d", controller, lun),
-	}
-	if containerPath != "" {
-		scsiModification.HostedSettings = ContainersResourcesMappedDirectoryV2{
-			ContainerPath: containerPath,
-			Lun:           uint8(lun),
-		}
-	}
-	if err := c.Modify(scsiModification); err != nil {
-		return err
-	}
-	c.(*container).scsiLocations.hostPath[controller][lun] = ""
-	return nil
-}
-
-// removeSCSIOnMountFailure is a helper to roll-back a SCSI disk added to a utility VM on a failure path.
-// The mutex  must NOT be held when calling this function.
-func removeSCSIOnMountFailure(c Container, controller int, lun int) {
-	c.(*container).scsiLocations.Lock()
-	defer c.(*container).scsiLocations.Unlock()
-	if err := removeSCSI(c, controller, lun, ""); err != nil {
-		logrus.Warnf("Possibly leaked SCSI disk on error removal path: %s", err)
-	}
-}
-
 // Mount is a helper for clients to hide all the complexity of layer mounting
 // Layer folder are in order: base, [rolayer1..rolayern,] sandbox
 // TODO: Extend for LCOW?
@@ -376,4 +305,106 @@ func Unmount(layerFolders []string, hostingSystem Container, sv *SchemaVersion, 
 	// TODO (possibly) Consider deleting the container directory in the utility VM
 
 	return retError
+}
+
+// allocateSCSI finds the next available slot on the
+// SCSI controllers associated with a utility VM to use.
+func allocateSCSI(container *container, hostPath string, containerPath string) (int, int, error) {
+	container.scsiLocations.Lock()
+	defer container.scsiLocations.Unlock()
+	for controller, luns := range container.scsiLocations.hostPath {
+		for lun, hp := range luns {
+			if hp == "" {
+				container.scsiLocations.hostPath[controller][lun] = hostPath
+				logrus.Debugf("Allocated SCSI %d:%d %q %q", controller, lun, hostPath, containerPath)
+				return controller, lun, nil
+
+			}
+		}
+	}
+	return -1, -1, fmt.Errorf("no free SCSI locations")
+}
+
+// Lock must be taken externally when calling this function
+func findSCSIAttachment(container *container, findThisHostPath string) (int, int, error) {
+	for controller, slots := range container.scsiLocations.hostPath {
+		for slot, hostPath := range slots {
+			if hostPath == findThisHostPath {
+				logrus.Debugf("Found SCSI %d:%d %s", controller, slot, hostPath)
+				return controller, slot, nil
+			}
+		}
+	}
+	return 0, 0, fmt.Errorf("%s is not attached to SCSI", findThisHostPath)
+}
+
+// removeVSMB removes a VSMB share from a utility VM. The mutex must be
+// held when calling this function
+func removeVSMB(c Container, id string) error {
+	logrus.Debugf("HCSShim: Removing vsmb %s", id)
+	if _, ok := c.(*container).vsmbShares.guids[id]; !ok {
+		return fmt.Errorf("failed to remove vsmbShare %s as it is not in utility VM %s", id, c.(*container).id)
+	} else {
+		logrus.Debugf("VSMB: %s refcount: %d", id, c.(*container).vsmbShares.guids[id])
+		c.(*container).vsmbShares.guids[id]--
+		if c.(*container).vsmbShares.guids[id] == 0 {
+			delete(c.(*container).vsmbShares.guids, id)
+			modification := &ModifySettingsRequestV2{
+				ResourceType: ResourceTypeVSmbShare,
+				RequestType:  RequestTypeRemove,
+				// TODO: https://microsoft.visualstudio.com/OS/_queries?_a=edit&id=17031676&triage=true. Settings should not be required, just ResourceUri
+				Settings:    VirtualMachinesResourcesStorageVSmbShareV2{Name: id},
+				ResourceUri: fmt.Sprintf("virtualmachine/devices/virtualsmbshares/%s", id),
+			}
+			if err := c.Modify(modification); err != nil {
+				return fmt.Errorf("failed to remove vsmbShare %s from utility VM %s after refcount dropped to zero: %s", id, c.(*container).id, err)
+			}
+		}
+	}
+	return nil
+}
+
+// removeVSMBOnMountFailure is a helper to roll-back any VSMB shares added to a utility VM on a failure path
+func removeVSMBOnMountFailure(c Container, toRemove []string) {
+	if len(toRemove) == 0 {
+		return
+	}
+	c.(*container).vsmbShares.Lock()
+	defer c.(*container).vsmbShares.Unlock()
+	for _, vsmbShare := range toRemove {
+		if err := removeVSMB(c, vsmbShare); err != nil {
+			logrus.Warnf("Possibly leaked vsmbshare on error removal path: %s", err)
+		}
+	}
+}
+
+// removeSCSI removes a mapped virtual disk from a containers SCSI controller. The mutex
+// MUST be held when calling this function
+func removeSCSI(c Container, controller int, lun int, containerPath string) error {
+	scsiModification := &ModifySettingsRequestV2{
+		ResourceType: ResourceTypeMappedVirtualDisk,
+		RequestType:  RequestTypeRemove,
+		ResourceUri:  fmt.Sprintf("VirtualMachine/Devices/SCSI/%d/%d", controller, lun),
+	}
+	if containerPath != "" {
+		scsiModification.HostedSettings = ContainersResourcesMappedDirectoryV2{
+			ContainerPath: containerPath,
+			Lun:           uint8(lun),
+		}
+	}
+	if err := c.Modify(scsiModification); err != nil {
+		return err
+	}
+	c.(*container).scsiLocations.hostPath[controller][lun] = ""
+	return nil
+}
+
+// removeSCSIOnMountFailure is a helper to roll-back a SCSI disk added to a utility VM on a failure path.
+// The mutex  must NOT be held when calling this function.
+func removeSCSIOnMountFailure(c Container, controller int, lun int) {
+	c.(*container).scsiLocations.Lock()
+	defer c.(*container).scsiLocations.Unlock()
+	if err := removeSCSI(c, controller, lun, ""); err != nil {
+		logrus.Warnf("Possibly leaked SCSI disk on error removal path: %s", err)
+	}
 }

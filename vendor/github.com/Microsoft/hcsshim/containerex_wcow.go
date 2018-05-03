@@ -340,7 +340,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 	}
 	v1.MappedDirectories = mdsv1
 	v2Container.MappedDirectories = mdsv2
-	if len(mpsv1) > 0 && GetOSVersion().Build < 16299 { // RS3
+	if len(mpsv1) > 0 && GetOSVersion().Build < WINDOWS_BUILD_RS3 {
 		return "", fmt.Errorf("named pipe mounts are not supported on this version of Windows")
 	}
 	v1.MappedPipes = mpsv1

@@ -1,6 +1,11 @@
 package hcsshim
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/sirupsen/logrus"
+)
 
 // SchemaV10 makes it easy for callers to get a v1.0 schema version object
 func SchemaV10() *SchemaVersion {
@@ -14,10 +19,16 @@ func SchemaV20() *SchemaVersion {
 
 // isSupported determines if a given schema version is supported
 func (sv *SchemaVersion) isSupported() error {
-	if (sv.Major == 1 && sv.Minor == 0) || (sv.Major == 2 && sv.Minor == 0) {
+	if sv.IsV10() {
 		return nil
 	}
-	return fmt.Errorf("unsupported schema version %d.%d", sv.Major, sv.Minor)
+	if sv.IsV20() {
+		if GetOSVersion().Build < WINDOWS_BUILD_RS5 {
+			return fmt.Errorf("unsupported on this Windows build")
+		}
+		return nil
+	}
+	return fmt.Errorf("unknown schema version %s", sv.String())
 }
 
 // IsV10 determines if a given schema version object is 1.0. This was the only thing
@@ -37,4 +48,35 @@ func (sv *SchemaVersion) IsV20() bool {
 		return true
 	}
 	return false
+}
+
+// String returns a JSON encoding of a schema version object
+func (sv *SchemaVersion) String() string {
+	b, err := json.Marshal(sv)
+	if err != nil {
+		return ""
+	}
+	return string(b[:])
+}
+
+// determineSchemaVersion works out what schema version to use based on build and
+// requested option.
+func determineSchemaVersion(options map[string]string) *SchemaVersion {
+	sv := SchemaV10()
+	if GetOSVersion().Build >= WINDOWS_BUILD_RS5 {
+		sv = SchemaV20() // TODO: When do we flip this to V2 for RS5?
+	}
+	if requested := valueFromStringMap(options, HCSOPTION_SCHEMA_VERSION); requested != "" {
+		requestedSV := &SchemaVersion{}
+		if err := json.Unmarshal([]byte(requested), &requestedSV); err == nil {
+			if err := requestedSV.isSupported(); err == nil {
+				sv = requestedSV
+			} else {
+				logrus.Warnf("Ignoring option '%s': %s: %s", HCSOPTION_SCHEMA_VERSION, requested, err)
+			}
+		} else {
+			logrus.Warnf("hcsshim: Ignoring invalid option '%s': %s (%s)", HCSOPTION_SCHEMA_VERSION, requested, err.Error())
+		}
+	}
+	return sv
 }

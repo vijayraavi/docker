@@ -661,7 +661,7 @@ func TestUVMSizing(t *testing.T) {
 
 // A single WCOW xenon
 func TestV2XenonWCOW(t *testing.T) {
-	//t.Skip("Skipping for now")
+	t.Skip("Skipping for now")
 	uvmID := "Testv2XenonWCOW_UVM"
 	uvmScratchDir, err := ioutil.TempDir("", "uvmScratch")
 	if err != nil {
@@ -888,4 +888,27 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 	runCommand(t, xenon, "echo Container", `c:\`, "Container")
 	stopContainer(t, xenon)
 	xenon.Terminate()
+}
+
+// Note that the .syso file is required to manifest the test app
+func TestDetermineSchemaVersion(t *testing.T) {
+	m := make(map[string]string)
+	if sv := determineSchemaVersion(nil); !sv.IsV20() {
+		t.Fatalf("expected v2")
+	}
+	if sv := determineSchemaVersion(m); !sv.IsV20() {
+		t.Fatalf("expected v2")
+	}
+	m[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
+	if sv := determineSchemaVersion(m); !sv.IsV20() {
+		t.Fatalf("expected requested v2")
+	}
+	m[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
+	if sv := determineSchemaVersion(m); !sv.IsV10() {
+		t.Fatalf("expected requested v1")
+	}
+	m[HCSOPTION_SCHEMA_VERSION] = (&SchemaVersion{}).String()
+	if sv := determineSchemaVersion(m); !sv.IsV20() { // Should also log a warning that 0.0 is ignored
+		t.Fatalf("expected requested v2")
+	}
 }
