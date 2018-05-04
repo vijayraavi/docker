@@ -19,10 +19,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
-	//	"time"
+	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
@@ -30,12 +29,11 @@ import (
 
 var (
 	// Obtained from docker - for the base images used in the tests
-	//	nanoImagePath    string
-	alpineImagePath string
-	//busyboxImagePath string
-	//busyboxROLayers  []string
-	layersNanoserver []string
+	layersNanoserver []string // Nanoserver matching the build
+	layersWSC        []string // WSC matching the build
+	layersWSC1709    []string // WSC 1709. Note this has both a base and a servicing layer
 	layersBusybox    []string // github.com/jhowardmsft/busybox. Just an arbitrary multi-layer iamge  // TODO We could build a simple image in here.
+	layersAlpine     []string
 
 	cacheSandboxFile     = ""      // LCOW ext4 sandbox file
 	cacheSandboxDir      = ""      // LCOW ext4 sandbox directory
@@ -52,6 +50,7 @@ func init() {
 	os.Setenv("HCSSHIM_LCOW_DEBUG_ENABLE", "something")
 	layersNanoserver = getLayers("microsoft/nanoserver:latest")
 	layersBusybox = getLayers("microsoft/windowsservercore")
+	layersAlpine = getLayers("alpine")
 }
 
 func getLayerChain(layerFolder string) []string {
@@ -111,18 +110,15 @@ func createWCOWTempDirWithSandbox(t *testing.T) string {
 // VHDX and format it ext4.
 func createLCOWTempDirWithSandbox(t *testing.T) (string, string) {
 	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
 	options[HCSOPTION_ID] = "global"
-	options[HCSOPTION_OWNER] = "unit-test"
+	dls := getDefaultLinuxSpec(t)
 	if lcowServiceContainer == nil {
 		cacheSandboxDir = createTempDir(t)
-		t.Logf("Creating an LCOW service VM")
 		var err error
 		lcowServiceContainer, err = CreateContainerEx(&CreateOptions{
-			Options:     options,
-			Logger:      logrus.WithField("module", "hcsshim unit test"),
-			Spec:        defaultLinuxSpec(),
-			LCOWOptions: getLCOWOptions(),
+			Options: options,
+			Logger:  logrus.WithField("module", "hcsshim unit test"),
+			Spec:    dls,
 		})
 		if err != nil {
 			t.Fatalf("Failed create: %s", err)
@@ -140,15 +136,6 @@ func createLCOWTempDirWithSandbox(t *testing.T) (string, string) {
 	return tempDir, filepath.Base(tempDir)
 }
 
-func getLCOWOptions() *LCOWOptions {
-	base := filepath.Join(os.Getenv("ProgramFiles"), "Linux Containers")
-	return &LCOWOptions{
-		KirdPath:   base,
-		KernelFile: "bootx64.efi",
-		InitrdFile: "initrd.img",
-	}
-}
-
 func startContainer(t *testing.T, c Container) {
 	if err := c.Start(); err != nil {
 		t.Fatalf("Failed start: %s", err)
@@ -157,6 +144,7 @@ func startContainer(t *testing.T, c Container) {
 
 // Helper to launch a process in it. At the
 // point of calling, the container must have been successfully created.
+// TODO Convert to CreateProcessEx using full OCI spec.
 func runCommand(t *testing.T, c Container, command, workdir, expectedOutput string) {
 	if c == nil {
 		t.Fatalf("requested container to start is nil!")
@@ -211,186 +199,6 @@ func stopContainer(t *testing.T, c Container) {
 	//c.Terminate()
 }
 
-func iPtr(i int64) *int64 { return &i }
-
-func defaultCapabilities() []string {
-	return []string{
-		"CAP_CHOWN",
-		"CAP_DAC_OVERRIDE",
-		"CAP_FSETID",
-		"CAP_FOWNER",
-		"CAP_MKNOD",
-		"CAP_NET_RAW",
-		"CAP_SETGID",
-		"CAP_SETUID",
-		"CAP_SETFCAP",
-		"CAP_SETPCAP",
-		"CAP_NET_BIND_SERVICE",
-		"CAP_SYS_CHROOT",
-		"CAP_KILL",
-		"CAP_AUDIT_WRITE",
-	}
-}
-
-// defaultLinuxSpec create a default spec for running Linux containers
-// Note this is copied from moby/moby, but we can't use it as a package
-// import as it would be circular.
-func defaultLinuxSpec() *specs.Spec {
-	s := &specs.Spec{
-		Version: specs.Version,
-		Process: &specs.Process{
-			Capabilities: &specs.LinuxCapabilities{
-				Bounding:    defaultCapabilities(),
-				Permitted:   defaultCapabilities(),
-				Inheritable: defaultCapabilities(),
-				Effective:   defaultCapabilities(),
-			},
-		},
-		Root: &specs.Root{},
-	}
-	s.Mounts = []specs.Mount{
-		{
-			Destination: "/proc",
-			Type:        "proc",
-			Source:      "proc",
-			Options:     []string{"nosuid", "noexec", "nodev"},
-		},
-		{
-			Destination: "/dev",
-			Type:        "tmpfs",
-			Source:      "tmpfs",
-			Options:     []string{"nosuid", "strictatime", "mode=755", "size=65536k"},
-		},
-		{
-			Destination: "/dev/pts",
-			Type:        "devpts",
-			Source:      "devpts",
-			Options:     []string{"nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620", "gid=5"},
-		},
-		{
-			Destination: "/sys",
-			Type:        "sysfs",
-			Source:      "sysfs",
-			Options:     []string{"nosuid", "noexec", "nodev", "ro"},
-		},
-		{
-			Destination: "/sys/fs/cgroup",
-			Type:        "cgroup",
-			Source:      "cgroup",
-			Options:     []string{"ro", "nosuid", "noexec", "nodev"},
-		},
-		{
-			Destination: "/dev/mqueue",
-			Type:        "mqueue",
-			Source:      "mqueue",
-			Options:     []string{"nosuid", "noexec", "nodev"},
-		},
-		{
-			Destination: "/dev/shm",
-			Type:        "tmpfs",
-			Source:      "shm",
-			Options:     []string{"nosuid", "noexec", "nodev", "mode=1777"},
-		},
-	}
-
-	s.Linux = &specs.Linux{
-		MaskedPaths: []string{
-			"/proc/kcore",
-			"/proc/keys",
-			"/proc/latency_stats",
-			"/proc/timer_list",
-			"/proc/timer_stats",
-			"/proc/sched_debug",
-			"/proc/scsi",
-			"/sys/firmware",
-		},
-		ReadonlyPaths: []string{
-			"/proc/asound",
-			"/proc/bus",
-			"/proc/fs",
-			"/proc/irq",
-			"/proc/sys",
-			"/proc/sysrq-trigger",
-		},
-		Namespaces: []specs.LinuxNamespace{
-			{Type: "mount"},
-			{Type: "network"},
-			{Type: "uts"},
-			{Type: "pid"},
-			{Type: "ipc"},
-		},
-		// Devices implicitly contains the following devices:
-		// null, zero, full, random, urandom, tty, console, and ptmx.
-		// ptmx is a bind mount or symlink of the container's ptmx.
-		// See also: https://github.com/opencontainers/runtime-spec/blob/master/config-linux.md#default-devices
-		Devices: []specs.LinuxDevice{},
-		Resources: &specs.LinuxResources{
-			Devices: []specs.LinuxDeviceCgroup{
-				{
-					Allow:  false,
-					Access: "rwm",
-				},
-				{
-					Allow:  true,
-					Type:   "c",
-					Major:  iPtr(1),
-					Minor:  iPtr(5),
-					Access: "rwm",
-				},
-				{
-					Allow:  true,
-					Type:   "c",
-					Major:  iPtr(1),
-					Minor:  iPtr(3),
-					Access: "rwm",
-				},
-				{
-					Allow:  true,
-					Type:   "c",
-					Major:  iPtr(1),
-					Minor:  iPtr(9),
-					Access: "rwm",
-				},
-				{
-					Allow:  true,
-					Type:   "c",
-					Major:  iPtr(1),
-					Minor:  iPtr(8),
-					Access: "rwm",
-				},
-				{
-					Allow:  true,
-					Type:   "c",
-					Major:  iPtr(5),
-					Minor:  iPtr(0),
-					Access: "rwm",
-				},
-				{
-					Allow:  true,
-					Type:   "c",
-					Major:  iPtr(5),
-					Minor:  iPtr(1),
-					Access: "rwm",
-				},
-				{
-					Allow:  false,
-					Type:   "c",
-					Major:  iPtr(10),
-					Minor:  iPtr(229),
-					Access: "rwm",
-				},
-			},
-		},
-	}
-
-	// For LCOW support, populate a blank Windows spec
-	if runtime.GOOS == "windows" {
-		s.Windows = &specs.Windows{}
-	}
-
-	return s
-}
-
 // -------------------
 //
 //
@@ -406,11 +214,11 @@ func TestV1Argon(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	layers := append(layersNanoserver, tempDir)
-	mountPath, err := Mount(layers, nil, SchemaV10())
+	mountPath, err := Mount(layers, nil)
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
 	}
-	defer Unmount(layers, nil, SchemaV10(), UnmountOperationAll)
+	defer Unmount(layers, nil, UnmountOperationAll)
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
@@ -436,6 +244,7 @@ func TestV1Argon(t *testing.T) {
 
 // A v1 WCOW Xenon with a single base layer
 func TestV1XenonWCOW(t *testing.T) {
+
 	t.Skip("for now")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
@@ -490,30 +299,42 @@ func TestV1XenonWCOWNoUVMPath(t *testing.T) {
 	stopContainer(t, c)
 }
 
+func getDefaultLinuxSpec(t *testing.T) *specs.Spec {
+	content, err := ioutil.ReadFile(`.\testassets\defaultlinuxspec.json`)
+	if err != nil {
+		t.Fatalf("failed to read defaultlinuxspec.json: %s", err.Error())
+	}
+	spec := specs.Spec{}
+	if err := json.Unmarshal(content, &spec); err != nil {
+		t.Fatalf("failed to unmarshal contents of defaultlinuxspec.json: %s", err.Error())
+	}
+	return &spec
+}
+
 // A v1 LCOW
 // TODO LCOW doesn't work currently
 func TestV1XenonLCOW(t *testing.T) {
-	t.Skip("for now")
+	//t.Skip("for now")
 	tempDir, _ := createLCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
 	options[HCSOPTION_ID] = "TestV1XenonLCOW"
-	options[HCSOPTION_OWNER] = "unit-test"
+
+	spec := getDefaultLinuxSpec(t)
+	spec.Windows.LayerFolders = append(layersAlpine, tempDir)
+	//spec.Linux = &specs.Linux{}
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
 		Logger:  logrus.WithField("module", "hcsshim unit test"),
-		Spec: &specs.Spec{
-			Windows: &specs.Windows{LayerFolders: []string{alpineImagePath, tempDir}},
-			Linux:   &specs.Linux{},
-		},
-		LCOWOptions: getLCOWOptions(),
+		Spec:    spec,
 	})
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
 	}
 	startContainer(t, c)
+	time.Sleep(5 * time.Second)
 	runCommand(t, c, "echo Hello", `/bin`, "Hello")
 	stopContainer(t, c)
 	c.Terminate()
@@ -521,16 +342,16 @@ func TestV1XenonLCOW(t *testing.T) {
 
 // A v2 Argon with a single base layer
 func TestV2Argon(t *testing.T) {
-	//	t.Skip("fornow")
+	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
 	layers := append(layersNanoserver, tempDir)
-	mountPath, err := Mount(layers, nil, SchemaV20())
+	mountPath, err := Mount(layers, nil)
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
 	}
-	defer Unmount(layers, nil, SchemaV20(), UnmountOperationAll)
+	defer Unmount(layers, nil, UnmountOperationAll)
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
@@ -560,11 +381,11 @@ func TestV2ArgonMultipleBaseLayers(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	layers := append(layersBusybox, tempDir)
-	mountPath, err := Mount(layers, nil, SchemaV20())
+	mountPath, err := Mount(layers, nil)
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
 	}
-	defer Unmount(layers, nil, SchemaV20(), UnmountOperationAll)
+	defer Unmount(layers, nil, UnmountOperationAll)
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
@@ -676,14 +497,14 @@ func TestUVMSizing(t *testing.T) {
 
 // A single WCOW xenon
 func TestV2XenonWCOW(t *testing.T) {
-	//t.Skip("Skipping for now")
+	t.Skip("Skipping for now")
 	uvmID := "Testv2XenonWCOW_UVM"
 	uvmScratchDir, err := ioutil.TempDir("", "uvmScratch")
 	if err != nil {
 		t.Fatalf("Failed create temporary directory: %s", err)
 	}
-	// TODO: Have test wrapper which calls this, but also creates a temporary directory above.
-	// TODO: Stop calling it "scratch". It's really the boot/OS bit of a UVM.
+	// TODO: Have test wrapper which calls this, but also creates a temporary directory above. See/combined with createWCOWTempDirWithSandbox
+	// TODO: Stop calling it "scratch". It's really the boot/OS bit of a UVM. Also use UVMFolderFromLayerFolders to search
 	if err := CreateWCOWUVMSandbox(layersBusybox[0], uvmScratchDir, uvmID); err != nil {
 		t.Fatalf("Failed create Windows UVM Sandbox: %s", err)
 	}
@@ -699,8 +520,8 @@ func TestV2XenonWCOW(t *testing.T) {
 		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
-				LayerFolders: []string{uvmScratchDir},                                                                 // TODO JJH. Do we even need this?
-				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(layersBusybox[0], `UtilityVM\Files`)}, // This we don't need.
+				LayerFolders: []string{uvmScratchDir},
+				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(layersBusybox[0], `UtilityVM\Files`)}, // This we don't need. There's a TODO elsewhere for it.
 			},
 		},
 	})
@@ -729,7 +550,7 @@ func TestV2XenonWCOW(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)
 	}
-	defer Unmount(layerFolders, uvm, SchemaV20(), UnmountOperationAll) // TODO Why have schema here? It should be known and stored.
+	defer Unmount(layerFolders, uvm, UnmountOperationAll)
 
 	// Start/stop the container
 	startContainer(t, xenon)

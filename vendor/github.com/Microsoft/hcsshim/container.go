@@ -142,7 +142,7 @@ func CreateContainer(id string, c *ContainerConfig) (Container, error) {
 
 func createContainer(id string, configurationJSON string, schemaVersion *SchemaVersion) (Container, error) {
 	operation := "CreateContainer"
-	title := "HCSShim::" + operation
+	title := "hcsshim::" + operation
 
 	container := &container{
 		id:            id,
@@ -229,7 +229,7 @@ func mergeMaps(fromMap, ToMap interface{}) interface{} {
 // OpenContainer opens an existing container by ID.
 func OpenContainer(id string) (Container, error) {
 	operation := "OpenContainer"
-	title := "HCSShim::" + operation
+	title := "hcsshim::" + operation
 	logrus.Debugf(title+" id=%s", id)
 
 	container := &container{
@@ -259,7 +259,7 @@ func OpenContainer(id string) (Container, error) {
 // GetContainers gets a list of the containers on the system that match the query
 func GetContainers(q ComputeSystemQuery) ([]ContainerProperties, error) {
 	operation := "GetContainers"
-	title := "HCSShim::" + operation
+	title := "hcsshim::" + operation
 
 	queryb, err := json.Marshal(q)
 	if err != nil {
@@ -297,7 +297,7 @@ func (container *container) Start() error {
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "Start"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
@@ -321,7 +321,7 @@ func (container *container) Shutdown() error {
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "Shutdown"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
@@ -345,7 +345,7 @@ func (container *container) Terminate() error {
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "Terminate"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
@@ -366,7 +366,7 @@ func (container *container) Terminate() error {
 // Wait synchronously waits for the container to shutdown or terminate.
 func (container *container) Wait() error {
 	operation := "Wait"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	logrus.Debugf(title+" id=%s", container.id)
 
 	err := waitForNotification(container.callbackNumber, hcsNotificationSystemExited, nil)
@@ -382,7 +382,7 @@ func (container *container) Wait() error {
 // If the timeout expires, IsTimeout(err) == true
 func (container *container) WaitTimeout(timeout time.Duration) error {
 	operation := "WaitTimeout"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	logrus.Debugf(title+" id=%s", container.id)
 
 	err := waitForNotification(container.callbackNumber, hcsNotificationSystemExited, &timeout)
@@ -421,7 +421,7 @@ func (container *container) HasPendingUpdates() (bool, error) {
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "HasPendingUpdates"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
@@ -442,7 +442,7 @@ func (container *container) Statistics() (Statistics, error) {
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "Statistics"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
@@ -463,7 +463,7 @@ func (container *container) ProcessList() ([]ProcessListItem, error) {
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "ProcessList"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
@@ -512,7 +512,7 @@ func (container *container) MappedVirtualDisks() (map[int]MappedVirtualDiskContr
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "MappedVirtualDiskList"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
@@ -533,7 +533,7 @@ func (container *container) Pause() error {
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "Pause"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
@@ -556,7 +556,7 @@ func (container *container) Resume() error {
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "Resume"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
@@ -581,7 +581,7 @@ func (container *container) CreateProcess(c *ProcessConfig) (Process, error) {
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "CreateProcess"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	var (
 		processInfo   hcsProcessInformation
 		processHandle hcsProcess
@@ -636,7 +636,7 @@ func (container *container) OpenProcess(pid int) (Process, error) {
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "OpenProcess"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	logrus.Debugf(title+" id=%s, processid=%d", container.id, pid)
 	var (
 		processHandle hcsProcess
@@ -672,7 +672,7 @@ func (container *container) Close() error {
 	container.handleLock.Lock()
 	defer container.handleLock.Unlock()
 	operation := "Close"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 	logrus.Debugf(title+" id=%s", container.id)
 
 	// Don't double free this
@@ -756,7 +756,7 @@ func (container *container) Modify(config interface{}) error {
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "Modify"
-	title := "HCSShim::Container::" + operation
+	title := "hcsshim::Container::" + operation
 
 	if container.handle == 0 {
 		return makeContainerError(container, operation, "", ErrAlreadyClosed)

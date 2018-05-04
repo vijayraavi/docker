@@ -2,12 +2,29 @@ package hcsshim
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
+
+func getLCOWSettings(createOptions *CreateOptions) {
+	createOptions.lcowkird = valueFromStringMap(createOptions.Options, HCSOPTION_LCOW_KIRD_PATH)
+	if createOptions.lcowkird == "" {
+		createOptions.lcowkird = filepath.Join(os.Getenv("ProgramFiles"), "Linux Containers")
+	}
+	createOptions.lcowkernel = valueFromStringMap(createOptions.Options, HCSOPTION_LCOW_KERNEL_FILE)
+	if createOptions.lcowkernel == "" {
+		createOptions.lcowkernel = "bootx64.efi"
+	}
+	createOptions.lcowinitrd = valueFromStringMap(createOptions.Options, HCSOPTION_LCOW_INITRD_FILE)
+	if createOptions.lcowinitrd == "" {
+		createOptions.lcowinitrd = "initrd.img"
+	}
+	createOptions.lcowbootparams = valueFromStringMap(createOptions.Options, HCSOPTION_LCOW_BOOT_PARAMETERS)
+}
 
 // createLCOWv1 creates a Linux (LCOW) container using the V1 schema.
 func createLCOWv1(createOptions *CreateOptions) (Container, error) {
@@ -21,47 +38,57 @@ func createLCOWv1(createOptions *CreateOptions) (Container, error) {
 		TerminateOnLastHandleClosed: true,
 	}
 	configuration.HvRuntime = &HvRuntime{
-		ImagePath:           createOptions.LCOWOptions.KirdPath,
-		LinuxKernelFile:     createOptions.LCOWOptions.KernelFile,
-		LinuxInitrdFile:     createOptions.LCOWOptions.InitrdFile,
-		LinuxBootParameters: createOptions.LCOWOptions.BootParameters,
-	}
-	//	}
-
-	if createOptions.Spec.Windows == nil {
-		return nil, fmt.Errorf("spec.Windows must not be nil for LCOW containers")
+		ImagePath:           createOptions.lcowkird,
+		LinuxKernelFile:     createOptions.lcowkernel,
+		LinuxInitrdFile:     createOptions.lcowinitrd,
+		LinuxBootParameters: createOptions.lcowbootparams,
 	}
 
-	//	// We must have least one layer in the spec
-	//	if createOptions.Spec.Windows.LayerFolders == nil || len(createOptions.Spec.Windows.LayerFolders) == 0 {
-	//		return nil, fmt.Errorf("OCI spec is invalid - at least one LayerFolders must be supplied to the runtime")
+	// TODO These checks were elsewhere. In common with v2 too.
+	//	if _, err := os.Stat(filepath.Join(config.KirdPath, config.KernelFile)); os.IsNotExist(err) {
+	//		return fmt.Errorf("kernel '%s' not found", filepath.Join(config.KirdPath, config.KernelFile))
+	//	}
+	//	if _, err := os.Stat(filepath.Join(config.KirdPath, config.InitrdFile)); os.IsNotExist(err) {
+	//		return fmt.Errorf("initrd '%s' not found", filepath.Join(config.KirdPath, config.InitrdFile))
 	//	}
 
-	// Strip off the top-most layer as that's passed in separately to HCS
-	if len(createOptions.Spec.Windows.LayerFolders) > 0 {
-		configuration.LayerFolderPath = createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
-		layerFolders := createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1]
+	//	// Ensure all the MappedVirtualDisks exist on the host
+	//	for _, mvd := range config.MappedVirtualDisks {
+	//		if _, err := os.Stat(mvd.HostPath); err != nil {
+	//			return fmt.Errorf("mapped virtual disk '%s' not found", mvd.HostPath)
+	//		}
+	//		if mvd.ContainerPath == "" {
+	//			return fmt.Errorf("mapped virtual disk '%s' requested without a container path", mvd.HostPath)
+	//		}
+	//	}
 
-		for _, layerPath := range layerFolders {
-			_, filename := filepath.Split(layerPath)
-			g, err := NameToGuid(filename)
-			if err != nil {
-				return nil, err
+	if createOptions.Spec.Windows != nil {
+		// Strip off the top-most layer as that's passed in separately to HCS
+		if len(createOptions.Spec.Windows.LayerFolders) > 0 {
+			configuration.LayerFolderPath = createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
+			layerFolders := createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1]
+
+			for _, layerPath := range layerFolders {
+				_, filename := filepath.Split(layerPath)
+				g, err := NameToGuid(filename)
+				if err != nil {
+					return nil, err
+				}
+				configuration.Layers = append(configuration.Layers, Layer{
+					ID:   g.ToString(),
+					Path: filepath.Join(layerPath, "layer.vhd"),
+				})
 			}
-			configuration.Layers = append(configuration.Layers, Layer{
-				ID:   g.ToString(),
-				Path: filepath.Join(layerPath, "layer.vhd"),
-			})
 		}
-	}
 
-	if createOptions.Spec.Windows.Network != nil {
-		configuration.EndpointList = createOptions.Spec.Windows.Network.EndpointList
-		configuration.AllowUnqualifiedDNSQuery = createOptions.Spec.Windows.Network.AllowUnqualifiedDNSQuery
-		if createOptions.Spec.Windows.Network.DNSSearchList != nil {
-			configuration.DNSSearchList = strings.Join(createOptions.Spec.Windows.Network.DNSSearchList, ",")
+		if createOptions.Spec.Windows.Network != nil {
+			configuration.EndpointList = createOptions.Spec.Windows.Network.EndpointList
+			configuration.AllowUnqualifiedDNSQuery = createOptions.Spec.Windows.Network.AllowUnqualifiedDNSQuery
+			if createOptions.Spec.Windows.Network.DNSSearchList != nil {
+				configuration.DNSSearchList = strings.Join(createOptions.Spec.Windows.Network.DNSSearchList, ",")
+			}
+			configuration.NetworkSharedContainerName = createOptions.Spec.Windows.Network.NetworkSharedContainerName
 		}
-		configuration.NetworkSharedContainerName = createOptions.Spec.Windows.Network.NetworkSharedContainerName
 	}
 
 	// Add the mounts (volumes, bind mounts etc) to the structure. We have to do

@@ -11,6 +11,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// TODO THIS COMMENT IS WRONG!
+// TODO THIS IS NEVER CALLED!
 // UVMFolderFromLayerFolders searches a set of layer folders which are indexed
 // from base layer at the bottom through sandbox at the top, finding the uppermost
 // layer containing the image.
@@ -35,7 +37,7 @@ func UVMFolderFromLayerFolders(layerFolders []string) (string, error) {
 }
 
 func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
-	logrus.Debugf("HCSShim: Creating utility VM id=%s", createOptions.id)
+	logrus.Debugf("hcsshim::createWCOWv2UVM Creating utility VM id=%s", createOptions.id)
 
 	iocis := "invalid OCI spec:"
 	if len(createOptions.Spec.Windows.LayerFolders) != 1 {
@@ -359,7 +361,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 
 	if createOptions.HostingSystem != nil && createOptions.sv.IsV20() {
 		// Perform the mount of the layer folders into the utility vm
-		cls, err := Mount(createOptions.Spec.Windows.LayerFolders, createOptions.HostingSystem, SchemaV20())
+		cls, err := Mount(createOptions.Spec.Windows.LayerFolders, createOptions.HostingSystem)
 		if err != nil {
 			return "", fmt.Errorf("failed to mount container storage into utility VM: %s", err)
 		}

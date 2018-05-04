@@ -140,7 +140,7 @@ func GetHNSEndpointByName(endpointName string) (*HNSEndpoint, error) {
 // Create Endpoint by sending EndpointRequest to HNS. TODO: Create a separate HNS interface to place all these methods
 func (endpoint *HNSEndpoint) Create() (*HNSEndpoint, error) {
 	operation := "Create"
-	title := "HCSShim::HNSEndpoint::" + operation
+	title := "hcsshim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s", endpoint.Id)
 
 	jsonString, err := json.Marshal(endpoint)
@@ -153,7 +153,7 @@ func (endpoint *HNSEndpoint) Create() (*HNSEndpoint, error) {
 // Delete Endpoint by sending EndpointRequest to HNS
 func (endpoint *HNSEndpoint) Delete() (*HNSEndpoint, error) {
 	operation := "Delete"
-	title := "HCSShim::HNSEndpoint::" + operation
+	title := "hcsshim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s", endpoint.Id)
 
 	return HNSEndpointRequest("DELETE", endpoint.Id, "")
@@ -162,7 +162,7 @@ func (endpoint *HNSEndpoint) Delete() (*HNSEndpoint, error) {
 // Update Endpoint
 func (endpoint *HNSEndpoint) Update() (*HNSEndpoint, error) {
 	operation := "Update"
-	title := "HCSShim::HNSEndpoint::" + operation
+	title := "hcsshim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s", endpoint.Id)
 	jsonString, err := json.Marshal(endpoint)
 	if err != nil {
@@ -176,7 +176,7 @@ func (endpoint *HNSEndpoint) Update() (*HNSEndpoint, error) {
 // ContainerHotAttach attaches an endpoint to a running container
 func (endpoint *HNSEndpoint) ContainerHotAttach(containerID string) error {
 	operation := "ContainerHotAttach"
-	title := "HCSShim::HNSEndpoint::" + operation
+	title := "hcsshim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s, containerId=%s", endpoint.Id, containerID)
 
 	return modifyNetworkEndpoint(containerID, endpoint.Id, RequestTypeAdd)
@@ -185,7 +185,7 @@ func (endpoint *HNSEndpoint) ContainerHotAttach(containerID string) error {
 // ContainerHotDetach detaches an endpoint from a running container
 func (endpoint *HNSEndpoint) ContainerHotDetach(containerID string) error {
 	operation := "ContainerHotDetach"
-	title := "HCSShim::HNSEndpoint::" + operation
+	title := "hcsshim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s, containerId=%s", endpoint.Id, containerID)
 
 	return modifyNetworkEndpoint(containerID, endpoint.Id, RequestTypeRemove)
@@ -194,7 +194,7 @@ func (endpoint *HNSEndpoint) ContainerHotDetach(containerID string) error {
 // ApplyACLPolicy applies a set of ACL Policies on the Endpoint
 func (endpoint *HNSEndpoint) ApplyACLPolicy(policies ...*ACLPolicy) error {
 	operation := "ApplyACLPolicy"
-	title := "HCSShim::HNSEndpoint::" + operation
+	title := "hcsshim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s", endpoint.Id)
 
 	for _, policy := range policies {
@@ -215,7 +215,7 @@ func (endpoint *HNSEndpoint) ApplyACLPolicy(policies ...*ACLPolicy) error {
 // ContainerAttach attaches an endpoint to container
 func (endpoint *HNSEndpoint) ContainerAttach(containerID string, compartmentID uint16) error {
 	operation := "ContainerAttach"
-	title := "HCSShim::HNSEndpoint::" + operation
+	title := "hcsshim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s", endpoint.Id)
 
 	requestMessage := &EndpointAttachDetachRequest{
@@ -234,7 +234,7 @@ func (endpoint *HNSEndpoint) ContainerAttach(containerID string, compartmentID u
 // ContainerDetach detaches an endpoint from container
 func (endpoint *HNSEndpoint) ContainerDetach(containerID string) error {
 	operation := "ContainerDetach"
-	title := "HCSShim::HNSEndpoint::" + operation
+	title := "hcsshim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s", endpoint.Id)
 
 	requestMessage := &EndpointAttachDetachRequest{
@@ -253,7 +253,7 @@ func (endpoint *HNSEndpoint) ContainerDetach(containerID string) error {
 // HostAttach attaches a nic on the host
 func (endpoint *HNSEndpoint) HostAttach(compartmentID uint16) error {
 	operation := "HostAttach"
-	title := "HCSShim::HNSEndpoint::" + operation
+	title := "hcsshim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s", endpoint.Id)
 	requestMessage := &EndpointAttachDetachRequest{
 		CompartmentID: compartmentID,
@@ -272,7 +272,7 @@ func (endpoint *HNSEndpoint) HostAttach(compartmentID uint16) error {
 // HostDetach detaches a nic on the host
 func (endpoint *HNSEndpoint) HostDetach() error {
 	operation := "HostDetach"
-	title := "HCSShim::HNSEndpoint::" + operation
+	title := "hcsshim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s", endpoint.Id)
 	requestMessage := &EndpointAttachDetachRequest{
 		SystemType: HostType,
@@ -289,7 +289,7 @@ func (endpoint *HNSEndpoint) HostDetach() error {
 // VirtualMachineNICAttach attaches a endpoint to a virtual machine
 func (endpoint *HNSEndpoint) VirtualMachineNICAttach(virtualMachineNICName string) error {
 	operation := "VirtualMachineNicAttach"
-	title := "HCSShim::HNSEndpoint::" + operation
+	title := "hcsshim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s", endpoint.Id)
 	requestMessage := &EndpointAttachDetachRequest{
 		VirtualNICName: virtualMachineNICName,
@@ -307,7 +307,7 @@ func (endpoint *HNSEndpoint) VirtualMachineNICAttach(virtualMachineNICName strin
 // VirtualMachineNICDetach detaches a endpoint  from a virtual machine
 func (endpoint *HNSEndpoint) VirtualMachineNICDetach() error {
 	operation := "VirtualMachineNicDetach"
-	title := "HCSShim::HNSEndpoint::" + operation
+	title := "hcsshim::HNSEndpoint::" + operation
 	logrus.Debugf(title+" id=%s", endpoint.Id)
 
 	requestMessage := &EndpointAttachDetachRequest{

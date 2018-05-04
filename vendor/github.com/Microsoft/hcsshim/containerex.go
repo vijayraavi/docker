@@ -13,7 +13,7 @@ import (
 const (
 	// HCSOPTION_ constants are string values which can be added in the RuntimeOptions of a call to CreateContainerEx.
 	HCSOPTION_SCHEMA_VERSION              = "hcs.schema.version"                // HCS:  Request a schema version. Content is a SchemaVersion object. Defaults to v2 for RS5, v1 for RS1..RS4
-	HCSOPTION_OWNER                       = "hcs.container.owner"               // HCS:  Specified the owner. Default to executable name
+	HCSOPTION_OWNER                       = "hcs.container.owner"               // HCS:  Specified the owner. Defaults to executable name
 	HCSOPTION_ID                          = "hcs.container.id"                  // HCS:  Specifies the ID of a created container. Defaults to a GUID if not supplied
 	HCSOPTION_ADDITIONAL_JSON_V1          = "hcs.additional.v1.json"            // HCS:  Additional JSON to merge into Create calls in HCS for V1 schema. Default is none
 	HCSOPTION_ADDITIONAL_JSON_V2          = "hcs.additional.v2.json"            // HCS:  Additional JSON to merge into Create calls in HCS for V2.x schema. Default is none
@@ -24,14 +24,24 @@ const (
 	HCSOPTION_LCOW_INITRD_FILE            = "lcow.initrd"                       // LCOW: Filename under kirdpath for the initrd. Defaults to initrd.img
 	HCSOPTION_LCOW_BOOT_PARAMETERS        = "lcow.bootparameters"               // LCOW: Additional boot parameters for starting the kernel. Default is no additional parameters
 	HCSOPTION_LCOW_GLOBALMODE             = "lcow.globalmode"                   // LCOW: Utility VM lifetime. Presence of this causes global mode which is insecure, but more efficient. Default is non-global
-	HCSOPTION_LCOW_SANDBOXSIZE            = "lcow.sandboxsize"                  // LCOW: Size of sandbox. **** THINK IN GB? **** CHECK. TODO
+	HCSOPTION_LCOW_SANDBOXSIZE_GB         = "lcow.sandboxsize.gb"               // LCOW: Size of sandbox in GB
 	HCSOPTION_LCOW_TIMEOUT                = "lcow.timeout"                      // LCOW: Timeout (seconds) waiting for utility VM operations to complete.
 
-	// WINDOWS_BUILD_ constants are hopefully self explanatory :)
+	// WINDOWS_BUILD_ constants are hopefully self explanatory :) RS2 was a client-only release in case you're asking why it's not in the list.
 	WINDOWS_BUILD_RS1 = 14393
 	WINDOWS_BUILD_RS3 = 16299
 	WINDOWS_BUILD_RS4 = 17134
 	WINDOWS_BUILD_RS5 = 17659 // TODO Bump to final RS5 build
+
+)
+
+// TODO Move this
+const (
+	// DefaultLCOWVhdxSizeGB is the size of the default LCOW sandbox & scratch in GB
+	DefaultLCOWVhdxSizeGB = 20
+
+	// defaultLCOWVhdxBlockSizeMB is the block-size for the sandbox/scratch VHDx's this package can create.
+	defaultLCOWVhdxBlockSizeMB = 1
 )
 
 // CreateOptions are the set of fields used to call CreateContainerEx().
@@ -40,23 +50,24 @@ const (
 // where layer1 is the base read-only layer, layern is the top-most read-only
 // layer, and sandbox is the RW layer. This is for historical reasons only.
 type CreateOptions struct {
-	// External fields
 	Spec          *specs.Spec       // Definition of the container or utility VM being created
 	Options       map[string]string // Runtime options. See HCSOPTION_ constants for possible values.
 	HostingSystem Container         // Container object representing the utility VM
 	Logger        *logrus.Entry     // For logging
 
 	// Internal fields
-	sv    *SchemaVersion // Calculated based on Windows build and optional caller-supplied override
-	id    string         // Identifier for the container
-	owner string         // Owner for the container
+	sv             *SchemaVersion // Calculated based on Windows build and optional caller-supplied override
+	id             string         // Identifier for the container
+	owner          string         // Owner for the container
+	lcowkird       string         // LCOW kernel/initrd path
+	lcowkernel     string         // LCOW kernel file
+	lcowinitrd     string         // LCOW initrd file
+	lcowbootparams string         // LCOW additional boot parameters
 
-	// TODO: Kill these fields in favour of RuntimeOptions
-	LCOWOptions *LCOWOptions // Configuration of an LCOW utility VM.
 }
 
 // valueFromStringMap scans a map[string]string such as runtime options or
-// annotations in a spec for a value. Keys are case insensitive.
+// annotations in a spec for a value. Keys are case insensitive. Values are not.
 func valueFromStringMap(m map[string]string, name string) string {
 	if m == nil {
 		return ""
@@ -102,15 +113,14 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		if createOptions.HostingSystem != nil {
 			return nil, fmt.Errorf("HostingSystem must not be supplied for a v1 schema request")
 		}
-		if createOptions.LCOWOptions != nil {
-			return nil, fmt.Errorf("lcowOptions must not be supplied for a v1 schema Windows container request")
-		}
 	}
 	if createOptions.Spec.Linux != nil {
 		if createOptions.Spec.Windows == nil {
 			return nil, fmt.Errorf("containerSpec 'Windows' field must container layer folders for a Linux container")
 		}
+		getLCOWSettings(createOptions)
 		if createOptions.sv.IsV10() {
+			logrus.Debugln("hcsshim: Calling createLCOWv1")
 			return createLCOWv1(createOptions)
 		} else {
 			// TODO v2 LCOW
