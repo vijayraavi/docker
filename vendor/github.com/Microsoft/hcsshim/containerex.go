@@ -2,6 +2,7 @@ package hcsshim
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -10,49 +11,48 @@ import (
 )
 
 const (
-
 	// HCSOPTION_ constants are string values which can be added in the RuntimeOptions of a call to CreateContainerEx.
-	HCSOPTION_SCHEMA_VERSION              = "hcs.schema.version"                // HCS:  Force calls into a particular schema. Content is a SchemaVersion object. Defaults to v2 for RS5, v1 for RS1..RS4
-	HCSOPTION_ADDITIONAL_JSON_V1          = "hcs.additional.v1.json"            // HCS:  Additional JSON to merge into Create container calls into HCS for V1 schema. Default is none
-	HCSOPTION_ADDITIONAL_JSON_V2          = "hcs.additional.v2.json"            // HCS:  Additional JSON to merge into Create container calls into HCS for V2.x schema. Default is none
+	HCSOPTION_SCHEMA_VERSION              = "hcs.schema.version"                // HCS:  Request a schema version. Content is a SchemaVersion object. Defaults to v2 for RS5, v1 for RS1..RS4
+	HCSOPTION_OWNER                       = "hcs.container.owner"               // HCS:  Specified the owner. Default to executable name
+	HCSOPTION_ID                          = "hcs.container.id"                  // HCS:  Specifies the ID of a created container. Defaults to a GUID if not supplied
+	HCSOPTION_ADDITIONAL_JSON_V1          = "hcs.additional.v1.json"            // HCS:  Additional JSON to merge into Create calls in HCS for V1 schema. Default is none
+	HCSOPTION_ADDITIONAL_JSON_V2          = "hcs.additional.v2.json"            // HCS:  Additional JSON to merge into Create calls in HCS for V2.x schema. Default is none
 	HCSOPTION_SPEC_DEFINES_UTILITY_VM     = "hcs.spec.defines.utility.vm"       // HCS:  If defined, the spec is for a utility VM. Default is a container.
 	HCSOPTION_WCOW_V2_UVM_MEMORY_OVERHEAD = "hcs.wcow.v2.uvm.additional.memory" // WCOW: v2 schema MB of memory to add to WCOW UVM when calculating resources. Defaults to 256MB
+	HCSOPTION_LCOW_KIRD_PATH              = "lcow.kirdpath"                     // LCOW: Folder in which kernel and initrd reside. Defaults to \Program Files\Linux Containers
+	HCSOPTION_LCOW_KERNEL_FILE            = "lcow.kernel"                       // LCOW: Filename under kirdpath for the kernel. Defaults to bootx64.efi
+	HCSOPTION_LCOW_INITRD_FILE            = "lcow.initrd"                       // LCOW: Filename under kirdpath for the initrd. Defaults to initrd.img
+	HCSOPTION_LCOW_BOOT_PARAMETERS        = "lcow.bootparameters"               // LCOW: Additional boot parameters for starting the kernel. Default is no additional parameters
+	HCSOPTION_LCOW_GLOBALMODE             = "lcow.globalmode"                   // LCOW: Utility VM lifetime. Presence of this causes global mode which is insecure, but more efficient. Default is non-global
+	HCSOPTION_LCOW_SANDBOXSIZE            = "lcow.sandboxsize"                  // LCOW: Size of sandbox. **** THINK IN GB? **** CHECK. TODO
+	HCSOPTION_LCOW_TIMEOUT                = "lcow.timeout"                      // LCOW: Timeout (seconds) waiting for utility VM operations to complete.
 
-	HCSOPTION_LCOW_KIRD_PATH       = "lcow.kirdpath"       // LCOW: Folder in which kernel and initrd reside. Defaults to \Program Files\Linux Containers
-	HCSOPTION_LCOW_KERNEL_FILE     = "lcow.kernel"         // LCOW: Filename under kirdpath for the kernel. Defaults to bootx64.efi
-	HCSOPTION_LCOW_INITRD_FILE     = "lcow.initrd"         // LCOW: Filename under kirdpath for the initrd. Defaults to initrd.img
-	HCSOPTION_LCOW_BOOT_PARAMETERS = "lcow.bootparameters" // LCOW: Additional boot parameters for starting the kernel. Default is no additional parameters
-	HCSOPTION_LCOW_GLOBALMODE      = "lcow.globalmode"     // LCOW: Utility VM lifetime. Presence of this causes global mode which is insecure, but more efficient. Default is non-global
-	HCSOPTION_LCOW_SANDBOXSIZE     = "lcow.sandboxsize"    // LCOW: Size of sandbox. **** THINK IN GB? **** CHECK. TODO
-	HCSOPTION_LCOW_TIMEOUT         = "lcow.timeout"        // LCOW: Timeout (seconds) waiting for utility VM operations to complete.
-
+	// WINDOWS_BUILD_ constants are hopefully self explanatory :)
 	WINDOWS_BUILD_RS1 = 14393
 	WINDOWS_BUILD_RS3 = 16299
 	WINDOWS_BUILD_RS4 = 17134
 	WINDOWS_BUILD_RS5 = 17659 // TODO Bump to final RS5 build
-
 )
 
-// CreateOptions are the complete set of fields required to call any of the
-// Create* APIs in HCSShim.
+// CreateOptions are the set of fields used to call CreateContainerEx().
+// Note: In the spec, the LayerFolders must be arranged in the same way in which
+// moby configures them: layern, layern-1,...,layer2,layer1,sandbox
+// where layer1 is the base read-only layer, layern is the top-most read-only
+// layer, and sandbox is the RW layer. This is for historical reasons only.
 type CreateOptions struct {
-	Id            string            // Identifier for the container
-	HostingSystem Container         // Container object representing the utility VM
-	Owner         string            // Arbitrary string determining the owner
+	// External fields
 	Spec          *specs.Spec       // Definition of the container or utility VM being created
-	Logger        *logrus.Entry     // For logging
 	Options       map[string]string // Runtime options. See HCSOPTION_ constants for possible values.
+	HostingSystem Container         // Container object representing the utility VM
+	Logger        *logrus.Entry     // For logging
+
+	// Internal fields
+	sv    *SchemaVersion // Calculated based on Windows build and optional caller-supplied override
+	id    string         // Identifier for the container
+	owner string         // Owner for the container
 
 	// TODO: Kill these fields in favour of RuntimeOptions
-	SchemaVersion   *SchemaVersion // Schema version of the create request
-	LCOWOptions     *LCOWOptions   // Configuration of an LCOW utility VM. ??Should these be part of OCI?? // What about annotations to put these in?
-	IsHostingSystem bool           // If this is host (utility VM) for other containers
-
-	// Note: In the spec, the LayerFolders must be arranged in the same way in which
-	// moby configures them: layern, layern-1,...,layer2,layer1,sandbox
-	// where layer1 is the base read-only layer, layern is the top-most read-only
-	// layer, and sandbox is the RW layer.
-
+	LCOWOptions *LCOWOptions // Configuration of an LCOW utility VM.
 }
 
 // valueFromStringMap scans a map[string]string such as runtime options or
@@ -72,25 +72,22 @@ func valueFromStringMap(m map[string]string, name string) string {
 // CreateContainerEx creates a container. It can cope with a  wide variety of
 // scenarios, including v1 HCS schema calls, as well as more complex v2 HCS schema
 // calls.
-//
-// Returns
-// - Interface for the container that was created. Always returned in v1. Optional in V2.
-// - Interface for the utility VM that was optionally created if a V2 schema call
-// - Error indication
-
 func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
-	if createOptions.SchemaVersion == nil {
-		return nil, fmt.Errorf("SchemaVersion must be supplied")
+	logrus.Debugf("hcsshim: CreateContainerEx options: %+v", createOptions.Options)
+
+	createOptions.sv = determineSchemaVersion(createOptions.Options)
+	logrus.Debugf("hcsshim: CreateContainerEx using schema %s", createOptions.sv.String())
+
+	createOptions.id = valueFromStringMap(createOptions.Options, HCSOPTION_ID)
+	if createOptions.id == "" {
+		g, _ := GenerateGUID() // TODO Error handling
+		createOptions.id = g.ToString()
 	}
-	if err := createOptions.SchemaVersion.isSupported(); err != nil {
-		return nil, err
+	createOptions.owner = valueFromStringMap(createOptions.Options, HCSOPTION_OWNER)
+	if createOptions.owner == "" {
+		createOptions.owner = filepath.Base(os.Args[0])
 	}
-	if createOptions.Id == "" {
-		return nil, fmt.Errorf("Id must be supplied")
-	}
-	if createOptions.Owner == "" {
-		return nil, fmt.Errorf("Owner must be supplied")
-	}
+
 	if createOptions.Logger == nil {
 		return nil, fmt.Errorf("Logger must be supplied")
 	}
@@ -99,9 +96,9 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 	}
 	// TODO All this logger stuff
 	//logger := createOptions.Logger.WithField("container", createOptions.Id)
-	createOptions.Logger = createOptions.Logger.WithField("container", createOptions.Id)
+	createOptions.Logger = createOptions.Logger.WithField("container", createOptions.id)
 
-	if createOptions.SchemaVersion.IsV10() {
+	if createOptions.sv.IsV10() {
 		if createOptions.HostingSystem != nil {
 			return nil, fmt.Errorf("HostingSystem must not be supplied for a v1 schema request")
 		}
@@ -113,7 +110,7 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		if createOptions.Spec.Windows == nil {
 			return nil, fmt.Errorf("containerSpec 'Windows' field must container layer folders for a Linux container")
 		}
-		if createOptions.SchemaVersion.IsV10() {
+		if createOptions.sv.IsV10() {
 			return createLCOWv1(createOptions)
 		} else {
 			// TODO v2 LCOW
@@ -122,7 +119,9 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 	}
 
 	// Is a WCOW request.
-	if createOptions.IsHostingSystem { // TODO Should be able to put this into CreateHCSContainerDocument
+
+	if valueFromStringMap(createOptions.Options, HCSOPTION_SPEC_DEFINES_UTILITY_VM) != "" {
+		// TODO Should be able to put this into CreateHCSContainerDocument
 		return createWCOWv2UVM(createOptions)
 	}
 
@@ -130,12 +129,12 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	return createContainer(createOptions.Id, hcsDocument, createOptions.SchemaVersion)
+	return createContainer(createOptions.id, hcsDocument, createOptions.sv)
 }
 
-// CreateWindowsUVMSandbox is a helper to create a sandbox for a Windows utility VM
+// CreateWCOWUVMSandbox is a helper to create a sandbox for a Windows utility VM
 // with permissions to the specified VM ID in a specified directory
-func CreateWindowsUVMSandbox(imagePath, destDirectory, vmID string) error {
+func CreateWCOWUVMSandbox(imagePath, destDirectory, vmID string) error {
 	sourceSandbox := filepath.Join(imagePath, `UtilityVM\SystemTemplate.vhdx`)
 	targetSandbox := filepath.Join(destDirectory, "sandbox.vhdx")
 	if err := CopyFile(sourceSandbox, targetSandbox, true); err != nil {

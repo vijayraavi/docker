@@ -64,7 +64,7 @@ func (sv *SchemaVersion) String() string {
 func determineSchemaVersion(options map[string]string) *SchemaVersion {
 	sv := SchemaV10()
 	if GetOSVersion().Build >= WINDOWS_BUILD_RS5 {
-		sv = SchemaV20() // TODO: When do we flip this to V2 for RS5?
+		sv = SchemaV10() // TODO: When do we flip this to V2 for RS5? Answer - when functionally complete. Templating. CredSpecs. Networking. LCOW...
 	}
 	if requested := valueFromStringMap(options, HCSOPTION_SCHEMA_VERSION); requested != "" {
 		requestedSV := &SchemaVersion{}

@@ -1,6 +1,7 @@
 package hcsshim
 
 import (
+	"crypto/rand"
 	"crypto/sha1"
 	"fmt"
 	"io"
@@ -20,11 +21,25 @@ var (
 
 type GUID [16]byte
 
+// TODO Don't think this is called at all.
 func NewGUID(source string) *GUID {
 	h := sha1.Sum([]byte(source))
 	var g GUID
 	copy(g[0:], h[0:16])
 	return &g
+}
+
+func GenerateGUID() (*GUID, error) { // https://play.golang.org/p/4FkNSiUDMg
+	g := make([]byte, 16)
+	n, err := io.ReadFull(rand.Reader, g)
+	if n != len(g) || err != nil {
+		return nil, err
+	}
+	g[8] = g[8]&^0xc0 | 0x80
+	g[6] = g[6]&^0xf0 | 0x40
+	var g2 GUID
+	// TODO COPY!!! This is just a temporary hack
+	return &g2, nil
 }
 
 func (g *GUID) ToString() string {

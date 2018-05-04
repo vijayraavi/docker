@@ -92,6 +92,7 @@ func createTempDir(t *testing.T) string {
 	return tempDir
 }
 
+// TODO Make this more a public function.
 // createWCOWTempDirWithSandbox uses HCS to create a sandbox with VM group access
 // in a temporary directory. Returns the directory, the "containerID" which is
 // really the foldername where the sandbox is, and a constructed DriverInfo
@@ -109,17 +110,19 @@ func createWCOWTempDirWithSandbox(t *testing.T) string {
 // createLCOWTempDirWithSandbox uses an LCOW utility VM to create a blank
 // VHDX and format it ext4.
 func createLCOWTempDirWithSandbox(t *testing.T) (string, string) {
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
+	options[HCSOPTION_ID] = "global"
+	options[HCSOPTION_OWNER] = "unit-test"
 	if lcowServiceContainer == nil {
 		cacheSandboxDir = createTempDir(t)
 		t.Logf("Creating an LCOW service VM")
 		var err error
 		lcowServiceContainer, err = CreateContainerEx(&CreateOptions{
-			Id:            "global",
-			Owner:         "unit-test",
-			SchemaVersion: &SchemaVersion{Major: 1, Minor: 0},
-			Logger:        logrus.WithField("module", "hcsshim unit test"),
-			Spec:          defaultLinuxSpec(),
-			LCOWOptions:   getLCOWOptions(),
+			Options:     options,
+			Logger:      logrus.WithField("module", "hcsshim unit test"),
+			Spec:        defaultLinuxSpec(),
+			LCOWOptions: getLCOWOptions(),
 		})
 		if err != nil {
 			t.Fatalf("Failed create: %s", err)
@@ -409,11 +412,13 @@ func TestV1Argon(t *testing.T) {
 	}
 	defer Unmount(layers, nil, SchemaV10(), UnmountOperationAll)
 
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
+	options[HCSOPTION_ID] = "TestV1Argon"
+	options[HCSOPTION_OWNER] = "unit-test"
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:            "TestV1Argon",
-		Owner:         "unit-test",
-		SchemaVersion: &SchemaVersion{Major: 1, Minor: 0},
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Options: options,
+		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Hostname: "v1argontest",
 			Windows:  &specs.Windows{LayerFolders: layers},
@@ -435,11 +440,13 @@ func TestV1XenonWCOW(t *testing.T) {
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
+	options[HCSOPTION_ID] = "TestV1XenonWCOW"
+	options[HCSOPTION_OWNER] = "unit-test"
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:            "TestV1XenonWCOW",
-		Owner:         "unit-test",
-		SchemaVersion: &SchemaVersion{Major: 1, Minor: 0},
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Options: options,
+		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: append(layersNanoserver, tempDir),
@@ -461,11 +468,13 @@ func TestV1XenonWCOWNoUVMPath(t *testing.T) {
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
+	options[HCSOPTION_ID] = "TestV1XenonWCOWNoUVMPath"
+	options[HCSOPTION_OWNER] = "unit-test"
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:            "TestV1XenonWCOWNoUVMPath",
-		Owner:         "unit-test",
-		SchemaVersion: &SchemaVersion{Major: 1, Minor: 0},
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Options: options,
+		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: append(layersNanoserver, tempDir),
@@ -488,11 +497,13 @@ func TestV1XenonLCOW(t *testing.T) {
 	tempDir, _ := createLCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
+	options[HCSOPTION_ID] = "TestV1XenonLCOW"
+	options[HCSOPTION_OWNER] = "unit-test"
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:            "TestV1XenonLCOW",
-		Owner:         "unit-test",
-		SchemaVersion: &SchemaVersion{Major: 1, Minor: 0},
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Options: options,
+		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: []string{alpineImagePath, tempDir}},
 			Linux:   &specs.Linux{},
@@ -510,7 +521,7 @@ func TestV1XenonLCOW(t *testing.T) {
 
 // A v2 Argon with a single base layer
 func TestV2Argon(t *testing.T) {
-	t.Skip("fornow")
+	//	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -521,11 +532,12 @@ func TestV2Argon(t *testing.T) {
 	}
 	defer Unmount(layers, nil, SchemaV20(), UnmountOperationAll)
 
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
+	options[HCSOPTION_ID] = "TestV2Argon"
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:            "TestV2Argon",
-		Owner:         "unit-test",
-		SchemaVersion: SchemaV20(),
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Options: options,
+		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Hostname: "v2argontest",
 			Windows:  &specs.Windows{LayerFolders: layers},
@@ -554,11 +566,12 @@ func TestV2ArgonMultipleBaseLayers(t *testing.T) {
 	}
 	defer Unmount(layers, nil, SchemaV20(), UnmountOperationAll)
 
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
+	options[HCSOPTION_ID] = "TestV2ArgonMultipleBaseLayers"
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:            "TestV2ArgonMultipleBaseLayers",
-		Owner:         "unit-test",
-		SchemaVersion: SchemaV20(),
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Options: options,
+		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Hostname: "v2argonmltest",
 			Windows:  &specs.Windows{LayerFolders: layers},
@@ -583,17 +596,18 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed create temporary directory: %s", err)
 	}
-	if err := CreateWindowsUVMSandbox(layersNanoserver[0], uvmScratchDir, uvmID); err != nil {
+	if err := CreateWCOWUVMSandbox(layersNanoserver[0], uvmScratchDir, uvmID); err != nil {
 		t.Fatalf("Failed create Windows UVM Sandbox: %s", err)
 	}
 	defer os.RemoveAll(uvmScratchDir)
 
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
+	options[HCSOPTION_SPEC_DEFINES_UTILITY_VM] = "yes"
+	options[HCSOPTION_ID] = uvmID
 	uvm, err := CreateContainerEx(&CreateOptions{
-		Id:              uvmID,
-		Owner:           "unit-test",
-		SchemaVersion:   SchemaV20(),
-		Logger:          logrus.WithField("module", "hcsshim unit test"),
-		IsHostingSystem: true,
+		Options: options,
+		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
@@ -612,11 +626,13 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	// Create a sandbox for the first hosted container, then create the container
 	containerAScratchDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(containerAScratchDir)
+
+	options = make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
+	options[HCSOPTION_ID] = "containerA"
 	xenonA, err := CreateContainerEx(&CreateOptions{
-		Id:            "containerA",
-		Owner:         "unit-test",
 		HostingSystem: uvm,
-		SchemaVersion: SchemaV20(),
+		Options:       options,
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: append(layersNanoserver, containerAScratchDir)},
@@ -629,11 +645,10 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	// Create a sandbox for the second hosted container, then create the container
 	containerBScratchDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(containerBScratchDir)
+	options[HCSOPTION_ID] = "containerB"
 	xenonB, err := CreateContainerEx(&CreateOptions{
-		Id:            "containerB",
-		Owner:         "unit-test",
 		HostingSystem: uvm,
-		SchemaVersion: SchemaV20(),
+		Options:       options,
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: append(layersNanoserver, containerBScratchDir)},
@@ -661,29 +676,31 @@ func TestUVMSizing(t *testing.T) {
 
 // A single WCOW xenon
 func TestV2XenonWCOW(t *testing.T) {
-	t.Skip("Skipping for now")
+	//t.Skip("Skipping for now")
 	uvmID := "Testv2XenonWCOW_UVM"
 	uvmScratchDir, err := ioutil.TempDir("", "uvmScratch")
 	if err != nil {
 		t.Fatalf("Failed create temporary directory: %s", err)
 	}
-	logrus.Debugln(layersBusybox)
-	if err := CreateWindowsUVMSandbox(layersBusybox[0], uvmScratchDir, uvmID); err != nil {
+	// TODO: Have test wrapper which calls this, but also creates a temporary directory above.
+	// TODO: Stop calling it "scratch". It's really the boot/OS bit of a UVM.
+	if err := CreateWCOWUVMSandbox(layersBusybox[0], uvmScratchDir, uvmID); err != nil {
 		t.Fatalf("Failed create Windows UVM Sandbox: %s", err)
 	}
 	defer os.RemoveAll(uvmScratchDir)
 
 	// TODO: Stefan's test created this with flags 16785. I do 16407.
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
+	options[HCSOPTION_SPEC_DEFINES_UTILITY_VM] = "yes" // TODO CREATE_AS_UTILITY_VM
+	options[HCSOPTION_ID] = uvmID                      // TODO Test to make sure this is optional
 	uvm, err := CreateContainerEx(&CreateOptions{
-		Id:              uvmID,
-		Owner:           "unit-test",
-		SchemaVersion:   SchemaV20(),
-		Logger:          logrus.WithField("module", "hcsshim unit test"),
-		IsHostingSystem: true,
+		Options: options,
+		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
-				LayerFolders: []string{uvmScratchDir},
-				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(layersBusybox[0], `UtilityVM\Files`)},
+				LayerFolders: []string{uvmScratchDir},                                                                 // TODO JJH. Do we even need this?
+				HyperV:       &specs.WindowsHyperV{UtilityVMPath: filepath.Join(layersBusybox[0], `UtilityVM\Files`)}, // This we don't need.
 			},
 		},
 	})
@@ -695,26 +712,26 @@ func TestV2XenonWCOW(t *testing.T) {
 		t.Fatalf("Failed start utility VM: %s", err)
 	}
 
-	// Mount the containers storage in the utility VM
 	containerScratchDir := createWCOWTempDirWithSandbox(t)
-	layerFolders := append(layersBusybox, containerScratchDir)
-
-	// Start the container
 	defer os.RemoveAll(containerScratchDir)
+
+	// Create the container hosted inside the utility VM
+	options = make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
+	options[HCSOPTION_ID] = "container"
+	layerFolders := append(layersBusybox, containerScratchDir)
 	xenon, err := CreateContainerEx(&CreateOptions{
-		Id:            "container",
-		Owner:         "unit-test",
 		HostingSystem: uvm,
-		SchemaVersion: SchemaV20(),
+		Options:       options,
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
 	})
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)
 	}
-	defer Unmount(layerFolders, uvm, SchemaV20(), UnmountOperationAll)
+	defer Unmount(layerFolders, uvm, SchemaV20(), UnmountOperationAll) // TODO Why have schema here? It should be known and stored.
 
-	// Start/stop the containers
+	// Start/stop the container
 	startContainer(t, xenon)
 	runCommand(t, xenon, "cmd /s /c echo TestV2XenonWCOW", `c:\`, "TestV2XenonWCOW")
 	stopContainer(t, xenon)
@@ -730,7 +747,7 @@ func TestV2XenonWCOW(t *testing.T) {
 //	if err != nil {
 //		t.Fatalf("Failed create temporary directory: %s", err)
 //	}
-//	if err := CreateWindowsUVMSandbox(layersNanoserver[0], uvmScratchDir, uvmID); err != nil {
+//	if err := CreateWCOWSandbox(layersNanoserver[0], uvmScratchDir, uvmID); err != nil {
 //		t.Fatalf("Failed create Windows UVM Sandbox: %s", err)
 //	}
 //	defer os.RemoveAll(uvmScratchDir)
@@ -829,19 +846,19 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed create temporary directory: %s", err)
 	}
-	if err := CreateWindowsUVMSandbox(layersNanoserver[0], uvmScratchDir, uvmID); err != nil {
+	if err := CreateWCOWUVMSandbox(layersNanoserver[0], uvmScratchDir, uvmID); err != nil {
 		t.Fatalf("Failed create Windows UVM Sandbox: %s", err)
 	}
 	defer os.RemoveAll(uvmScratchDir)
 
 	uvmMemory := uint64(1 * 1024 * 1024 * 1024)
 	uvmCPUCount := uint64(2)
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
+	options[HCSOPTION_SPEC_DEFINES_UTILITY_VM] = "yes"
+	options[HCSOPTION_ID] = uvmID
 	uvm, err := CreateContainerEx(&CreateOptions{
-		Id:              uvmID,
-		Owner:           "unit-test",
-		SchemaVersion:   SchemaV20(),
-		Logger:          logrus.WithField("module", "hcsshim unit test"),
-		IsHostingSystem: true,
+		Logger: logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
@@ -871,11 +888,12 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 	defer os.RemoveAll(containerAScratchDir)
 
 	// Create the container
+	options = make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
+	options[HCSOPTION_ID] = "containerA"
 	xenon, err := CreateContainerEx(&CreateOptions{
-		Id:            "containerA",
-		Owner:         "unit-test",
 		HostingSystem: uvm,
-		SchemaVersion: SchemaV20(),
+		Options:       options,
 		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: append(layersBusybox, containerAScratchDir)}},
 	})

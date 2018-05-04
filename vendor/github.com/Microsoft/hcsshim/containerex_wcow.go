@@ -35,7 +35,7 @@ func UVMFolderFromLayerFolders(layerFolders []string) (string, error) {
 }
 
 func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
-	logrus.Debugf("HCSShim: Creating utility VM id=%s", createOptions.Id)
+	logrus.Debugf("HCSShim: Creating utility VM id=%s", createOptions.id)
 
 	iocis := "invalid OCI spec:"
 	if len(createOptions.Spec.Windows.LayerFolders) != 1 {
@@ -89,8 +89,8 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 		}
 	}
 	uvm := &ComputeSystemV2{
-		Owner:         createOptions.Owner,
-		SchemaVersion: createOptions.SchemaVersion,
+		Owner:         createOptions.owner,
+		SchemaVersion: createOptions.sv,
 		VirtualMachine: &VirtualMachineV2{
 			Chipset: &VirtualMachinesResourcesChipsetV2{
 				UEFI: &VirtualMachinesResourcesUefiV2{
@@ -129,7 +129,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	uvmContainer, err := createContainer(createOptions.Id, string(uvmb), SchemaV20())
+	uvmContainer, err := createContainer(createOptions.id, string(uvmb), SchemaV20())
 	if err != nil {
 		logrus.Debugln("failed to create UVM: ", err)
 		return nil, err
@@ -158,8 +158,8 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 
 	v1 := &ContainerConfig{
 		SystemType:              "Container",
-		Name:                    createOptions.Id,
-		Owner:                   createOptions.Owner,
+		Name:                    createOptions.id,
+		Owner:                   createOptions.owner,
 		HvPartition:             false,
 		IgnoreFlushesDuringBoot: createOptions.Spec.Windows.IgnoreFlushesDuringBoot,
 	}
@@ -167,7 +167,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 	// IgnoreFlushesDuringBoot is a property of the SCSI attachment for the sandbox. Set when it's hot-added to the utility VM
 	// ID is a property on the create call in V2 rather than part of the schema.
 	v2 := &ComputeSystemV2{
-		Owner:                             createOptions.Owner,
+		Owner:                             createOptions.owner,
 		SchemaVersion:                     SchemaV20(),
 		ShouldTerminateOnLastHandleClosed: true,
 	}
@@ -279,7 +279,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 			if createOptions.Spec.Root != nil && createOptions.Spec.Root.Path != "" {
 				return "", fmt.Errorf("invalid container spec - Root.Path must be omitted for a Hyper-V container")
 			}
-			if createOptions.SchemaVersion.IsV10() {
+			if createOptions.sv.IsV10() {
 				v1.HvPartition = true
 				if createOptions.Spec.Windows.HyperV.UtilityVMPath != "" {
 					v1.HvRuntime = &HvRuntime{ImagePath: createOptions.Spec.Windows.HyperV.UtilityVMPath}
@@ -357,7 +357,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		}
 	}
 
-	if createOptions.HostingSystem != nil && createOptions.SchemaVersion.IsV20() {
+	if createOptions.HostingSystem != nil && createOptions.sv.IsV20() {
 		// Perform the mount of the layer folders into the utility vm
 		cls, err := Mount(createOptions.Spec.Windows.LayerFolders, createOptions.HostingSystem, SchemaV20())
 		if err != nil {
@@ -385,7 +385,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 
 	}
 
-	if createOptions.SchemaVersion.IsV10() {
+	if createOptions.sv.IsV10() {
 		v1b, err := json.Marshal(v1)
 		if err != nil {
 			return "", err
