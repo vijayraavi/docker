@@ -68,6 +68,7 @@ type Container interface {
 	MappedVirtualDisks() (map[int]MappedVirtualDiskController, error)
 
 	// CreateProcess launches a new process within the container.
+	// TODO Remove this from the interface.
 	CreateProcess(c *ProcessConfig) (Process, error)
 
 	// OpenProcess gets an interface to an existing process within the container.

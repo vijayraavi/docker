@@ -17,7 +17,7 @@ const (
 	HCSOPTION_ID                          = "hcs.container.id"                  // HCS:  Specifies the ID of a created container. Defaults to a GUID if not supplied
 	HCSOPTION_ADDITIONAL_JSON_V1          = "hcs.additional.v1.json"            // HCS:  Additional JSON to merge into Create calls in HCS for V1 schema. Default is none
 	HCSOPTION_ADDITIONAL_JSON_V2          = "hcs.additional.v2.json"            // HCS:  Additional JSON to merge into Create calls in HCS for V2.x schema. Default is none
-	HCSOPTION_SPEC_DEFINES_UTILITY_VM     = "hcs.spec.defines.utility.vm"       // HCS:  If defined, the spec is for a utility VM. Default is a container.
+	HCSOPTION_IS_UTILITY_VM               = "hcs.is.utility.vm"                 // HCS:  If defined, the spec is for a utility VM. Default is a container.
 	HCSOPTION_WCOW_V2_UVM_MEMORY_OVERHEAD = "hcs.wcow.v2.uvm.additional.memory" // WCOW: v2 schema MB of memory to add to WCOW UVM when calculating resources. Defaults to 256MB
 	HCSOPTION_LCOW_KIRD_PATH              = "lcow.kirdpath"                     // LCOW: Folder in which kernel and initrd reside. Defaults to \Program Files\Linux Containers
 	HCSOPTION_LCOW_KERNEL_FILE            = "lcow.kernel"                       // LCOW: Filename under kirdpath for the kernel. Defaults to bootx64.efi
@@ -120,7 +120,7 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 
 	// Is a WCOW request.
 
-	if valueFromStringMap(createOptions.Options, HCSOPTION_SPEC_DEFINES_UTILITY_VM) != "" {
+	if valueFromStringMap(createOptions.Options, HCSOPTION_IS_UTILITY_VM) != "" {
 		// TODO Should be able to put this into CreateHCSContainerDocument
 		return createWCOWv2UVM(createOptions)
 	}
@@ -130,21 +130,6 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		return nil, err
 	}
 	return createContainer(createOptions.id, hcsDocument, createOptions.sv)
-}
-
-// CreateWCOWUVMSandbox is a helper to create a sandbox for a Windows utility VM
-// with permissions to the specified VM ID in a specified directory
-func CreateWCOWUVMSandbox(imagePath, destDirectory, vmID string) error {
-	sourceSandbox := filepath.Join(imagePath, `UtilityVM\SystemTemplate.vhdx`)
-	targetSandbox := filepath.Join(destDirectory, "sandbox.vhdx")
-	if err := CopyFile(sourceSandbox, targetSandbox, true); err != nil {
-		return err
-	}
-	if err := GrantVmAccess(vmID, targetSandbox); err != nil {
-		// TODO: Delete the file?
-		return err
-	}
-	return nil
 }
 
 // UVMResourcesFromContainerSpec takes a container spec and generates a

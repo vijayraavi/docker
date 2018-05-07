@@ -11,8 +11,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// TODO THIS IS NEVER CALLED!
-// TODO Name this as a WCOW function
 // LocateWCOWUVMFolderFromLayerFolders searches a set of layer folders to determine the "uppermost"
 // layer which has a utility VM image. The order of the layers is (for historical) reasons
 // Read-only-layers followed by an optional read-write layer. The RO layers are in reverse
@@ -41,8 +39,8 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 	logrus.Debugf("hcsshim::createWCOWv2UVM Creating utility VM id=%s", createOptions.id)
 
 	iocis := "invalid OCI spec:"
-	if len(createOptions.Spec.Windows.LayerFolders) != 1 {
-		return nil, fmt.Errorf("%s Windows.LayerFolders must have length 1 for a hosting system, pointing to a folder containing sandbox.vhdx", iocis)
+	if len(createOptions.Spec.Windows.LayerFolders) < 2 {
+		return nil, fmt.Errorf("%s Windows.LayerFolders must have length of at least 2 for a hosting system", iocis)
 	}
 	if len(createOptions.Spec.Hostname) > 0 {
 		return nil, fmt.Errorf("%s Hostname cannot be set for a hosting system", iocis)
@@ -69,11 +67,40 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 		return nil, fmt.Errorf("%s Mounts must not be set for a hosting system", iocis)
 	}
 
-	// TODO:  Default the utilty VMpath under HyperV in spec if not supplied
+	createOptions.id = valueFromStringMap(createOptions.Options, HCSOPTION_ID)
+	if createOptions.id == "" {
+		g, _ := GenerateGUID() // TODO Error handling
+		createOptions.id = g.ToString()
+	}
+	createOptions.owner = valueFromStringMap(createOptions.Options, HCSOPTION_OWNER)
+	if createOptions.owner == "" {
+		createOptions.owner = filepath.Base(os.Args[0])
+	}
+
+	uvmFolder, err := LocateWCOWUVMFolderFromLayerFolders(createOptions.Spec.Windows.LayerFolders)
+	if err != nil {
+		return nil, fmt.Errorf("failed to locate utility VM folder from layer folders: %s", err)
+	}
+
+	// Create the sandbox in the top-most layer folder, creating the folder if it doesn't already exist.
+	sandboxFolder := createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
+	logrus.Debugf("hcsshim: Sandbox folder: %s", sandboxFolder)
+
+	// Create the directory if it doesn't exist
+	if _, err := os.Stat(sandboxFolder); os.IsNotExist(err) {
+		if err := os.MkdirAll(sandboxFolder, 0777); err != nil {
+			return nil, fmt.Errorf("failed to create utility VM sandbox folder: %s", err)
+		}
+	}
+
+	// Create sandbox.vhdx in the sandbox folder based on the template, granting the correct permissions to it
+	if err := CreateWCOWUVMSandbox(uvmFolder, sandboxFolder, createOptions.id); err != nil {
+		return nil, fmt.Errorf("failed to create UVM sandbox: %s", err)
+	}
 
 	attachments := make(map[string]VirtualMachinesResourcesStorageAttachmentV2)
 	attachments["0"] = VirtualMachinesResourcesStorageAttachmentV2{
-		Path: filepath.Join(createOptions.Spec.Windows.LayerFolders[0], "sandbox.vhdx"),
+		Path: filepath.Join(sandboxFolder, "sandbox.vhdx"),
 		Type: "VirtualDisk",
 	}
 	scsi := make(map[string]VirtualMachinesResourcesStorageScsiV2)
@@ -121,7 +148,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 				VirtualSMBShares: []VirtualMachinesResourcesStorageVSmbShareV2{VirtualMachinesResourcesStorageVSmbShareV2{
 					Flags: VsmbFlagReadOnly | VsmbFlagPseudoOplocks | VsmbFlagTakeBackupPrivilege | VsmbFlagCacheIO | VsmbFlagShareRead,
 					Name:  "os",
-					Path:  createOptions.Spec.Windows.HyperV.UtilityVMPath,
+					Path:  filepath.Join(uvmFolder, `UtilityVM\Files`),
 				}},
 				GuestInterface: &VirtualMachinesResourcesGuestInterfaceV2{ConnectToBridge: true},
 			},
@@ -156,6 +183,7 @@ func unmountOnFailure(storageWasMountedByUs bool, layers []string, prevError err
 // a container, both hosted and process isolated. It can create both v1 and v2
 // schema. This is exported just in case a client could find it useful, but
 // not strictly necessary as it will be called by CreateContainerEx()
+// TODO: The mount shouldn't be in this function, but external.
 func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 	logrus.Debugf("hcsshim: CreateHCSContainerDocument")
 
@@ -314,7 +342,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 					if err != nil {
 						return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, err)
 					}
-					v1.HvRuntime = &HvRuntime{ImagePath: uvmImagePath}
+					v1.HvRuntime = &HvRuntime{ImagePath: filepath.Join(uvmImagePath, `UtilityVM`)}
 				}
 			}
 		}
@@ -426,4 +454,19 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		logrus.Debugln("hcsshim: HCS Document:", string(v2b))
 		return string(v2b), nil
 	}
+}
+
+// CreateWCOWUVMSandbox is a helper to create a sandbox for a Windows utility VM
+// with permissions to the specified VM ID in a specified directory
+func CreateWCOWUVMSandbox(imagePath, destDirectory, vmID string) error {
+	sourceSandbox := filepath.Join(imagePath, `UtilityVM\SystemTemplate.vhdx`)
+	targetSandbox := filepath.Join(destDirectory, "sandbox.vhdx")
+	if err := CopyFile(sourceSandbox, targetSandbox, true); err != nil {
+		return err
+	}
+	if err := GrantVmAccess(vmID, targetSandbox); err != nil {
+		// TODO: Delete the file?
+		return err
+	}
+	return nil
 }
