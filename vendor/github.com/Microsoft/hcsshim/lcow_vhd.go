@@ -41,9 +41,17 @@ func (container *container) CreateExt4Vhdx(destFile string, sizeGB uint32, cache
 	container.DebugLCOWGCS()
 
 	// Attach it to the utility VM, but don't mount it (as there's no filesystem on it)
-
-	if err := container.HotAddVhd(destFile, "", true, false, false); err != nil {
-		return fmt.Errorf("hcsshim: CreateExt4Vhdx: failed to hot-add %s to utility VM: %s", cacheFile, err)
+	modification := &ResourceModificationRequestResponse{
+		Resource: "MappedVirtualDisk",
+		Data: MappedVirtualDisk{
+			HostPath:          destFile,
+			CreateInUtilityVM: true,
+			AttachOnly:        true,
+		},
+		Request: "Add",
+	}
+	if err := container.Modify(modification); err != nil {
+		return fmt.Errorf("hcsshim: CreateExt4Vhdx: failed to modify utility VM configuration for hot-add: %s", err)
 	}
 
 	// Get the list of mapped virtual disks to find the controller and LUN IDs
@@ -74,9 +82,11 @@ func (container *container) CreateExt4Vhdx(destFile string, sizeGB uint32, cache
 	// Validate /sys/bus/scsi/devices/C:0:0:L exists as a directory
 	testdCommand := []string{"test", "-d", fmt.Sprintf("/sys/bus/scsi/devices/%d:0:0:%d", controller, lun)}
 	testdProc, _, err := container.CreateProcessEx(&CreateProcessEx{
-		ProcessSpec:           specs.Process{Args: testdCommand},
-		TargetOperatingSystem: "linux",
-		CreateInUtilityVm:     true,
+		OCISpecification: &specs.Spec{
+			Process: &specs.Process{Args: testdCommand},
+			Linux:   &specs.Linux{},
+		},
+		CreateInUtilityVm: true,
 	})
 	if err != nil {
 		container.HotRemoveVhd(destFile)
@@ -99,10 +109,12 @@ func (container *container) CreateExt4Vhdx(destFile string, sizeGB uint32, cache
 	var lsOutput bytes.Buffer
 	lsCommand := []string{"ls", fmt.Sprintf("/sys/bus/scsi/devices/%d:0:0:%d/block", controller, lun)}
 	lsProc, _, err := container.CreateProcessEx(&CreateProcessEx{
-		ProcessSpec:           specs.Process{Args: lsCommand},
-		TargetOperatingSystem: "linux",
-		CreateInUtilityVm:     true,
-		Stdout:                &lsOutput,
+		OCISpecification: &specs.Spec{
+			Process: &specs.Process{Args: lsCommand},
+			Linux:   &specs.Linux{},
+		},
+		CreateInUtilityVm: true,
+		Stdout:            &lsOutput,
 	})
 	if err != nil {
 		container.HotRemoveVhd(destFile)
@@ -126,10 +138,12 @@ func (container *container) CreateExt4Vhdx(destFile string, sizeGB uint32, cache
 	mkfsCommand := []string{"mkfs.ext4", "-q", "-E", "lazy_itable_init=1", "-O", `^has_journal,sparse_super2,uninit_bg,^resize_inode`, device}
 	var mkfsStderr bytes.Buffer
 	mkfsProc, _, err := container.CreateProcessEx(&CreateProcessEx{
-		ProcessSpec:           specs.Process{Args: mkfsCommand},
-		TargetOperatingSystem: "linux",
-		CreateInUtilityVm:     true,
-		Stderr:                &mkfsStderr,
+		OCISpecification: &specs.Spec{
+			Process: &specs.Process{Args: mkfsCommand},
+			Linux:   &specs.Linux{},
+		},
+		CreateInUtilityVm: true,
+		Stderr:            &mkfsStderr,
 	})
 	if err != nil {
 		container.HotRemoveVhd(destFile)
@@ -164,13 +178,13 @@ func (container *container) CreateExt4Vhdx(destFile string, sizeGB uint32, cache
 }
 
 // TarToVhd streams a tarstream contained in an io.Reader to a fixed vhd file
-func (config *LCOWConfig) TarToVhd(targetVHDFile string, reader io.Reader) (int64, error) {
+func TarToVhd(uvm Container, targetVHDFile string, reader io.Reader) (int64, error) {
 	logrus.Debugf("hcsshim: TarToVhd: %s", targetVHDFile)
 
-	if config.Uvm == nil {
-		return 0, fmt.Errorf("cannot Tar2Vhd as no utility VM is in configuration")
+	if uvm == nil {
+		return 0, fmt.Errorf("cannot Tar2Vhd as no utility VM supplied")
 	}
-	defer config.Uvm.DebugLCOWGCS()
+	defer uvm.DebugLCOWGCS()
 
 	outFile, err := os.Create(targetVHDFile)
 	if err != nil {
@@ -179,12 +193,14 @@ func (config *LCOWConfig) TarToVhd(targetVHDFile string, reader io.Reader) (int6
 	defer outFile.Close()
 	// BUGBUG Delete the file on failure
 
-	tar2vhd, byteCounts, err := config.Uvm.CreateProcessEx(&CreateProcessEx{
-		ProcessSpec:           specs.Process{Args: []string{"tar2vhd"}},
-		TargetOperatingSystem: "linux",
-		CreateInUtilityVm:     true,
-		Stdin:                 reader,
-		Stdout:                outFile,
+	tar2vhd, byteCounts, err := uvm.CreateProcessEx(&CreateProcessEx{
+		OCISpecification: &specs.Spec{
+			Process: &specs.Process{Args: []string{"tar2vhd"}},
+			Linux:   &specs.Linux{},
+		},
+		CreateInUtilityVm: true,
+		Stdin:             reader,
+		Stdout:            outFile,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("failed to start tar2vhd for %s: %s", targetVHDFile, err)
@@ -195,18 +211,17 @@ func (config *LCOWConfig) TarToVhd(targetVHDFile string, reader io.Reader) (int6
 	return byteCounts.Out, err
 }
 
-// VhdToTar does what is says - it exports a VHD in a specified
-// folder (either a read-only layer.vhd, or a read-write sandbox.vhd) to a
-// ReadCloser containing a tar-stream of the layers contents.
-// BUGBUG TODO
-//func (config *LCOWConfig) VhdToTar(vhdFile string, uvmMountPath string, isSandbox bool, vhdSize int64) (io.ReadCloser, error) {
+//// VhdToTar does what is says - it exports a VHD in a specified
+//// folder (either a read-only layer.vhd, or a read-write sandbox.vhd) to a
+//// ReadCloser containing a tar-stream of the layers contents.
+//func VhdToTar(uvm Container, vhdFile string, uvmMountPath string, isSandbox bool, vhdSize int64) (io.ReadCloser, error) {
 //	logrus.Debugf("hcsshim: VhdToTar: %s isSandbox: %t", vhdFile, isSandbox)
 
 //	if config.Uvm == nil {
 //		return nil, fmt.Errorf("cannot VhdToTar as no utility VM is in configuration")
 //	}
 
-//	defer config.DebugLCOWGCS()
+//	defer uvm.DebugLCOWGCS()
 
 //	vhdHandle, err := os.Open(vhdFile)
 //	if err != nil {

@@ -49,7 +49,7 @@ func init() {
 
 	os.Setenv("HCSSHIM_LCOW_DEBUG_ENABLE", "something")
 	layersNanoserver = getLayers("microsoft/nanoserver:latest")
-	layersBusybox = getLayers("microsoft/windowsservercore")
+	layersBusybox = getLayers("busybox")
 	layersAlpine = getLayers("alpine")
 }
 
@@ -207,7 +207,11 @@ func stopContainer(t *testing.T, c Container) {
 //
 // -------------------
 
-// A v1 Argon with a single base layer
+// -------------------
+//      A R G O N
+// -------------------
+
+// A v1 Argon with a single base layer. It also validates hostname functionality is propagated.
 func TestV1Argon(t *testing.T) {
 	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
@@ -228,9 +232,128 @@ func TestV1Argon(t *testing.T) {
 		Options: options,
 		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
-			Hostname: "v1argontest",
+			Hostname: "goofy",
 			Windows:  &specs.Windows{LayerFolders: layers},
 			Root:     &specs.Root{Path: mountPath.(string)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed create: %s", err)
+	}
+	startContainer(t, c)
+	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
+	runCommand(t, c, "cmd /s /c hostname", `c:\`, "goofy")
+	stopContainer(t, c)
+	c.Terminate()
+}
+
+// A v1 Argon with a single base layer which uses the auto-mount capability
+func TestV1ArgonAutoMount(t *testing.T) {
+	t.Skip("fornow")
+	tempDir := createWCOWTempDirWithSandbox(t)
+	defer os.RemoveAll(tempDir)
+
+	layers := append(layersNanoserver, tempDir)
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
+	options[HCSOPTION_ID] = "TestV1ArgonAutoMount"
+	c, err := CreateContainerEx(&CreateOptions{
+		Options: options,
+		Logger:  logrus.WithField("module", "hcsshim unit test"),
+		Spec:    &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
+	})
+	if err != nil {
+		t.Fatalf("Failed create: %s", err)
+	}
+	defer Unmount(layers, nil, UnmountOperationAll)
+	startContainer(t, c)
+	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
+	stopContainer(t, c)
+	c.Terminate()
+}
+
+// A v1 Argon with multiple layers which uses the auto-mount capability
+func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
+	t.Skip("fornow")
+	tempDir := createWCOWTempDirWithSandbox(t)
+	defer os.RemoveAll(tempDir)
+
+	layers := append(layersBusybox, tempDir)
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
+	options[HCSOPTION_ID] = "TestV1ArgonMultipleBaseLayersAutoMount"
+	c, err := CreateContainerEx(&CreateOptions{
+		Options: options,
+		Logger:  logrus.WithField("module", "hcsshim unit test"),
+		Spec:    &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
+	})
+	if err != nil {
+		t.Fatalf("Failed create: %s", err)
+	}
+	defer Unmount(layers, nil, UnmountOperationAll)
+	startContainer(t, c)
+	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
+	stopContainer(t, c)
+	c.Terminate()
+}
+
+// A v2 Argon with a single base layer. It also validates hostname functionality is propagated.
+func TestV2Argon(t *testing.T) {
+	t.Skip("fornow")
+	tempDir := createWCOWTempDirWithSandbox(t)
+	defer os.RemoveAll(tempDir)
+
+	layers := append(layersNanoserver, tempDir)
+	mountPath, err := Mount(layers, nil)
+	if err != nil {
+		t.Fatalf("failed to mount container storage: %s", err)
+	}
+	defer Unmount(layers, nil, UnmountOperationAll)
+
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
+	options[HCSOPTION_ID] = "TestV2Argon"
+	c, err := CreateContainerEx(&CreateOptions{
+		Options: options,
+		Logger:  logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
+			Hostname: "mickey",
+			Windows:  &specs.Windows{LayerFolders: layers},
+			Root:     &specs.Root{Path: mountPath.(string)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed create: %s", err)
+	}
+	startContainer(t, c)
+	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
+	runCommand(t, c, "cmd /s /c hostname", `c:\`, "mickey")
+	stopContainer(t, c)
+	c.Terminate()
+}
+
+// A v2 Argon with multiple layers
+func TestV2ArgonMultipleBaseLayers(t *testing.T) {
+	t.Skip("fornow")
+	tempDir := createWCOWTempDirWithSandbox(t)
+	defer os.RemoveAll(tempDir)
+
+	layers := append(layersBusybox, tempDir)
+	mountPath, err := Mount(layers, nil)
+	if err != nil {
+		t.Fatalf("failed to mount container storage: %s", err)
+	}
+	defer Unmount(layers, nil, UnmountOperationAll)
+
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
+	options[HCSOPTION_ID] = "TestV2ArgonMultipleBaseLayers"
+	c, err := CreateContainerEx(&CreateOptions{
+		Options: options,
+		Logger:  logrus.WithField("module", "hcsshim unit test"),
+		Spec: &specs.Spec{
+			Windows: &specs.Windows{LayerFolders: layers},
+			Root:    &specs.Root{Path: mountPath.(string)},
 		},
 	})
 	if err != nil {
@@ -241,6 +364,35 @@ func TestV1Argon(t *testing.T) {
 	stopContainer(t, c)
 	c.Terminate()
 }
+
+// A v2 Argon with multiple layers which uses the auto-mount capability
+func TestV2ArgonAutoMountMultipleBaseLayers(t *testing.T) {
+	t.Skip("fornow")
+	tempDir := createWCOWTempDirWithSandbox(t)
+	defer os.RemoveAll(tempDir)
+
+	layers := append(layersBusybox, tempDir)
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
+	options[HCSOPTION_ID] = "TestV2ArgonAutoMountMultipleBaseLayers"
+	c, err := CreateContainerEx(&CreateOptions{
+		Options: options,
+		Logger:  logrus.WithField("module", "hcsshim unit test"),
+		Spec:    &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
+	})
+	if err != nil {
+		t.Fatalf("Failed create: %s", err)
+	}
+	defer Unmount(layers, nil, UnmountOperationAll)
+	startContainer(t, c)
+	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
+	stopContainer(t, c)
+	c.Terminate()
+}
+
+// -------------------------
+//      W C O W    X E N O N
+// -------------------------
 
 // A v1 WCOW Xenon with a single base layer
 func TestV1XenonWCOW(t *testing.T) {
@@ -314,7 +466,7 @@ func getDefaultLinuxSpec(t *testing.T) *specs.Spec {
 // A v1 LCOW
 // TODO LCOW doesn't work currently
 func TestV1XenonLCOW(t *testing.T) {
-	//t.Skip("for now")
+	t.Skip("for now")
 	tempDir, _ := createLCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -336,74 +488,6 @@ func TestV1XenonLCOW(t *testing.T) {
 	startContainer(t, c)
 	time.Sleep(5 * time.Second)
 	runCommand(t, c, "echo Hello", `/bin`, "Hello")
-	stopContainer(t, c)
-	c.Terminate()
-}
-
-// A v2 Argon with a single base layer
-func TestV2Argon(t *testing.T) {
-	t.Skip("fornow")
-	tempDir := createWCOWTempDirWithSandbox(t)
-	defer os.RemoveAll(tempDir)
-
-	layers := append(layersNanoserver, tempDir)
-	mountPath, err := Mount(layers, nil)
-	if err != nil {
-		t.Fatalf("failed to mount container storage: %s", err)
-	}
-	defer Unmount(layers, nil, UnmountOperationAll)
-
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
-	options[HCSOPTION_ID] = "TestV2Argon"
-	c, err := CreateContainerEx(&CreateOptions{
-		Options: options,
-		Logger:  logrus.WithField("module", "hcsshim unit test"),
-		Spec: &specs.Spec{
-			Hostname: "v2argontest",
-			Windows:  &specs.Windows{LayerFolders: layers},
-			Root:     &specs.Root{Path: mountPath.(string)},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Failed create: %s", err)
-	}
-	startContainer(t, c)
-	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
-	stopContainer(t, c)
-	c.Terminate()
-}
-
-// A v2 Argon with multiple layers
-func TestV2ArgonMultipleBaseLayers(t *testing.T) {
-	t.Skip("fornow")
-	tempDir := createWCOWTempDirWithSandbox(t)
-	defer os.RemoveAll(tempDir)
-
-	layers := append(layersBusybox, tempDir)
-	mountPath, err := Mount(layers, nil)
-	if err != nil {
-		t.Fatalf("failed to mount container storage: %s", err)
-	}
-	defer Unmount(layers, nil, UnmountOperationAll)
-
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
-	options[HCSOPTION_ID] = "TestV2ArgonMultipleBaseLayers"
-	c, err := CreateContainerEx(&CreateOptions{
-		Options: options,
-		Logger:  logrus.WithField("module", "hcsshim unit test"),
-		Spec: &specs.Spec{
-			Hostname: "v2argonmltest",
-			Windows:  &specs.Windows{LayerFolders: layers},
-			Root:     &specs.Root{Path: mountPath.(string)},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Failed create: %s", err)
-	}
-	startContainer(t, c)
-	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
 	stopContainer(t, c)
 	c.Terminate()
 }
@@ -732,10 +816,10 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 // Note that the .syso file is required to manifest the test app
 func TestDetermineSchemaVersion(t *testing.T) {
 	m := make(map[string]string)
-	if sv := determineSchemaVersion(nil); !sv.IsV20() {
+	if sv := determineSchemaVersion(nil); !sv.IsV10() { // TODO: Toggle this at some point so default is 2.0
 		t.Fatalf("expected v2")
 	}
-	if sv := determineSchemaVersion(m); !sv.IsV20() {
+	if sv := determineSchemaVersion(m); !sv.IsV10() { // TODO: Toggle this too
 		t.Fatalf("expected v2")
 	}
 	m[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
@@ -747,7 +831,7 @@ func TestDetermineSchemaVersion(t *testing.T) {
 		t.Fatalf("expected requested v1")
 	}
 	m[HCSOPTION_SCHEMA_VERSION] = (&SchemaVersion{}).String()
-	if sv := determineSchemaVersion(m); !sv.IsV20() { // Should also log a warning that 0.0 is ignored
+	if sv := determineSchemaVersion(m); !sv.IsV10() { // Should also log a warning that 0.0 is ignored // TODO: Toggle this too
 		t.Fatalf("expected requested v2")
 	}
 }

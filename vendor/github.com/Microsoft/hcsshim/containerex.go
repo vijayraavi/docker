@@ -35,15 +35,6 @@ const (
 
 )
 
-// TODO Move this
-const (
-	// DefaultLCOWVhdxSizeGB is the size of the default LCOW sandbox & scratch in GB
-	DefaultLCOWVhdxSizeGB = 20
-
-	// defaultLCOWVhdxBlockSizeMB is the block-size for the sandbox/scratch VHDx's this package can create.
-	defaultLCOWVhdxBlockSizeMB = 1
-)
-
 // CreateOptions are the set of fields used to call CreateContainerEx().
 // Note: In the spec, the LayerFolders must be arranged in the same way in which
 // moby configures them: layern, layern-1,...,layer2,layer1,sandbox
@@ -52,7 +43,7 @@ const (
 type CreateOptions struct {
 	Spec          *specs.Spec       // Definition of the container or utility VM being created
 	Options       map[string]string // Runtime options. See HCSOPTION_ constants for possible values.
-	HostingSystem Container         // Container object representing the utility VM
+	HostingSystem Container         // Container object representing a utility or service VM
 	Logger        *logrus.Entry     // For logging
 
 	// Internal fields
@@ -63,7 +54,6 @@ type CreateOptions struct {
 	lcowkernel     string         // LCOW kernel file
 	lcowinitrd     string         // LCOW initrd file
 	lcowbootparams string         // LCOW additional boot parameters
-
 }
 
 // valueFromStringMap scans a map[string]string such as runtime options or
@@ -84,10 +74,10 @@ func valueFromStringMap(m map[string]string, name string) string {
 // scenarios, including v1 HCS schema calls, as well as more complex v2 HCS schema
 // calls.
 func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
-	logrus.Debugf("hcsshim: CreateContainerEx options: %+v", createOptions.Options)
+	logrus.Debugf("hcsshim::CreateContainerEx options: %+v", createOptions.Options)
 
 	createOptions.sv = determineSchemaVersion(createOptions.Options)
-	logrus.Debugf("hcsshim: CreateContainerEx using schema %s", createOptions.sv.String())
+	logrus.Debugf("hcsshim::CreateContainerEx using schema %s", createOptions.sv.String())
 
 	createOptions.id = valueFromStringMap(createOptions.Options, HCSOPTION_ID)
 	if createOptions.id == "" {
@@ -120,7 +110,7 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		}
 		getLCOWSettings(createOptions)
 		if createOptions.sv.IsV10() {
-			logrus.Debugln("hcsshim: Calling createLCOWv1")
+			logrus.Debugln("hcsshim::CreateContainerEx Calling createLCOWv1")
 			return createLCOWv1(createOptions)
 		} else {
 			// TODO v2 LCOW

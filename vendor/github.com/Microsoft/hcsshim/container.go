@@ -780,34 +780,7 @@ func (container *container) Modify(config interface{}) error {
 	return nil
 }
 
-// TODO: Get rid of this! @JJH
-// HotAddVhd hot-adds a VHD to a container
-func (container *container) HotAddVhd(hostPath string, containerPath string, utilityVM, readOnly bool, mount bool) error {
-	logrus.Debugf("hcsshim: HotAddVhd: %s: %s", hostPath, containerPath)
-
-	// TODO - Have a method so we only do this for LCOW (detect Linux that is)
-	//defer config.DebugLCOWGCS()
-
-	modification := &ResourceModificationRequestResponse{
-		Resource: "MappedVirtualDisk",
-		Data: MappedVirtualDisk{
-			HostPath:          hostPath,
-			ContainerPath:     containerPath,
-			CreateInUtilityVM: utilityVM,
-			ReadOnly:          readOnly,
-			AttachOnly:        !mount,
-		},
-		Request: "Add",
-	}
-
-	if err := container.Modify(modification); err != nil {
-		return fmt.Errorf("failed to modify utility VM configuration for hot-add: %s", err)
-	}
-	logrus.Debugf("hcsshim: HotAddVhd: %s added successfully", hostPath)
-	return nil
-}
-
-// TODO: Get rid of this! @JJH
+// TODO: Get rid of this! @JJH. Have a rollback helper instead.
 // HotRemoveVhd hot-removes a VHD from a utility VM.
 func (container *container) HotRemoveVhd(hostPath string) error {
 	logrus.Debugf("hcsshim: HotRemoveVhd: %s", hostPath)

@@ -11,13 +11,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// TODO THIS COMMENT IS WRONG!
 // TODO THIS IS NEVER CALLED!
-// UVMFolderFromLayerFolders searches a set of layer folders which are indexed
-// from base layer at the bottom through sandbox at the top, finding the uppermost
-// layer containing the image.
-// This is inconsistent between v1 and v2.
-func UVMFolderFromLayerFolders(layerFolders []string) (string, error) {
+// TODO Name this as a WCOW function
+// LocateWCOWUVMFolderFromLayerFolders searches a set of layer folders to determine the "uppermost"
+// layer which has a utility VM image. The order of the layers is (for historical) reasons
+// Read-only-layers followed by an optional read-write layer. The RO layers are in reverse
+// order so that the upper-most RO layer is at the start, and the base OS layer is the
+// end.
+func LocateWCOWUVMFolderFromLayerFolders(layerFolders []string) (string, error) {
 	var uvmFolder string
 	for _, layerFolder := range layerFolders {
 		_, err := os.Stat(filepath.Join(layerFolder, `UtilityVM`))
@@ -140,6 +141,17 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 	return uvmContainer, nil
 }
 
+func unmountOnFailure(storageWasMountedByUs bool, layers []string, prevError error) error {
+	if !storageWasMountedByUs {
+		return prevError
+	}
+	err := Unmount(layers, nil, UnmountOperationAll)
+	if err == nil {
+		return prevError
+	}
+	return fmt.Errorf("%s - Failed to subseqently unmount automounted storage: %s", prevError, err)
+}
+
 // CreateHCSContainerDocument creates a document suitable for calling HCS to create
 // a container, both hosted and process isolated. It can create both v1 and v2
 // schema. This is exported just in case a client could find it useful, but
@@ -149,6 +161,8 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 
 	// TODO: Make this safe if exported so no null pointer dereferences.
 	// TODO: Should this be a Windows function explicitly in the name
+
+	storageWasMountedByUs := false // If we auto-mounted storage
 
 	if createOptions.Spec == nil {
 		return "", fmt.Errorf("cannot create HCS container document - OCI spec is missing")
@@ -264,31 +278,41 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		v1.LayerFolderPath = createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
 
 		if createOptions.Spec.Windows.HyperV == nil {
-			if createOptions.Spec.Root == nil {
-				return "", fmt.Errorf("invalid container spec - Root must be set")
+			rootPath := ""
+			if createOptions.Spec.Root == nil { // Auto-mount to make life easier for API callers
+				var err error
+				iRootPath, err := Mount(createOptions.Spec.Windows.LayerFolders, nil) // Returns interface which needs type assertion depending on schema version
+				if err != nil {
+					return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("failed to auto-mount container storage: %s", err))
+				}
+				rootPath = iRootPath.(string) // TODO Will need fixing for V2
+				storageWasMountedByUs = true
+			} else {
+				rootPath = createOptions.Spec.Root.Path
 			}
+
 			const volumeGUIDRegex = `^\\\\\?\\(Volume)\{{0,1}[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}(\}){0,1}\}\\$`
-			if _, err := regexp.MatchString(volumeGUIDRegex, createOptions.Spec.Root.Path); err != nil {
-				return "", fmt.Errorf(`invalid container spec - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, createOptions.Spec.Root.Path)
+			if _, err := regexp.MatchString(volumeGUIDRegex, rootPath); err != nil {
+				return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf(`invalid container spec - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, createOptions.Spec.Root.Path))
 			}
-			rootPath := createOptions.Spec.Root.Path
 			if rootPath[len(rootPath)-1] != '\\' {
 				rootPath = fmt.Sprintf(`%s\`, rootPath) // Be nice to clients and make sure well-formed for back-compat
 			}
 			v1.VolumePath = rootPath[:len(rootPath)-1] // Strip the trailing backslash. Required for v1.
 			v2Container.Storage.Path = rootPath
+
 		} else {
 			if createOptions.Spec.Root != nil && createOptions.Spec.Root.Path != "" {
-				return "", fmt.Errorf("invalid container spec - Root.Path must be omitted for a Hyper-V container")
+				return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("invalid container spec - Root.Path must be omitted for a Hyper-V container"))
 			}
 			if createOptions.sv.IsV10() {
 				v1.HvPartition = true
 				if createOptions.Spec.Windows.HyperV.UtilityVMPath != "" {
 					v1.HvRuntime = &HvRuntime{ImagePath: createOptions.Spec.Windows.HyperV.UtilityVMPath}
 				} else {
-					uvmImagePath, err := UVMFolderFromLayerFolders(createOptions.Spec.Windows.LayerFolders)
+					uvmImagePath, err := LocateWCOWUVMFolderFromLayerFolders(createOptions.Spec.Windows.LayerFolders)
 					if err != nil {
-						return "", err
+						return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, err)
 					}
 					v1.HvRuntime = &HvRuntime{ImagePath: uvmImagePath}
 				}
@@ -297,7 +321,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 	}
 
 	if createOptions.Spec.Root != nil && createOptions.Spec.Root.Readonly {
-		return "", fmt.Errorf(`invalid container spec - readonly is not supported`)
+		return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf(`invalid container spec - readonly is not supported`))
 	}
 
 	if createOptions.HostingSystem == nil { // ie Not a v2 xenon. As the mounted layers were passed in instead.
@@ -305,7 +329,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 			_, filename := filepath.Split(layerPath)
 			g, err := NameToGuid(filename)
 			if err != nil {
-				return "", err
+				return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, err)
 			}
 			v1.Layers = append(v1.Layers, Layer{ID: g.ToString(), Path: layerPath})
 			v2Container.Storage.Layers = append(v2Container.Storage.Layers, ContainersResourcesLayerV2{Id: g.ToString(), Path: layerPath})
@@ -322,7 +346,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 	for _, mount := range createOptions.Spec.Mounts {
 		const pipePrefix = `\\.\pipe\`
 		if mount.Type != "" {
-			return "", fmt.Errorf("invalid container spec - Mount.Type '%s' must not be set", mount.Type)
+			return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("invalid container spec - Mount.Type '%s' must not be set", mount.Type))
 		}
 		if strings.HasPrefix(mount.Destination, pipePrefix) {
 			mpsv1 = append(mpsv1, MappedPipe{HostPath: mount.Source, ContainerPipeName: mount.Destination[len(pipePrefix):]})
@@ -343,7 +367,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 	v1.MappedDirectories = mdsv1
 	v2Container.MappedDirectories = mdsv2
 	if len(mpsv1) > 0 && GetOSVersion().Build < WINDOWS_BUILD_RS3 {
-		return "", fmt.Errorf("named pipe mounts are not supported on this version of Windows")
+		return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("named pipe mounts are not supported on this version of Windows"))
 	}
 	v1.MappedPipes = mpsv1
 	v2Container.MappedPipes = mpsv2
@@ -363,7 +387,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		// Perform the mount of the layer folders into the utility vm
 		cls, err := Mount(createOptions.Spec.Windows.LayerFolders, createOptions.HostingSystem)
 		if err != nil {
-			return "", fmt.Errorf("failed to mount container storage into utility VM: %s", err)
+			return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("failed to mount container storage into utility VM: %s", err))
 		}
 		combinedLayers := cls.(CombinedLayersV2)
 
@@ -375,7 +399,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		//	}()
 
 		//		if createOptions.MountedLayers == nil {
-		//			return "", fmt.Errorf("v2 schema call for a hosted container must supply mounted layers")
+		//			return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders,fmt.Errorf("v2 schema call for a hosted container must supply mounted layers"))
 		//		}
 		v2Container.Storage = &ContainersResourcesStorageV2{
 			Layers: combinedLayers.Layers,
@@ -390,14 +414,14 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 	if createOptions.sv.IsV10() {
 		v1b, err := json.Marshal(v1)
 		if err != nil {
-			return "", err
+			return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, err)
 		}
 		logrus.Debugln("hcsshim: HCS Document:", string(v1b))
 		return string(v1b), nil
 	} else {
 		v2b, err := json.Marshal(v2)
 		if err != nil {
-			return "", err
+			return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, err)
 		}
 		logrus.Debugln("hcsshim: HCS Document:", string(v2b))
 		return string(v2b), nil

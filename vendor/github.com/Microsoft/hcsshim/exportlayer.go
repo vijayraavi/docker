@@ -17,7 +17,7 @@ import (
 // perform the export.
 func ExportLayer(info DriverInfo, layerId string, exportFolderPath string, parentLayerPaths []string) error {
 	title := "hcsshim::ExportLayer "
-	logrus.Debugf(title+"flavour %d layerId %s folder %s", info.Flavour, layerId, exportFolderPath)
+	logrus.Debugf(title+"layerId %s folder %s", layerId, exportFolderPath)
 
 	// Generate layer descriptors
 	layers, err := layerPathsToDescriptors(parentLayerPaths)
@@ -34,12 +34,12 @@ func ExportLayer(info DriverInfo, layerId string, exportFolderPath string, paren
 
 	err = exportLayer(&infop, layerId, exportFolderPath, layers)
 	if err != nil {
-		err = makeErrorf(err, title, "layerId=%s flavour=%d folder=%s", layerId, info.Flavour, exportFolderPath)
+		err = makeErrorf(err, title, "layerId=%s folder=%s", layerId, exportFolderPath)
 		logrus.Error(err)
 		return err
 	}
 
-	logrus.Debugf(title+"succeeded flavour=%d layerId=%s folder=%s", info.Flavour, layerId, exportFolderPath)
+	logrus.Debugf(title+"succeeded layerId=%s folder=%s", layerId, exportFolderPath)
 	return nil
 }
 

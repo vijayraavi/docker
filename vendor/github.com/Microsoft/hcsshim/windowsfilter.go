@@ -14,7 +14,7 @@ import (
 // An activated layer must later be deactivated via DeactivateLayer.
 func ActivateLayer(info DriverInfo, id string) error {
 	title := "hcsshim::ActivateLayer "
-	logrus.Debugf(title+"Flavour %d ID %s", info.Flavour, id)
+	logrus.Debugf(title+"ID %s", id)
 
 	infop, err := convertDriverInfo(info)
 	if err != nil {
@@ -24,12 +24,12 @@ func ActivateLayer(info DriverInfo, id string) error {
 
 	err = activateLayer(&infop, id)
 	if err != nil {
-		err = makeErrorf(err, title, "id=%s flavour=%d", id, info.Flavour)
+		err = makeErrorf(err, title, "id=%s", id)
 		logrus.Error(err)
 		return err
 	}
 
-	logrus.Debugf(title+" - succeeded id=%s flavour=%d", id, info.Flavour)
+	logrus.Debugf(title+" - succeeded id=%s", id)
 	return nil
 }
 
@@ -37,7 +37,7 @@ func ActivateLayer(info DriverInfo, id string) error {
 // the parent layer provided.
 func CreateLayer(info DriverInfo, id, parent string) error {
 	title := "hcsshim::CreateLayer "
-	logrus.Debugf(title+"Flavour %d ID %s parent %s", info.Flavour, id, parent)
+	logrus.Debugf(title+"ID %s parent %s", id, parent)
 
 	// Convert info to API calling convention
 	infop, err := convertDriverInfo(info)
@@ -48,12 +48,12 @@ func CreateLayer(info DriverInfo, id, parent string) error {
 
 	err = createLayer(&infop, id, parent)
 	if err != nil {
-		err = makeErrorf(err, title, "id=%s parent=%s flavour=%d", id, parent, info.Flavour)
+		err = makeErrorf(err, title, "id=%s parent=%s", id, parent)
 		logrus.Error(err)
 		return err
 	}
 
-	logrus.Debugf(title+" - succeeded id=%s parent=%s flavour=%d", id, parent, info.Flavour)
+	logrus.Debugf(title+" - succeeded id=%s parent=%s", id, parent)
 	return nil
 }
 
@@ -92,7 +92,7 @@ func CreateSandboxLayer(info DriverInfo, layerId, parentId string, parentLayerPa
 // DeactivateLayer will dismount a layer that was mounted via ActivateLayer.
 func DeactivateLayer(info DriverInfo, id string) error {
 	title := "hcsshim::DeactivateLayer "
-	logrus.Debugf(title+"Flavour %d ID %s", info.Flavour, id)
+	logrus.Debugf(title+"ID %s", id)
 
 	// Convert info to API calling convention
 	infop, err := convertDriverInfo(info)
@@ -103,12 +103,12 @@ func DeactivateLayer(info DriverInfo, id string) error {
 
 	err = deactivateLayer(&infop, id)
 	if err != nil {
-		err = makeErrorf(err, title, "id=%s flavour=%d", id, info.Flavour)
+		err = makeErrorf(err, title, "id=%s", id)
 		logrus.Error(err)
 		return err
 	}
 
-	logrus.Debugf(title+"succeeded flavour=%d id=%s", info.Flavour, id)
+	logrus.Debugf(title+"succeeded id=%s", id)
 	return nil
 }
 
@@ -116,7 +116,7 @@ func DeactivateLayer(info DriverInfo, id string) error {
 // id, including that layer's containing folder, if any.
 func DestroyLayer(info DriverInfo, id string) error {
 	title := "hcsshim::DestroyLayer "
-	logrus.Debugf(title+"Flavour %d ID %s", info.Flavour, id)
+	logrus.Debugf(title+"ID %s", id)
 
 	// Convert info to API calling convention
 	infop, err := convertDriverInfo(info)
@@ -127,12 +127,12 @@ func DestroyLayer(info DriverInfo, id string) error {
 
 	err = destroyLayer(&infop, id)
 	if err != nil {
-		err = makeErrorf(err, title, "id=%s flavour=%d", id, info.Flavour)
+		err = makeErrorf(err, title, "id=%s", id)
 		logrus.Error(err)
 		return err
 	}
 
-	logrus.Debugf(title+"succeeded flavour=%d id=%s", info.Flavour, id)
+	logrus.Debugf(title+"succeeded id=%s", id)
 	return nil
 }
 
@@ -165,7 +165,7 @@ func ExpandSandboxSize(info DriverInfo, layerId string, size uint64) error {
 // folder path at which the layer is stored.
 func GetLayerMountPath(info DriverInfo, id string) (string, error) {
 	title := "hcsshim::GetLayerMountPath "
-	logrus.Debugf(title+"Flavour %d ID %s", info.Flavour, id)
+	logrus.Debugf(title+"ID %s", id)
 
 	// Convert info to API calling convention
 	infop, err := convertDriverInfo(info)
@@ -178,10 +178,9 @@ func GetLayerMountPath(info DriverInfo, id string) (string, error) {
 	mountPathLength = 0
 
 	// Call the procedure itself.
-	logrus.Debugf("Calling proc (1)")
 	err = getLayerMountPath(&infop, id, &mountPathLength, nil)
 	if err != nil {
-		err = makeErrorf(err, title, "(first call) id=%s flavour=%d", id, info.Flavour)
+		err = makeErrorf(err, title, "(first call) id=%s", id)
 		logrus.Error(err)
 		return "", err
 	}
@@ -194,16 +193,15 @@ func GetLayerMountPath(info DriverInfo, id string) (string, error) {
 	mountPathp[0] = 0
 
 	// Call the procedure again
-	logrus.Debugf("Calling proc (2)")
 	err = getLayerMountPath(&infop, id, &mountPathLength, &mountPathp[0])
 	if err != nil {
-		err = makeErrorf(err, title, "(second call) id=%s flavour=%d", id, info.Flavour)
+		err = makeErrorf(err, title, "(second call) id=%s", id)
 		logrus.Error(err)
 		return "", err
 	}
 
 	path := syscall.UTF16ToString(mountPathp[0:])
-	logrus.Debugf(title+"succeeded flavour=%d id=%s path=%s", info.Flavour, id, path)
+	logrus.Debugf(title+"succeeded id=%s path=%s", id, path)
 	return path, nil
 }
 
@@ -211,7 +209,7 @@ func GetLayerMountPath(info DriverInfo, id string) (string, error) {
 // to the system.
 func LayerExists(info DriverInfo, id string) (bool, error) {
 	title := "hcsshim::LayerExists "
-	logrus.Debugf(title+"Flavour %d ID %s", info.Flavour, id)
+	logrus.Debugf(title+"ID %s", id)
 
 	// Convert info to API calling convention
 	infop, err := convertDriverInfo(info)
@@ -225,12 +223,12 @@ func LayerExists(info DriverInfo, id string) (bool, error) {
 
 	err = layerExists(&infop, id, &exists)
 	if err != nil {
-		err = makeErrorf(err, title, "id=%s flavour=%d", id, info.Flavour)
+		err = makeErrorf(err, title, "id=%s", id)
 		logrus.Error(err)
 		return false, err
 	}
 
-	logrus.Debugf(title+"succeeded flavour=%d id=%s exists=%d", info.Flavour, id, exists)
+	logrus.Debugf(title+"succeeded id=%s exists=%d", id, exists)
 	return exists != 0, nil
 }
 
@@ -277,7 +275,7 @@ func PrepareLayer(info DriverInfo, layerId string, parentLayerPaths []string) er
 // the given id.
 func UnprepareLayer(info DriverInfo, layerId string) error {
 	title := "hcsshim::UnprepareLayer "
-	logrus.Debugf(title+"flavour %d layerId %s", info.Flavour, layerId)
+	logrus.Debugf(title+"layerId %s", layerId)
 
 	// Convert info to API calling convention
 	infop, err := convertDriverInfo(info)
@@ -288,12 +286,12 @@ func UnprepareLayer(info DriverInfo, layerId string) error {
 
 	err = unprepareLayer(&infop, layerId)
 	if err != nil {
-		err = makeErrorf(err, title, "layerId=%s flavour=%d", layerId, info.Flavour)
+		err = makeErrorf(err, title, "layerId=%s", layerId)
 		logrus.Error(err)
 		return err
 	}
 
-	logrus.Debugf(title+"succeeded flavour %d layerId=%s", info.Flavour, layerId)
+	logrus.Debugf(title+"succeeded layerId=%s", layerId)
 	return nil
 }
 
@@ -325,7 +323,7 @@ struct DriverInfo {
 };
 */
 type DriverInfo struct {
-	Flavour int
+	Flavour int // Note this value is not used. Kept for backwards API compatibility only.
 	HomeDir string
 }
 

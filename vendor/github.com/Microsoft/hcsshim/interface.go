@@ -83,10 +83,6 @@ type Container interface {
 	SchemaVersion() *SchemaVersion
 
 	// TODO JJH. We don't need this
-	// HotAddVhd is a wrapper for `Modify` to hot-add a VHD to a container
-	HotAddVhd(hostPath string, containerPath string, utilityVM, readOnly bool, mount bool) error
-
-	// TODO JJH. We don't need this
 	// HotRemoveVhd is a wrapper for `Modify` to hot-remove a VHD from a utility VM
 	HotRemoveVhd(hostPath string) error
 

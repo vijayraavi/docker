@@ -16,14 +16,12 @@ import (
 
 // CreateProcessExParams is the structure used for calling CreateProcessEx
 type CreateProcessEx struct {
-	OCISpecification      specs.Spec    // Required to be fully populated for LCOW as passed to GCS.
-	ProcessSpec           specs.Process // Command/Args, Environment and Working Directory
-	TargetOperatingSystem string        // Defaults PATH if not set and is a supported OS
-	CreateInUtilityVm     bool          // Whether the process is created in the utility VM or the container
-	Stdin                 io.Reader     // Optional reader for sending on to the processes stdin stream
-	Stdout                io.Writer     // Optional writer for returning the processes stdout stream
-	Stderr                io.Writer     // Optional writer for returning the processes stderr stream
-	ByteCounts            ByteCounts    // How much data to copy on each stream if they are supplied. 0 means to io.EOF.
+	OCISpecification  *specs.Spec // Required to be fully populated for LCOW as passed to GCS if not in the utility VM.
+	CreateInUtilityVm bool        // Whether the process is created in the utility VM or the container
+	Stdin             io.Reader   // Optional reader for sending on to the processes stdin stream
+	Stdout            io.Writer   // Optional writer for returning the processes stdout stream
+	Stderr            io.Writer   // Optional writer for returning the processes stderr stream
+	ByteCounts        ByteCounts  // How much data to copy on each stream if they are supplied. 0 means to io.EOF.
 }
 
 // ByteCounts are the number of bytes copied to/from standard handles. Note
@@ -43,30 +41,35 @@ type ByteCounts struct {
 // was sent/received from the process. It is the responsibility of the caller
 // to call Close() on the process returned.
 func (container *container) CreateProcessEx(opts *CreateProcessEx) (Process, *ByteCounts, error) {
-	logrus.Debugf("hcsshim: CreateProcessEx: %+v", opts)
+	if opts.OCISpecification == nil {
+		return nil, nil, fmt.Errorf("no OCISpecification passed to CreateProcessEx")
+	}
+	if opts.OCISpecification.Process == nil {
+		return nil, nil, fmt.Errorf("no Process in OCISpecification passed to CreateProcessEx")
+	}
 
 	copiedByteCounts := &ByteCounts{}
-	commandLine := strings.Join(opts.ProcessSpec.Args, " ")
+	commandLine := strings.Join(opts.OCISpecification.Process.Args, " ")
 	environment := make(map[string]string)
-	for _, v := range opts.ProcessSpec.Env {
+	for _, v := range opts.OCISpecification.Process.Env {
 		s := strings.SplitN(v, "=", 2)
 		if len(s) == 2 && len(s[1]) > 0 {
 			environment[s[0]] = s[1]
 		}
 	}
 
-	switch strings.ToLower(opts.TargetOperatingSystem) {
-	case "windows":
-		return nil, nil, fmt.Errorf("CreateProcessEx not supported yet for Windows containers")
-	case "linux":
+	targetOperatingSystem := "windows"
+	if opts.OCISpecification.Linux != nil {
+		targetOperatingSystem = "linux"
+	}
+
+	if targetOperatingSystem == "linux" {
 		if _, ok := environment["PATH"]; !ok {
 			environment["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:"
 		}
-		// Is this actually necessary?
-		if opts.ProcessSpec.Cwd == "" {
-			opts.ProcessSpec.Cwd = "/"
-		}
 	}
+
+	// TODO WIndows defaults... This function won't currently work...
 
 	processConfig := &ProcessConfig{
 		EmulateConsole:    false,
@@ -74,12 +77,12 @@ func (container *container) CreateProcessEx(opts *CreateProcessEx) (Process, *By
 		CreateStdOutPipe:  (opts.Stdout != nil),
 		CreateStdErrPipe:  (opts.Stderr != nil),
 		CreateInUtilityVm: opts.CreateInUtilityVm,
-		WorkingDirectory:  opts.ProcessSpec.Cwd,
+		WorkingDirectory:  opts.OCISpecification.Process.Cwd,
 		Environment:       environment,
 		CommandLine:       commandLine,
 	}
 
-	if opts.TargetOperatingSystem == "linux" {
+	if targetOperatingSystem == "linux" {
 		// LCOW requires the raw OCI spec passed through HCS and onwards to
 		// GCS for the utility VM.
 		ociBuf, err := json.Marshal(opts.OCISpecification)
@@ -152,7 +155,7 @@ func copyWithTimeout(dst io.Writer, src io.Reader, size int64, context string) (
 	if size > 0 {
 		log = fmt.Sprintf("%d bytes", size)
 	}
-	logrus.Debugf(fmt.Sprintf("hcsshim: copywithtimeout (%s) %s", context, log))
+	logrus.Debugf(fmt.Sprintf("hcsshim::copywithtimeout (%s) %s", context, log))
 
 	type resultType struct {
 		err   error
@@ -192,7 +195,7 @@ func copyWithTimeout(dst io.Writer, src io.Reader, size int64, context string) (
 
 	select {
 	case <-timedout:
-		return 0, fmt.Errorf("hcsshim: copyWithTimeout: timed out (%s)", context)
+		return 0, fmt.Errorf("hcsshim::copyWithTimeout: timed out (%s)", context)
 	case result = <-done:
 		if result.err != nil && result.err != io.EOF {
 			// See https://github.com/golang/go/blob/f3f29d1dea525f48995c1693c609f5e67c046893/src/os/exec/exec_windows.go for a clue as to why we are doing this :)
@@ -202,13 +205,13 @@ func copyWithTimeout(dst io.Writer, src io.Reader, size int64, context string) (
 					errBrokenPipe = syscall.Errno(109)
 				)
 				if se == errNoData || se == errBrokenPipe {
-					logrus.Debugf("hcsshim: copyWithTimeout: hit NoData or BrokenPipe: %d: %s", se, context)
+					logrus.Debugf("hcsshim::copyWithTimeout: hit NoData or BrokenPipe: %d: %s", se, context)
 					return result.bytes, nil
 				}
 			}
-			return 0, fmt.Errorf("hcsshim: copyWithTimeout: error reading: '%s' after %d bytes (%s)", result.err, result.bytes, context)
+			return 0, fmt.Errorf("hcsshim::copyWithTimeout: error reading: '%s' after %d bytes (%s)", result.err, result.bytes, context)
 		}
 	}
-	logrus.Debugf("hcsshim: copyWithTimeout: success - copied %d bytes (%s)", result.bytes, context)
+	logrus.Debugf("hcsshim::copyWithTimeout: success - copied %d bytes (%s)", result.bytes, context)
 	return result.bytes, nil
 }

@@ -16,7 +16,7 @@ import (
 // be present on the system at the paths provided in parentLayerPaths.
 func ImportLayer(info DriverInfo, layerID string, importFolderPath string, parentLayerPaths []string) error {
 	title := "hcsshim::ImportLayer "
-	logrus.Debugf(title+"flavour %d layerId %s folder %s", info.Flavour, layerID, importFolderPath)
+	logrus.Debugf(title+"layerId %s folder %s", layerID, importFolderPath)
 
 	// Generate layer descriptors
 	layers, err := layerPathsToDescriptors(parentLayerPaths)
@@ -33,12 +33,12 @@ func ImportLayer(info DriverInfo, layerID string, importFolderPath string, paren
 
 	err = importLayer(&infop, layerID, importFolderPath, layers)
 	if err != nil {
-		err = makeErrorf(err, title, "layerId=%s flavour=%d folder=%s", layerID, info.Flavour, importFolderPath)
+		err = makeErrorf(err, title, "layerId=%s folder=%s", layerID, importFolderPath)
 		logrus.Error(err)
 		return err
 	}
 
-	logrus.Debugf(title+"succeeded flavour=%d layerId=%s folder=%s", info.Flavour, layerID, importFolderPath)
+	logrus.Debugf(title+"succeeded layerId=%s folder=%s", layerID, importFolderPath)
 	return nil
 }
 
