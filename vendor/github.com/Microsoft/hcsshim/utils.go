@@ -38,6 +38,9 @@ func GenerateGUID() (*GUID, error) { // https://play.golang.org/p/4FkNSiUDMg
 	g[8] = g[8]&^0xc0 | 0x80
 	g[6] = g[6]&^0xf0 | 0x40
 	var g2 GUID
+	for i := 0; i <= 15; i++ {
+		g2[i] = g[i]
+	}
 	// TODO COPY!!! This is just a temporary hack
 	return &g2, nil
 }

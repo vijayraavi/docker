@@ -76,9 +76,6 @@ func valueFromStringMap(m map[string]string, name string) string {
 func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 	logrus.Debugf("hcsshim::CreateContainerEx options: %+v", createOptions.Options)
 
-	createOptions.sv = determineSchemaVersion(createOptions.Options)
-	logrus.Debugf("hcsshim::CreateContainerEx using schema %s", createOptions.sv.String())
-
 	createOptions.id = valueFromStringMap(createOptions.Options, HCSOPTION_ID)
 	if createOptions.id == "" {
 		g, _ := GenerateGUID() // TODO Error handling
@@ -99,11 +96,17 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 	//logger := createOptions.Logger.WithField("container", createOptions.Id)
 	createOptions.Logger = createOptions.Logger.WithField("container", createOptions.id)
 
-	if createOptions.sv.IsV10() {
-		if createOptions.HostingSystem != nil {
-			return nil, fmt.Errorf("HostingSystem must not be supplied for a v1 schema request")
+	if createOptions.HostingSystem != nil {
+		// By definition, a hosting system can only be supplied for a v2 Xenon.
+		if !createOptions.HostingSystem.SchemaVersion().IsV20() {
+			return nil, fmt.Errorf("supplied hosting system must be a v2 schema container")
 		}
+		createOptions.sv = createOptions.HostingSystem.SchemaVersion()
+	} else {
+		createOptions.sv = determineSchemaVersion(createOptions.Options)
+		logrus.Debugf("hcsshim::CreateContainerEx using schema %s", createOptions.sv.String())
 	}
+
 	if createOptions.Spec.Linux != nil {
 		if createOptions.Spec.Windows == nil {
 			return nil, fmt.Errorf("containerSpec 'Windows' field must container layer folders for a Linux container")

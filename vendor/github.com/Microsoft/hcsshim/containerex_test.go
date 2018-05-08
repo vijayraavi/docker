@@ -102,15 +102,7 @@ func createTempDir(t *testing.T) string {
 func createWCOWTempDirWithSandbox(t *testing.T) string {
 	tempDir := createTempDir(t)
 	di := DriverInfo{HomeDir: filepath.Dir(tempDir)}
-	fmt.Println("len=", len(layersBusybox))
-	fmt.Println("tempdir:", tempDir)
-	fmt.Println("first:", di)
-	fmt.Println("second:", filepath.Base(tempDir))
-	fmt.Println("third:", filepath.Base(layersBusybox[0]))
-	fmt.Println("fourth:", layersBusybox[:1])
-	fmt.Println("lbb", layersBusybox)
-
-	if err := CreateSandboxLayer(di, filepath.Base(tempDir), filepath.Base(layersBusybox[0]), layersBusybox[:1]); err != nil {
+	if err := CreateSandboxLayer(di, filepath.Base(tempDir), layersBusybox[0], layersBusybox); err != nil {
 		t.Fatalf("Failed CreateSandboxLayer: %s", err)
 	}
 	return tempDir
@@ -263,7 +255,7 @@ func TestV1ArgonAutoMount(t *testing.T) {
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
-	layers := append(layersNanoserver, tempDir)
+	layers := append(layersBusybox, tempDir)
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
 	options[HCSOPTION_ID] = "TestV1ArgonAutoMount"
@@ -326,7 +318,7 @@ func TestV2Argon(t *testing.T) {
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
-	options[HCSOPTION_ID] = "TestV2Argon"
+	//options[HCSOPTION_ID] = "TestV2Argon"
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
 		Logger:  logrus.WithField("module", "hcsshim unit test"),
@@ -569,13 +561,13 @@ func TestV2XenonWCOWContainerSandboxFolderDoesNotExist(t *testing.T) {
 		t.Fatalf("Failed start utility VM: %s", err)
 	}
 
-	// Create the container hosted inside the utility VM
+	// This is the important bit for this test. It's deleted here. We call the helper only to allocate a temporary directory
 	containerScratchDir := createWCOWTempDirWithSandbox(t)
-	os.RemoveAll(containerScratchDir) // This is the important bit for this test. It's deleted here.
+	os.RemoveAll(containerScratchDir)
+
 	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String() // TODO: We need a check to verify this matches that of the hosting system (not in test code, in the product code)
 	options[HCSOPTION_ID] = "container"
-	layerFolders := append(layersNanoserver, containerScratchDir)
+	layerFolders := append(layersBusybox, containerScratchDir)
 	hostedContainer, err := CreateContainerEx(&CreateOptions{
 		HostingSystem: uvm,
 		Options:       options,

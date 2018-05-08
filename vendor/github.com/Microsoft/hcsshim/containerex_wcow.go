@@ -69,15 +69,16 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 		return nil, fmt.Errorf("%s Mounts must not be set for a hosting system", iocis)
 	}
 
-	createOptions.id = valueFromStringMap(createOptions.Options, HCSOPTION_ID)
-	if createOptions.id == "" {
-		g, _ := GenerateGUID() // TODO Error handling
-		createOptions.id = g.ToString()
-	}
-	createOptions.owner = valueFromStringMap(createOptions.Options, HCSOPTION_OWNER)
-	if createOptions.owner == "" {
-		createOptions.owner = filepath.Base(os.Args[0])
-	}
+	// TODO: Not sure we need this here. It's already at the top of CreateContainerEx. Commenting out for now. Need to run tests to verify.
+	//	createOptions.id = valueFromStringMap(createOptions.Options, HCSOPTION_ID)
+	//	if createOptions.id == "" {
+	//		g, _ := GenerateGUID() // TODO Error handling
+	//		createOptions.id = g.ToString()
+	//	}
+	//	createOptions.owner = valueFromStringMap(createOptions.Options, HCSOPTION_OWNER)
+	//	if createOptions.owner == "" {
+	//		createOptions.owner = filepath.Base(os.Args[0])
+	//	}
 
 	uvmFolder, err := LocateWCOWUVMFolderFromLayerFolders(createOptions.Spec.Windows.LayerFolders)
 	if err != nil {
@@ -442,10 +443,11 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		// Create sandbox.vhdx if it doesn't exist
 		if _, err := os.Stat(filepath.Join(sandboxFolder, "sandbox.vhdx")); os.IsNotExist(err) {
 			di := DriverInfo{HomeDir: filepath.Dir(sandboxFolder)}
-			// TODO BUGBUG: Should this not include the sandbox layer in the [:1]????
-			logrus.Debugln("JJH Len", len(createOptions.Spec.Windows.LayerFolders))
-			logrus.Debugln("JJH len2", len(createOptions.Spec.Windows.LayerFolders[:1]))
-			if err := CreateSandboxLayer(di, filepath.Base(sandboxFolder), filepath.Base(createOptions.Spec.Windows.LayerFolders[0]), createOptions.Spec.Windows.LayerFolders[:1]); err != nil {
+			logrus.Debugln("hcsshim::CreateHCSContainerDocument Creating Sandbox: DriverInfo", di)
+			logrus.Debugln("hcsshim::CreateHCSContainerDocument Creating Sandbox: LayerID", filepath.Base(sandboxFolder))
+			logrus.Debugln("hcsshim::CreateHCSContainerDocument Creating Sandbox: ParentID", createOptions.Spec.Windows.LayerFolders[0]) // Badly named but in the HCS API
+			logrus.Debugln("hcsshim::CreateHCSContainerDocument Creating Sandbox: LayerChain", createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1])
+			if err := CreateSandboxLayer(di, filepath.Base(sandboxFolder), createOptions.Spec.Windows.LayerFolders[0], createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1]); err != nil {
 				return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("failed to CreateSandboxLayer %s", err))
 			}
 		}
