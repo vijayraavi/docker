@@ -94,14 +94,16 @@ type ProcessError struct {
 	Operation string
 	ExtraInfo string
 	Err       error
+	// TODO: Add ResultError here as well as in ContainerError for richer reporting.
 }
 
 // ContainerError is an error encountered in HCS during an operation on a Container object
 type ContainerError struct {
-	Container *container
-	Operation string
-	ExtraInfo string
-	Err       error
+	Container   *container
+	Operation   string
+	ExtraInfo   string
+	Err         error
+	ResultError *ResultError
 }
 
 func (e *ContainerError) Error() string {
@@ -132,15 +134,37 @@ func (e *ContainerError) Error() string {
 		s += " extra info: " + e.ExtraInfo
 	}
 
+	if e.ResultError != nil {
+		for _, ev := range e.ResultError.ErrorEvents {
+			evs := " [Event Detail: " + ev.Message
+			if ev.StackTrace != "" {
+				evs += " Stack Trace: " + ev.StackTrace
+			}
+			if ev.Provider != "" {
+				evs += " Provider: " + ev.Provider
+			}
+			if ev.EventId != 0 {
+				evs = fmt.Sprintf("%s EventID: %d", evs, ev.EventId)
+			}
+			if ev.Flags != 0 {
+				evs = fmt.Sprintf("%s EventID: %d", evs, ev.Flags)
+			}
+			if ev.Source != "" {
+				evs += " Source: " + ev.Source
+			}
+			s += evs + "]"
+		}
+	}
+
 	return s
 }
 
-func makeContainerError(container *container, operation string, extraInfo string, err error) error {
+func makeContainerError(container *container, operation string, resultError *ResultError, extraInfo string, err error) error {
 	// Don't double wrap errors
 	if _, ok := err.(*ContainerError); ok {
 		return err
 	}
-	containerError := &ContainerError{Container: container, Operation: operation, ExtraInfo: extraInfo, Err: err}
+	containerError := &ContainerError{Container: container, Operation: operation, ExtraInfo: extraInfo, Err: err, ResultError: resultError}
 	return containerError
 }
 

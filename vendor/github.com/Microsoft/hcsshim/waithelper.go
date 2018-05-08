@@ -7,7 +7,7 @@ import (
 )
 
 func processAsyncHcsResult(err error, resultp *uint16, callbackNumber uintptr, expectedNotification hcsNotification, timeout *time.Duration) error {
-	err = processHcsResult(err, resultp)
+	processHcsResult(resultp) // TODO extend makeProcessError to include the richer resulterror (re)
 	if IsPending(err) {
 		return waitForNotification(callbackNumber, expectedNotification, timeout)
 	}

@@ -411,12 +411,17 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		}
 	}
 
+	// TODO: We should have an external way of allowing the client to perform the mount.
+	// If so, the containerRootPath should go into
+	//  specs.Root.Path. However, we need also a way to pass the combinedLayers.Layers
+
 	if createOptions.HostingSystem != nil && createOptions.sv.IsV20() {
 		// Perform the mount of the layer folders into the utility vm
 		cls, err := Mount(createOptions.Spec.Windows.LayerFolders, createOptions.HostingSystem)
 		if err != nil {
 			return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("failed to mount container storage into utility VM: %s", err))
 		}
+		storageWasMountedByUs = true
 		combinedLayers := cls.(CombinedLayersV2)
 
 		// TODO: This needs to move into stop/terminate

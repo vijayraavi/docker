@@ -4,6 +4,7 @@
 package hcsshim
 
 import (
+	"encoding/json"
 	"fmt"
 	"syscall"
 	"unsafe"
@@ -158,10 +159,32 @@ func convertAndFreeCoTaskMemBytes(buffer *uint16) []byte {
 	return []byte(convertAndFreeCoTaskMemString(buffer))
 }
 
-func processHcsResult(err error, resultp *uint16) error {
+type ErrorEvent struct {
+	Message    string `json:"Message,omitempty"`    // Fully formated error message
+	StackTrace string `json:"StackTrace,omitempty"` // Stack trace in string form
+	Provider   string `json:"Provider,omitempty"`
+	EventId    uint16 `json:"EventId,omitempty"`
+	Flags      uint32 `json:"Flags,omitempty"`
+	Source     string `json:"Source,omitempty"`
+	//Data       []EventData `json:"Data,omitempty"`  // Omit this as HCS doesn't encode this well. It's more confusing to include. It is however logged in debug mode (see processHcsResult function)
+}
+
+type ResultError struct {
+	Error        int32
+	ErrorMessage string
+	ErrorEvents  []ErrorEvent `json:"ErrorEvents,omitempty"`
+}
+
+func processHcsResult(resultp *uint16) *ResultError {
 	if resultp != nil {
 		result := convertAndFreeCoTaskMemString(resultp)
 		logrus.Debugf("Result: %s", result)
+		resultError := ResultError{}
+		if err := json.Unmarshal([]byte(result), &resultError); err != nil {
+			logrus.Warnf("Could not unmarshal HCS result %s: %s", result, err)
+			return nil
+		}
+		return &resultError
 	}
-	return err
+	return nil
 }

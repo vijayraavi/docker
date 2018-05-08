@@ -78,7 +78,7 @@ func (process *process) Kill() error {
 
 	var resultp *uint16
 	err := hcsTerminateProcess(process.handle, &resultp)
-	err = processHcsResult(err, resultp)
+	processHcsResult(resultp) // TODO extend makeProcessError to include the richer resulterror (re)
 	if err != nil {
 		return makeProcessError(process, operation, "", err)
 	}
@@ -177,7 +177,7 @@ func (process *process) ResizeConsole(width, height uint16) error {
 
 	var resultp *uint16
 	err = hcsModifyProcess(process.handle, modifyRequestStr, &resultp)
-	err = processHcsResult(err, resultp)
+	processHcsResult(resultp) // TODO extend makeProcessError to include the richer resulterror (re)
 	if err != nil {
 		return makeProcessError(process, operation, "", err)
 	}
@@ -196,7 +196,7 @@ func (process *process) properties() (*processStatus, error) {
 		propertiesp *uint16
 	)
 	err := hcsGetProcessProperties(process.handle, &propertiesp, &resultp)
-	err = processHcsResult(err, resultp)
+	processHcsResult(resultp) // TODO extend makeProcessError to include the richer resulterror (re)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +237,7 @@ func (process *process) Stdio() (io.WriteCloser, io.ReadCloser, io.ReadCloser, e
 			resultp     *uint16
 		)
 		err := hcsGetProcessInfo(process.handle, &processInfo, &resultp)
-		err = processHcsResult(err, resultp)
+		processHcsResult(resultp) // TODO extend makeProcessError to include the richer resulterror (re)
 		if err != nil {
 			return nil, nil, nil, makeProcessError(process, operation, "", err)
 		}
@@ -289,7 +289,7 @@ func (process *process) CloseStdin() error {
 
 	var resultp *uint16
 	err = hcsModifyProcess(process.handle, modifyRequestStr, &resultp)
-	err = processHcsResult(err, resultp)
+	processHcsResult(resultp) // TODO extend makeProcessError to include the richer resulterror (re)
 	if err != nil {
 		return makeProcessError(process, operation, "", err)
 	}

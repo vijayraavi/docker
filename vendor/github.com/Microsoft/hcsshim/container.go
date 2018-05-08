@@ -182,7 +182,7 @@ func createContainer(id string, configurationJSON string, schemaVersion *SchemaV
 		if err := container.registerCallback(); err != nil {
 			// Terminate the container if it still exists. We're okay to ignore a failure here.
 			container.Terminate()
-			return nil, makeContainerError(container, operation, "", err)
+			return nil, makeContainerError(container, operation, nil, "", err)
 		}
 	}
 
@@ -192,7 +192,7 @@ func createContainer(id string, configurationJSON string, schemaVersion *SchemaV
 			// Terminate the container if it still exists. We're okay to ignore a failure here.
 			container.Terminate()
 		}
-		return nil, makeContainerError(container, operation, configurationJSON, err)
+		return nil, makeContainerError(container, operation, nil, configurationJSON, err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s handle=%d", id, container.handle)
@@ -241,15 +241,15 @@ func OpenContainer(id string) (Container, error) {
 		resultp *uint16
 	)
 	err := hcsOpenComputeSystem(id, &handle, &resultp)
-	err = processHcsResult(err, resultp)
+	re := processHcsResult(resultp)
 	if err != nil {
-		return nil, makeContainerError(container, operation, "", err)
+		return nil, makeContainerError(container, operation, re, "", err)
 	}
 
 	container.handle = handle
 
 	if err := container.registerCallback(); err != nil {
-		return nil, makeContainerError(container, operation, "", err)
+		return nil, makeContainerError(container, operation, nil, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s handle=%d", id, handle)
@@ -274,8 +274,9 @@ func GetContainers(q ComputeSystemQuery) ([]ContainerProperties, error) {
 		computeSystemsp *uint16
 	)
 	err = hcsEnumerateComputeSystems(query, &computeSystemsp, &resultp)
-	err = processHcsResult(err, resultp)
+	//re := processHcsResult(resultp)
 	if err != nil {
+		// TODO: makeContainerError. At least do something with the extended result
 		return nil, err
 	}
 
@@ -301,14 +302,14 @@ func (container *container) Start() error {
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
-		return makeContainerError(container, operation, "", ErrAlreadyClosed)
+		return makeContainerError(container, operation, nil, "", ErrAlreadyClosed)
 	}
 
 	var resultp *uint16
 	err := hcsStartComputeSystem(container.handle, "", &resultp)
 	err = processAsyncHcsResult(err, resultp, container.callbackNumber, hcsNotificationSystemStartCompleted, &defaultTimeoutSeconds)
 	if err != nil {
-		return makeContainerError(container, operation, "", err)
+		return makeContainerError(container, operation, nil, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s", container.id)
@@ -325,14 +326,14 @@ func (container *container) Shutdown() error {
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
-		return makeContainerError(container, operation, "", ErrAlreadyClosed)
+		return makeContainerError(container, operation, nil, "", ErrAlreadyClosed)
 	}
 
 	var resultp *uint16
 	err := hcsShutdownComputeSystem(container.handle, "", &resultp)
-	err = processHcsResult(err, resultp)
+	re := processHcsResult(resultp)
 	if err != nil {
-		return makeContainerError(container, operation, "", err)
+		return makeContainerError(container, operation, re, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s", container.id)
@@ -349,14 +350,14 @@ func (container *container) Terminate() error {
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
-		return makeContainerError(container, operation, "", ErrAlreadyClosed)
+		return makeContainerError(container, operation, nil, "", ErrAlreadyClosed)
 	}
 
 	var resultp *uint16
 	err := hcsTerminateComputeSystem(container.handle, "", &resultp)
-	err = processHcsResult(err, resultp)
+	re := processHcsResult(resultp)
 	if err != nil {
-		return makeContainerError(container, operation, "", err)
+		return makeContainerError(container, operation, re, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s", container.id)
@@ -371,7 +372,7 @@ func (container *container) Wait() error {
 
 	err := waitForNotification(container.callbackNumber, hcsNotificationSystemExited, nil)
 	if err != nil {
-		return makeContainerError(container, operation, "", err)
+		return makeContainerError(container, operation, nil, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s", container.id)
@@ -387,7 +388,7 @@ func (container *container) WaitTimeout(timeout time.Duration) error {
 
 	err := waitForNotification(container.callbackNumber, hcsNotificationSystemExited, &timeout)
 	if err != nil {
-		return makeContainerError(container, operation, "", err)
+		return makeContainerError(container, operation, nil, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s", container.id)
@@ -400,8 +401,9 @@ func (container *container) properties(query string) (*ContainerProperties, erro
 		propertiesp *uint16
 	)
 	err := hcsGetComputeSystemProperties(container.handle, query, &propertiesp, &resultp)
-	err = processHcsResult(err, resultp)
+	//re := processHcsResult(resultp)
 	if err != nil {
+		// TODO: Do something with the extended result
 		return nil, err
 	}
 
@@ -425,12 +427,12 @@ func (container *container) HasPendingUpdates() (bool, error) {
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
-		return false, makeContainerError(container, operation, "", ErrAlreadyClosed)
+		return false, makeContainerError(container, operation, nil, "", ErrAlreadyClosed)
 	}
 
 	properties, err := container.properties(pendingUpdatesQuery)
 	if err != nil {
-		return false, makeContainerError(container, operation, "", err)
+		return false, makeContainerError(container, operation, nil, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s", container.id)
@@ -446,12 +448,12 @@ func (container *container) Statistics() (Statistics, error) {
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
-		return Statistics{}, makeContainerError(container, operation, "", ErrAlreadyClosed)
+		return Statistics{}, makeContainerError(container, operation, nil, "", ErrAlreadyClosed)
 	}
 
 	properties, err := container.properties(statisticsQuery)
 	if err != nil {
-		return Statistics{}, makeContainerError(container, operation, "", err)
+		return Statistics{}, makeContainerError(container, operation, nil, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s", container.id)
@@ -467,12 +469,12 @@ func (container *container) ProcessList() ([]ProcessListItem, error) {
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
-		return nil, makeContainerError(container, operation, "", ErrAlreadyClosed)
+		return nil, makeContainerError(container, operation, nil, "", ErrAlreadyClosed)
 	}
 
 	properties, err := container.properties(processListQuery)
 	if err != nil {
-		return nil, makeContainerError(container, operation, "", err)
+		return nil, makeContainerError(container, operation, nil, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s", container.id)
@@ -516,12 +518,12 @@ func (container *container) MappedVirtualDisks() (map[int]MappedVirtualDiskContr
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
-		return nil, makeContainerError(container, operation, "", ErrAlreadyClosed)
+		return nil, makeContainerError(container, operation, nil, "", ErrAlreadyClosed)
 	}
 
 	properties, err := container.properties(mappedVirtualDiskQuery)
 	if err != nil {
-		return nil, makeContainerError(container, operation, "", err)
+		return nil, makeContainerError(container, operation, nil, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s", container.id)
@@ -537,14 +539,14 @@ func (container *container) Pause() error {
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
-		return makeContainerError(container, operation, "", ErrAlreadyClosed)
+		return makeContainerError(container, operation, nil, "", ErrAlreadyClosed)
 	}
 
 	var resultp *uint16
 	err := hcsPauseComputeSystem(container.handle, "", &resultp)
 	err = processAsyncHcsResult(err, resultp, container.callbackNumber, hcsNotificationSystemPauseCompleted, &defaultTimeoutSeconds)
 	if err != nil {
-		return makeContainerError(container, operation, "", err)
+		return makeContainerError(container, operation, nil, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s", container.id)
@@ -560,14 +562,14 @@ func (container *container) Resume() error {
 	logrus.Debugf(title+" id=%s", container.id)
 
 	if container.handle == 0 {
-		return makeContainerError(container, operation, "", ErrAlreadyClosed)
+		return makeContainerError(container, operation, nil, "", ErrAlreadyClosed)
 	}
 
 	var resultp *uint16
 	err := hcsResumeComputeSystem(container.handle, "", &resultp)
 	err = processAsyncHcsResult(err, resultp, container.callbackNumber, hcsNotificationSystemResumeCompleted, &defaultTimeoutSeconds)
 	if err != nil {
-		return makeContainerError(container, operation, "", err)
+		return makeContainerError(container, operation, nil, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s", container.id)
@@ -589,7 +591,7 @@ func (container *container) CreateProcess(c *ProcessConfig) (Process, error) {
 	)
 
 	if container.handle == 0 {
-		return nil, makeContainerError(container, operation, "", ErrAlreadyClosed)
+		return nil, makeContainerError(container, operation, nil, "", ErrAlreadyClosed)
 	}
 
 	// If we are not emulating a console, ignore any console size passed to us
@@ -600,16 +602,16 @@ func (container *container) CreateProcess(c *ProcessConfig) (Process, error) {
 
 	configurationb, err := json.Marshal(c)
 	if err != nil {
-		return nil, makeContainerError(container, operation, "", err)
+		return nil, makeContainerError(container, operation, nil, "", err)
 	}
 
 	configuration := string(configurationb)
 	logrus.Debugf(title+" id=%s config=%s", container.id, configuration)
 
 	err = hcsCreateProcess(container.handle, configuration, &processInfo, &processHandle, &resultp)
-	err = processHcsResult(err, resultp)
+	re := processHcsResult(resultp)
 	if err != nil {
-		return nil, makeContainerError(container, operation, configuration, err)
+		return nil, makeContainerError(container, operation, re, configuration, err)
 	}
 
 	process := &process{
@@ -624,7 +626,7 @@ func (container *container) CreateProcess(c *ProcessConfig) (Process, error) {
 	}
 
 	if err := process.registerCallback(); err != nil {
-		return nil, makeContainerError(container, operation, "", err)
+		return nil, makeContainerError(container, operation, nil, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s processid=%d", container.id, process.processID)
@@ -644,13 +646,13 @@ func (container *container) OpenProcess(pid int) (Process, error) {
 	)
 
 	if container.handle == 0 {
-		return nil, makeContainerError(container, operation, "", ErrAlreadyClosed)
+		return nil, makeContainerError(container, operation, nil, "", ErrAlreadyClosed)
 	}
 
 	err := hcsOpenProcess(container.handle, uint32(pid), &processHandle, &resultp)
-	err = processHcsResult(err, resultp)
+	re := processHcsResult(resultp)
 	if err != nil {
-		return nil, makeContainerError(container, operation, "", err)
+		return nil, makeContainerError(container, operation, re, "", err)
 	}
 
 	process := &process{
@@ -660,7 +662,7 @@ func (container *container) OpenProcess(pid int) (Process, error) {
 	}
 
 	if err := process.registerCallback(); err != nil {
-		return nil, makeContainerError(container, operation, "", err)
+		return nil, makeContainerError(container, operation, nil, "", err)
 	}
 
 	logrus.Debugf(title+" succeeded id=%s processid=%s", container.id, process.processID)
@@ -681,11 +683,11 @@ func (container *container) Close() error {
 	}
 
 	if err := container.unregisterCallback(); err != nil {
-		return makeContainerError(container, operation, "", err)
+		return makeContainerError(container, operation, nil, "", err)
 	}
 
 	if err := hcsCloseComputeSystem(container.handle); err != nil {
-		return makeContainerError(container, operation, "", err)
+		return makeContainerError(container, operation, nil, "", err)
 	}
 
 	container.handle = 0
@@ -759,7 +761,7 @@ func (container *container) Modify(config interface{}) error {
 	title := "hcsshim::Container::" + operation
 
 	if container.handle == 0 {
-		return makeContainerError(container, operation, "", ErrAlreadyClosed)
+		return makeContainerError(container, operation, nil, "", ErrAlreadyClosed)
 	}
 
 	requestJSON, err := json.Marshal(config)
@@ -772,9 +774,10 @@ func (container *container) Modify(config interface{}) error {
 
 	var resultp *uint16
 	err = hcsModifyComputeSystem(container.handle, requestString, &resultp)
-	err = processHcsResult(err, resultp)
+	re := processHcsResult(resultp)
 	if err != nil {
-		return makeContainerError(container, operation, "", err)
+		err = makeContainerError(container, operation, re, "", err)
+		return err
 	}
 	logrus.Debugf(title+" succeeded id=%s", container.id)
 	return nil

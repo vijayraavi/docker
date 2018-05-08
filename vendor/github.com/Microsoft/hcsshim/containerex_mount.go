@@ -22,7 +22,7 @@ import (
 // TODO Like unmount, don't think schemaversion has anything to do with this.
 func Mount(layerFolders []string, hostingSystem Container) (interface{}, error) {
 	logrus.Debugln("hcsshim::Mount", layerFolders, hostingSystem)
-
+	//	panic("JJH")
 	if hostingSystem == nil {
 		if len(layerFolders) < 2 {
 			return nil, fmt.Errorf("need at least two layers - base and sandbox")
@@ -347,12 +347,11 @@ func findSCSIAttachment(container *container, findThisHostPath string) (int, int
 // removeVSMB removes a VSMB share from a utility VM. The mutex must be
 // held when calling this function
 func removeVSMB(c Container, id string) error {
-	logrus.Debugf("hcsshim::removeVSMB %s", id)
 	if _, ok := c.(*container).vsmbShares.guids[id]; !ok {
 		return fmt.Errorf("failed to remove vsmbShare %s as it is not in utility VM %s", id, c.(*container).id)
 	} else {
-		logrus.Debugf("VSMB: %s refcount: %d", id, c.(*container).vsmbShares.guids[id])
 		c.(*container).vsmbShares.guids[id]--
+		logrus.Debugf("hcsshim::removeVSMB: %s refcount after decrement: %d", id, c.(*container).vsmbShares.guids[id])
 		if c.(*container).vsmbShares.guids[id] == 0 {
 			delete(c.(*container).vsmbShares.guids, id)
 			modification := &ModifySettingsRequestV2{

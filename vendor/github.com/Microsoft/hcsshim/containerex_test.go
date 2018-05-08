@@ -494,7 +494,6 @@ func TestV1XenonMultipleBaseLayersNoUVMPath(t *testing.T) {
 // Helper for the v2 Xenon tests to create a utility VM. Returns the container
 // object; folder used as its scratch
 func createv2WCOWUVM(t *testing.T, uvmLayers []string, uvmID string) (Container, string) {
-
 	uvmScratchDir := createTempDir(t)
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
@@ -528,6 +527,42 @@ func TestV2XenonWCOW(t *testing.T) {
 	// Create the container hosted inside the utility VM
 	containerScratchDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(containerScratchDir)
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String() // TODO: We need a check to verify this matches that of the hosting system (not in test code, in the product code)
+	options[HCSOPTION_ID] = "container"
+	layerFolders := append(layersNanoserver, containerScratchDir)
+	hostedContainer, err := CreateContainerEx(&CreateOptions{
+		HostingSystem: uvm,
+		Options:       options,
+		Logger:        logrus.WithField("module", "hcsshim unit test"),
+		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
+	})
+	if err != nil {
+		t.Fatalf("CreateContainerEx failed: %s", err)
+	}
+	defer Unmount(layerFolders, uvm, UnmountOperationAll)
+
+	// Start/stop the container
+	startContainer(t, hostedContainer)
+	runCommand(t, hostedContainer, "cmd /s /c echo TestV2XenonWCOW", `c:\`, "TestV2XenonWCOW")
+	stopContainer(t, hostedContainer)
+	hostedContainer.Terminate()
+}
+
+// TODO: Have a similar test where the UVM scratch folder does not exist.
+// A single WCOW xenon but where the container sandbox folder is not pre-created by the client
+func TestV2XenonWCOWContainerSandboxFolderDoesNotExist(t *testing.T) {
+	//t.Skip("Skipping for now")
+	uvm, uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "TestV2XenonWCOWContainerSandboxFolderDoesNotExist_UVM")
+	defer os.RemoveAll(uvmScratchDir)
+	defer uvm.Terminate()
+	if err := uvm.Start(); err != nil {
+		t.Fatalf("Failed start utility VM: %s", err)
+	}
+
+	// Create the container hosted inside the utility VM
+	containerScratchDir := createWCOWTempDirWithSandbox(t)
+	os.RemoveAll(containerScratchDir) // This is the important bit for this test. It's deleted here.
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String() // TODO: We need a check to verify this matches that of the hosting system (not in test code, in the product code)
 	options[HCSOPTION_ID] = "container"
@@ -610,7 +645,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 // Lots of v2 WCOW containers in the same UVM, each with a single base layer. Containers aren't
 // actually started, but it stresses the SCSI controller hot-add logic.
 func TestV2XenonWCOWCreateLots(t *testing.T) {
-	//t.Skip("Skipping for now")
+	t.Skip("Skipping for now")
 	uvm, uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "TestV2XenonWCOWTwoContainers_UVM")
 	defer os.RemoveAll(uvmScratchDir)
 	defer uvm.Terminate()
