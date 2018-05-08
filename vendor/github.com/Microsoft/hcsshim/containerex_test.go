@@ -98,10 +98,12 @@ func createTempDir(t *testing.T) string {
 // really the foldername where the sandbox is, and a constructed DriverInfo
 // structure which is required for calling v1 APIs. Strictly VM group access is
 // not required for an argon.
+// TODO: This is wrong anyway. Need to search the folders.
 func createWCOWTempDirWithSandbox(t *testing.T) string {
 	tempDir := createTempDir(t)
 	di := DriverInfo{HomeDir: filepath.Dir(tempDir)}
-	if err := CreateSandboxLayer(di, filepath.Base(tempDir), filepath.Base(layersNanoserver[0]), layersNanoserver[:1]); err != nil {
+	fmt.Println("len=", len(layersBusybox))
+	if err := CreateSandboxLayer(di, filepath.Base(tempDir), filepath.Base(layersBusybox[0]), layersBusybox[:1]); err != nil {
 		t.Fatalf("Failed CreateSandboxLayer: %s", err)
 	}
 	return tempDir
@@ -304,7 +306,7 @@ func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
 
 // A v2 Argon with a single base layer. It also validates hostname functionality is propagated.
 func TestV2Argon(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -552,7 +554,7 @@ func TestV2XenonWCOW(t *testing.T) {
 // TODO: Have a similar test where the UVM scratch folder does not exist.
 // A single WCOW xenon but where the container sandbox folder is not pre-created by the client
 func TestV2XenonWCOWContainerSandboxFolderDoesNotExist(t *testing.T) {
-	//t.Skip("Skipping for now")
+	t.Skip("Skipping for now")
 	uvm, uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "TestV2XenonWCOWContainerSandboxFolderDoesNotExist_UVM")
 	defer os.RemoveAll(uvmScratchDir)
 	defer uvm.Terminate()

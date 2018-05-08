@@ -18,6 +18,7 @@ import (
 // end.
 func LocateWCOWUVMFolderFromLayerFolders(layerFolders []string) (string, error) {
 	var uvmFolder string
+	index := 0
 	for _, layerFolder := range layerFolders {
 		_, err := os.Stat(filepath.Join(layerFolder, `UtilityVM`))
 		if err == nil {
@@ -27,11 +28,12 @@ func LocateWCOWUVMFolderFromLayerFolders(layerFolders []string) (string, error) 
 		if !os.IsNotExist(err) {
 			return "", err
 		}
+		index++
 	}
 	if uvmFolder == "" {
 		return "", fmt.Errorf("utility VM folder could not be found in layers")
 	}
-	logrus.Debugf("hcsshim: UVMFolderFromLayerFolders: %s", uvmFolder)
+	logrus.Debugf("hcsshim::LocateWCOWUVMFolderFromLayerFolders Index %d of %d possibles (%s)", index, len(layerFolders), uvmFolder)
 	return uvmFolder, nil
 }
 
@@ -84,10 +86,11 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 
 	// Create the sandbox in the top-most layer folder, creating the folder if it doesn't already exist.
 	sandboxFolder := createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
-	logrus.Debugf("hcsshim: Sandbox folder: %s", sandboxFolder)
+	logrus.Debugf("hcsshim::createWCOWv2UVM Sandbox folder: %s", sandboxFolder)
 
 	// Create the directory if it doesn't exist
 	if _, err := os.Stat(sandboxFolder); os.IsNotExist(err) {
+		logrus.Debugf("hcsshim::createWCOWv2UVM Creating folder: %s ", sandboxFolder)
 		if err := os.MkdirAll(sandboxFolder, 0777); err != nil {
 			return nil, fmt.Errorf("failed to create utility VM sandbox folder: %s", err)
 		}
@@ -182,8 +185,9 @@ func unmountOnFailure(storageWasMountedByUs bool, layers []string, prevError err
 // CreateHCSContainerDocument creates a document suitable for calling HCS to create
 // a container, both hosted and process isolated. It can create both v1 and v2
 // schema. This is exported just in case a client could find it useful, but
-// not strictly necessary as it will be called by CreateContainerEx()
-// TODO: The mount shouldn't be in this function, but external.
+// not strictly necessary as it will be called by CreateContainerEx().
+// It also optionally mounts the storage if it isn't already.
+
 func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 	logrus.Debugf("hcsshim: CreateHCSContainerDocument")
 
@@ -417,6 +421,35 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 
 	if createOptions.HostingSystem != nil && createOptions.sv.IsV20() {
 		// Perform the mount of the layer folders into the utility vm
+
+		//		uvmFolder, err := LocateWCOWUVMFolderFromLayerFolders(createOptions.Spec.Windows.LayerFolders)
+		//		if err != nil {
+		//			return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, err)
+		//		}
+
+		// Create the sandbox in the top-most layer folder, creating the folder if it doesn't already exist.
+		sandboxFolder := createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
+		logrus.Debugf("hcsshim::CreateHCSContainerDocument Sandbox folder: %s", sandboxFolder)
+
+		// Create the directory if it doesn't exist
+		if _, err := os.Stat(sandboxFolder); os.IsNotExist(err) {
+			logrus.Debugf("hcsshim::CreateHCSContainerDocument Creating folder: %s ", sandboxFolder)
+			if err := os.MkdirAll(sandboxFolder, 0777); err != nil {
+				return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("failed to create container sandbox folder: %s", err))
+			}
+		}
+
+		// Create sandbox.vhdx if it doesn't exist
+		if _, err := os.Stat(filepath.Join(sandboxFolder, "sandbox.vhdx")); os.IsNotExist(err) {
+			di := DriverInfo{HomeDir: filepath.Dir(sandboxFolder)}
+			// TODO BUGBUG: Should this not include the sandbox layer in the [:1]????
+			logrus.Debugln("JJH Len", len(createOptions.Spec.Windows.LayerFolders))
+			logrus.Debugln("JJH len2", len(createOptions.Spec.Windows.LayerFolders[:1]))
+			if err := CreateSandboxLayer(di, filepath.Base(sandboxFolder), filepath.Base(createOptions.Spec.Windows.LayerFolders[0]), createOptions.Spec.Windows.LayerFolders[:1]); err != nil {
+				return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("failed to CreateSandboxLayer %s", err))
+			}
+		}
+
 		cls, err := Mount(createOptions.Spec.Windows.LayerFolders, createOptions.HostingSystem)
 		if err != nil {
 			return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("failed to mount container storage into utility VM: %s", err))
