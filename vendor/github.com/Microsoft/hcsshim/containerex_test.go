@@ -103,6 +103,13 @@ func createWCOWTempDirWithSandbox(t *testing.T) string {
 	tempDir := createTempDir(t)
 	di := DriverInfo{HomeDir: filepath.Dir(tempDir)}
 	fmt.Println("len=", len(layersBusybox))
+	fmt.Println("tempdir:", tempDir)
+	fmt.Println("first:", di)
+	fmt.Println("second:", filepath.Base(tempDir))
+	fmt.Println("third:", filepath.Base(layersBusybox[0]))
+	fmt.Println("fourth:", layersBusybox[:1])
+	fmt.Println("lbb", layersBusybox)
+
 	if err := CreateSandboxLayer(di, filepath.Base(tempDir), filepath.Base(layersBusybox[0]), layersBusybox[:1]); err != nil {
 		t.Fatalf("Failed CreateSandboxLayer: %s", err)
 	}
