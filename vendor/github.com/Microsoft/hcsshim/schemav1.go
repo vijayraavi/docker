@@ -41,7 +41,7 @@ type MappedVirtualDisk struct {
 	CreateInUtilityVM bool   `json:",omitempty"`
 	ReadOnly          bool   `json:",omitempty"`
 	Cache             string `json:",omitempty"` // "" (Unspecified); "Disabled"; "Enabled"; "Private"; "PrivateAllowSharing"
-	AttachOnly        bool   `json:",omitempty:`
+	AttachOnly        bool   `json:",omitempty:` // If true, then not mapped to ContainerPath. This is used, for instance, if the disk doesn't yet have a file system on it.
 }
 
 // ContainerConfig is used as both the input of CreateContainer
@@ -69,12 +69,14 @@ type ContainerConfig struct {
 	NetworkSharedContainerName  string              `json:",omitempty"` // Name (ID) of the container that we will share the network stack with.
 	EndpointList                []string            `json:",omitempty"` // List of networking endpoints to be attached to container
 	HvRuntime                   *HvRuntime          `json:",omitempty"` // Hyper-V container settings. Used by Hyper-V containers only. Format ImagePath=%root%\BaseLayerID\UtilityVM
-	Servicing                   bool                `json:",omitempty"` // True if this container is for servicing ** DEPRECATED **
 	AllowUnqualifiedDNSQuery    bool                `json:",omitempty"` // True to allow unqualified DNS name resolution
 	DNSSearchList               string              `json:",omitempty"` // Comma seperated list of DNS suffixes to use for name resolution
 	ContainerType               string              `json:",omitempty"` // "Linux" for Linux containers on Windows. Omitted otherwise.
 	TerminateOnLastHandleClosed bool                `json:",omitempty"` // Should HCS terminate the container once all handles have been closed
 	MappedVirtualDisks          []MappedVirtualDisk `json:",omitempty"` // Array of virtual disks to mount at start
+
+	// Deprecated fields.
+	Servicing bool `json:",omitempty"` // Always ignored
 }
 
 // ContainerProperties holds the properties for a container and the processes running in that container
@@ -89,7 +91,7 @@ type ContainerProperties struct {
 	RuntimeImagePath             string                              `json:",omitempty"`
 	Stopped                      bool                                `json:",omitempty"`
 	ExitType                     string                              `json:",omitempty"`
-	AreUpdatesPending            bool                                `json:",omitempty"`
+	AreUpdatesPending            bool                                `json:",omitempty"` // Legacy field. Always false.
 	ObRoot                       string                              `json:",omitempty"`
 	Statistics                   Statistics                          `json:",omitempty"`
 	ProcessList                  []ProcessListItem                   `json:",omitempty"`

@@ -12,76 +12,61 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// CreateExt4Vhdx does what it says on the tin. It is the responsibility of the caller to synchronise
-// simultaneous attempts to create the cache file.
-func (container *container) CreateExt4Vhdx(destFile string, sizeGB uint32, cacheFile string) error {
+const (
+	// DefaultLCOWScratchSizeGB is the size of the default LCOW sandbox & scratch in GB
+	DefaultLCOWScratchSizeGB = 20
+
+	// defaultLCOWVhdxBlockSizeMB is the block-size for the sandbox/scratch VHDx's this package can create.
+	defaultLCOWVhdxBlockSizeMB = 1
+)
+
+// CreateLCOWScratch uses a utility VM to create an empty scratch disk of a requested size.
+// It has a caching capability. If the cacheFile exists, and the request is for a default
+// size, a copy of that is made to the target. If the size is non-default, or the cache file
+// does not exist, it uses a utility VM to create target. It is the responsibility of the
+// caller to synchronise simultaneous attempts to create the cache file.
+
+func CreateLCOWScratch(uvm Container, destFile string, sizeGB uint32, cacheFile string) error {
 	// Smallest we can accept is the default sandbox size as we can't size down, only expand.
-	if sizeGB < DefaultLCOWVhdxSizeGB {
-		sizeGB = DefaultLCOWVhdxSizeGB
+	if sizeGB < DefaultLCOWScratchSizeGB {
+		sizeGB = DefaultLCOWScratchSizeGB
 	}
 
-	logrus.Debugf("hcsshim: CreateExt4Vhdx: %s size:%dGB cache:%s", destFile, sizeGB, cacheFile)
+	logrus.Debugf("hcsshim::CreateLCOWScratch: Dest:%s size:%dGB cache:%s", destFile, sizeGB, cacheFile)
 
 	// Retrieve from cache if the default size and already on disk
-	if cacheFile != "" && sizeGB == DefaultLCOWVhdxSizeGB {
+	if cacheFile != "" && sizeGB == DefaultLCOWScratchSizeGB {
 		if _, err := os.Stat(cacheFile); err == nil {
 			if err := CopyFile(cacheFile, destFile, false); err != nil {
 				return fmt.Errorf("failed to copy cached file '%s' to '%s': %s", cacheFile, destFile, err)
 			}
-			logrus.Debugf("hcsshim: CreateExt4Vhdx: %s fulfilled from cache", destFile)
+			logrus.Debugf("hcsshim::CreateLCOWScratch: %s fulfilled from cache", destFile)
 			return nil
 		}
 	}
+
+	if uvm == nil {
+		return fmt.Errorf("cannot create scratch disk as cache is not present and no utility VM supplied")
+	}
+	uvmc := uvm.(*container)
 
 	// Create the VHDX
 	if err := winio.CreateVhdx(destFile, sizeGB, defaultLCOWVhdxBlockSizeMB); err != nil {
 		return fmt.Errorf("failed to create VHDx %s: %s", destFile, err)
 	}
 
-	container.DebugLCOWGCS()
+	uvmc.DebugLCOWGCS()
 
-	// Attach it to the utility VM, but don't mount it (as there's no filesystem on it)
-	modification := &ResourceModificationRequestResponse{
-		Resource: "MappedVirtualDisk",
-		Data: MappedVirtualDisk{
-			HostPath:          destFile,
-			CreateInUtilityVM: true,
-			AttachOnly:        true,
-		},
-		Request: "Add",
-	}
-	if err := container.Modify(modification); err != nil {
-		return fmt.Errorf("hcsshim: CreateExt4Vhdx: failed to modify utility VM configuration for hot-add: %s", err)
-	}
-
-	// Get the list of mapped virtual disks to find the controller and LUN IDs
-	logrus.Debugf("hcsshim: CreateExt4Vhdx: %s querying mapped virtual disks", destFile)
-	mvdControllers, err := container.MappedVirtualDisks()
+	controller, lun, err := AddSCSIDisk(uvm, destFile, "")
 	if err != nil {
-		return fmt.Errorf("failed to get mapped virtual disks: %s", err)
+		// TODO Rollback
 	}
 
-	// Find our mapped disk from the list of all currently added.
-	controller := -1
-	lun := -1
-	for controllerNumber, controllerElement := range mvdControllers {
-		for diskNumber, diskElement := range controllerElement.MappedVirtualDisks {
-			if diskElement.HostPath == destFile {
-				controller = controllerNumber
-				lun = diskNumber
-				break
-			}
-		}
-	}
-	if controller == -1 || lun == -1 {
-		container.HotRemoveVhd(destFile)
-		return fmt.Errorf("failed to find %s in mapped virtual disks after hot-adding", destFile)
-	}
-	logrus.Debugf("hcsshim: CreateExt4Vhdx: %s at C=%d L=%d", destFile, controller, lun)
+	logrus.Debugf("hcsshim::CreateLCOWScratch: %s at C=%d L=%d", destFile, controller, lun)
 
 	// Validate /sys/bus/scsi/devices/C:0:0:L exists as a directory
 	testdCommand := []string{"test", "-d", fmt.Sprintf("/sys/bus/scsi/devices/%d:0:0:%d", controller, lun)}
-	testdProc, _, err := container.CreateProcessEx(&CreateProcessEx{
+	testdProc, _, err := uvmc.CreateProcessEx(&CreateProcessEx{
 		OCISpecification: &specs.Spec{
 			Process: &specs.Process{Args: testdCommand},
 			Linux:   &specs.Linux{},
@@ -89,7 +74,7 @@ func (container *container) CreateExt4Vhdx(destFile string, sizeGB uint32, cache
 		CreateInUtilityVm: true,
 	})
 	if err != nil {
-		container.HotRemoveVhd(destFile)
+		uvmc.HotRemoveVhd(destFile)
 		return fmt.Errorf("failed to run %+v following hot-add %s to utility VM: %s", testdCommand, destFile, err)
 	}
 	defer testdProc.Close()
@@ -97,18 +82,18 @@ func (container *container) CreateExt4Vhdx(destFile string, sizeGB uint32, cache
 	testdProc.WaitTimeout(defaultTimeoutSeconds)
 	testdExitCode, err := testdProc.ExitCode()
 	if err != nil {
-		container.HotRemoveVhd(destFile)
+		uvmc.HotRemoveVhd(destFile)
 		return fmt.Errorf("failed to get exit code from from %+v following hot-add %s to utility VM: %s", testdCommand, destFile, err)
 	}
 	if testdExitCode != 0 {
-		container.HotRemoveVhd(destFile)
+		uvmc.HotRemoveVhd(destFile)
 		return fmt.Errorf("`%+v` return non-zero exit code (%d) following hot-add %s to utility VM", testdCommand, testdExitCode, destFile)
 	}
 
 	// Get the device from under the block subdirectory by doing a simple ls. This will come back as (eg) `sda`
 	var lsOutput bytes.Buffer
 	lsCommand := []string{"ls", fmt.Sprintf("/sys/bus/scsi/devices/%d:0:0:%d/block", controller, lun)}
-	lsProc, _, err := container.CreateProcessEx(&CreateProcessEx{
+	lsProc, _, err := uvmc.CreateProcessEx(&CreateProcessEx{
 		OCISpecification: &specs.Spec{
 			Process: &specs.Process{Args: lsCommand},
 			Linux:   &specs.Linux{},
@@ -117,18 +102,18 @@ func (container *container) CreateExt4Vhdx(destFile string, sizeGB uint32, cache
 		Stdout:            &lsOutput,
 	})
 	if err != nil {
-		container.HotRemoveVhd(destFile)
+		uvmc.HotRemoveVhd(destFile)
 		return fmt.Errorf("failed to `%+v` following hot-add %s to utility VM: %s", lsCommand, destFile, err)
 	}
 	defer lsProc.Close()
 	lsProc.WaitTimeout(defaultTimeoutSeconds)
 	lsExitCode, err := lsProc.ExitCode()
 	if err != nil {
-		container.HotRemoveVhd(destFile)
+		uvmc.HotRemoveVhd(destFile)
 		return fmt.Errorf("failed to get exit code from `%+v` following hot-add %s to utility VM: %s", lsCommand, destFile, err)
 	}
 	if lsExitCode != 0 {
-		container.HotRemoveVhd(destFile)
+		uvmc.HotRemoveVhd(destFile)
 		return fmt.Errorf("`%+v` return non-zero exit code (%d) following hot-add %s to utility VM", lsCommand, lsExitCode, destFile)
 	}
 	device := fmt.Sprintf(`/dev/%s`, strings.TrimSpace(lsOutput.String()))
@@ -137,7 +122,7 @@ func (container *container) CreateExt4Vhdx(destFile string, sizeGB uint32, cache
 	// Format it ext4
 	mkfsCommand := []string{"mkfs.ext4", "-q", "-E", "lazy_itable_init=1", "-O", `^has_journal,sparse_super2,uninit_bg,^resize_inode`, device}
 	var mkfsStderr bytes.Buffer
-	mkfsProc, _, err := container.CreateProcessEx(&CreateProcessEx{
+	mkfsProc, _, err := uvmc.CreateProcessEx(&CreateProcessEx{
 		OCISpecification: &specs.Spec{
 			Process: &specs.Process{Args: mkfsCommand},
 			Linux:   &specs.Linux{},
@@ -146,34 +131,34 @@ func (container *container) CreateExt4Vhdx(destFile string, sizeGB uint32, cache
 		Stderr:            &mkfsStderr,
 	})
 	if err != nil {
-		container.HotRemoveVhd(destFile)
+		uvmc.HotRemoveVhd(destFile)
 		return fmt.Errorf("failed to `%+v` following hot-add %s to utility VM: %s", mkfsCommand, destFile, err)
 	}
 	defer mkfsProc.Close()
 	mkfsProc.WaitTimeout(defaultTimeoutSeconds)
 	mkfsExitCode, err := mkfsProc.ExitCode()
 	if err != nil {
-		container.HotRemoveVhd(destFile)
+		uvmc.HotRemoveVhd(destFile)
 		return fmt.Errorf("failed to get exit code from `%+v` following hot-add %s to utility VM: %s", mkfsCommand, destFile, err)
 	}
 	if mkfsExitCode != 0 {
-		container.HotRemoveVhd(destFile)
+		uvmc.HotRemoveVhd(destFile)
 		return fmt.Errorf("`%+v` return non-zero exit code (%d) following hot-add %s to utility VM: %s", mkfsCommand, mkfsExitCode, destFile, strings.TrimSpace(mkfsStderr.String()))
 	}
 
 	// Hot-Remove before we copy it
-	if err := container.HotRemoveVhd(destFile); err != nil {
+	if err := uvmc.HotRemoveVhd(destFile); err != nil {
 		return fmt.Errorf("failed to hot-remove: %s", err)
 	}
 
 	// Populate the cache.
-	if cacheFile != "" && (sizeGB == DefaultLCOWVhdxSizeGB) {
+	if cacheFile != "" && (sizeGB == DefaultLCOWScratchSizeGB) {
 		if err := CopyFile(destFile, cacheFile, true); err != nil {
 			return fmt.Errorf("failed to seed cache '%s' from '%s': %s", destFile, cacheFile, err)
 		}
 	}
 
-	logrus.Debugf("hcsshim: CreateExt4Vhdx: %s created (non-cache)", destFile)
+	logrus.Debugf("hcsshim::CreateLCOWScratch: %s created (non-cache)", destFile)
 	return nil
 }
 

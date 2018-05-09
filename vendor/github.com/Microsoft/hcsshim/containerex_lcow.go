@@ -13,15 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// TODO Move this
-const (
-	// DefaultLCOWVhdxSizeGB is the size of the default LCOW sandbox & scratch in GB
-	DefaultLCOWVhdxSizeGB = 20
-
-	// defaultLCOWVhdxBlockSizeMB is the block-size for the sandbox/scratch VHDx's this package can create.
-	defaultLCOWVhdxBlockSizeMB = 1
-)
-
 func getLCOWSettings(createOptions *CreateOptions) {
 	createOptions.lcowkird = valueFromStringMap(createOptions.Options, HCSOPTION_LCOW_KIRD_PATH)
 	if createOptions.lcowkird == "" {
@@ -199,7 +190,7 @@ func createLCOWv1(createOptions *CreateOptions) (Container, error) {
 	// TODO - Not sure why after CreateContainer, but that's how I coded it in libcontainerd and it worked....
 	createOptions.Spec.Mounts = specMounts
 
-	createOptions.Logger.Debug("createLCOWv1() completed successfully")
+	logrus.Debugf("createLCOWv1() completed successfully")
 	return container, nil
 }
 

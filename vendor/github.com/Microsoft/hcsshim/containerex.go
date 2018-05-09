@@ -44,7 +44,7 @@ type CreateOptions struct {
 	Spec          *specs.Spec       // Definition of the container or utility VM being created
 	Options       map[string]string // Runtime options. See HCSOPTION_ constants for possible values.
 	HostingSystem Container         // Container object representing a utility or service VM
-	Logger        *logrus.Entry     // For logging
+	//Logger        *logrus.Entry     // For logging
 
 	// Internal fields
 	sv             *SchemaVersion // Calculated based on Windows build and optional caller-supplied override
@@ -78,7 +78,10 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 
 	createOptions.id = valueFromStringMap(createOptions.Options, HCSOPTION_ID)
 	if createOptions.id == "" {
-		g, _ := GenerateGUID() // TODO Error handling
+		g, err := GenerateGUID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate GUID for container ID: %s", err)
+		}
 		createOptions.id = g.ToString()
 	}
 	createOptions.owner = valueFromStringMap(createOptions.Options, HCSOPTION_OWNER)
@@ -86,15 +89,9 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		createOptions.owner = filepath.Base(os.Args[0])
 	}
 
-	if createOptions.Logger == nil {
-		return nil, fmt.Errorf("Logger must be supplied")
-	}
 	if createOptions.Spec == nil {
 		return nil, fmt.Errorf("Spec must be supplied")
 	}
-	// TODO All this logger stuff
-	//logger := createOptions.Logger.WithField("container", createOptions.Id)
-	createOptions.Logger = createOptions.Logger.WithField("container", createOptions.id)
 
 	if createOptions.HostingSystem != nil {
 		// By definition, a hosting system can only be supplied for a v2 Xenon.
@@ -141,7 +138,6 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 // in a utility VM using the v2 schema. It implements logic which for the v1 schema
 // was implemented internally in HCS.
 func UVMResourcesFromContainerSpec(spec *specs.Spec) (*specs.WindowsResources, error) {
-	// TODO Move to a non-Windows file
 	// TODO: Processors. File bug. V2 schema for VM doesn't allow weight/limit, just on compute system.
 
 	if spec == nil && spec.Linux != nil { // TODO

@@ -34,7 +34,6 @@ var (
 )
 
 const (
-	pendingUpdatesQuery    = `{ "PropertyTypes" : ["PendingUpdates"]}`
 	statisticsQuery        = `{ "PropertyTypes" : ["Statistics"]}`
 	processListQuery       = `{ "PropertyTypes" : ["ProcessList"]}`
 	mappedVirtualDiskQuery = `{ "PropertyTypes" : ["MappedVirtualDisk"]}`
@@ -418,25 +417,11 @@ func (container *container) properties(query string) (*ContainerProperties, erro
 	return properties, nil
 }
 
-// HasPendingUpdates returns true if the container has updates pending to install
+// HasPendingUpdates is a legacy API and a no-op. It never worked, and has
+// since been removed from Windows. It should not be called.
 func (container *container) HasPendingUpdates() (bool, error) {
-	container.handleLock.RLock()
-	defer container.handleLock.RUnlock()
-	operation := "HasPendingUpdates"
-	title := "hcsshim::Container::" + operation
-	logrus.Debugf(title+" id=%s", container.id)
-
-	if container.handle == 0 {
-		return false, makeContainerError(container, operation, nil, "", ErrAlreadyClosed)
-	}
-
-	properties, err := container.properties(pendingUpdatesQuery)
-	if err != nil {
-		return false, makeContainerError(container, operation, nil, "", err)
-	}
-
-	logrus.Debugf(title+" succeeded id=%s", container.id)
-	return properties.AreUpdatesPending, nil
+	logrus.Warnf("hcsshim::HasPendingUpdates is a no-op")
+	return false, nil
 }
 
 // Statistics returns statistics for the container
@@ -780,29 +765,6 @@ func (container *container) Modify(config interface{}) error {
 		return err
 	}
 	logrus.Debugf(title+" succeeded id=%s", container.id)
-	return nil
-}
-
-// TODO: Get rid of this! @JJH. Have a rollback helper instead.
-// HotRemoveVhd hot-removes a VHD from a utility VM.
-func (container *container) HotRemoveVhd(hostPath string) error {
-	logrus.Debugf("hcsshim: HotRemoveVhd: %s", hostPath)
-
-	// TODO - Have a method so we only do this for LCOW
-	//defer config.DebugLCOWGCS()
-
-	modification := &ResourceModificationRequestResponse{
-		Resource: "MappedVirtualDisk",
-		Data: MappedVirtualDisk{
-			HostPath:          hostPath,
-			CreateInUtilityVM: true,
-		},
-		Request: "Remove",
-	}
-	if err := container.Modify(modification); err != nil {
-		return fmt.Errorf("failed modifying utility VM for hot-remove %s: %s", hostPath, err)
-	}
-	logrus.Debugf("hcsshim: HotRemoveVhd: %s removed successfully", hostPath)
 	return nil
 }
 

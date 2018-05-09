@@ -243,7 +243,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 				cpuCount := *createOptions.Spec.Windows.Resources.CPU.Count
 				hostCPUCount := uint64(numCPU())
 				if cpuCount > hostCPUCount {
-					createOptions.Logger.Warnf("Changing requested CPUCount of %d to current number of processors, %d", cpuCount, hostCPUCount)
+					logrus.Warnf("Changing requested CPUCount of %d to current number of processors, %d", cpuCount, hostCPUCount)
 					cpuCount = hostCPUCount
 				}
 				v1.ProcessorCount = uint32(cpuCount)

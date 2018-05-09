@@ -21,7 +21,6 @@ var (
 
 type GUID [16]byte
 
-// TODO Don't think this is called at all.
 func NewGUID(source string) *GUID {
 	h := sha1.Sum([]byte(source))
 	var g GUID
@@ -38,10 +37,7 @@ func GenerateGUID() (*GUID, error) { // https://play.golang.org/p/4FkNSiUDMg
 	g[8] = g[8]&^0xc0 | 0x80
 	g[6] = g[6]&^0xf0 | 0x40
 	var g2 GUID
-	for i := 0; i <= 15; i++ {
-		g2[i] = g[i]
-	}
-	// TODO COPY!!! This is just a temporary hack
+	copy(g2[0:], g[:])
 	return &g2, nil
 }
 

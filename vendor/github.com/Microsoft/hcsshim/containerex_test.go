@@ -119,7 +119,6 @@ func createLCOWTempDirWithSandbox(t *testing.T) (string, string) {
 		var err error
 		lcowServiceContainer, err = CreateContainerEx(&CreateOptions{
 			Options: options,
-			Logger:  logrus.WithField("module", "hcsshim unit test"),
 			Spec:    dls,
 		})
 		if err != nil {
@@ -132,7 +131,7 @@ func createLCOWTempDirWithSandbox(t *testing.T) (string, string) {
 	t.Logf("Creating EXT4 sandbox for LCOW test cases")
 	tempDir := createTempDir(t)
 	cacheSandboxFile = filepath.Join(cacheSandboxDir, "sandbox.vhdx")
-	if err := lcowServiceContainer.CreateExt4Vhdx(filepath.Join(tempDir, "sandbox.vhdx"), DefaultLCOWVhdxSizeGB, cacheSandboxFile); err != nil {
+	if err := CreateLCOWScratch(lcowServiceContainer, filepath.Join(tempDir, "sandbox.vhdx"), DefaultLCOWScratchSizeGB, cacheSandboxFile); err != nil {
 		t.Fatalf("failed to create EXT4 sandbox for LCOW test cases: %s", err)
 	}
 	return tempDir, filepath.Base(tempDir)
@@ -232,7 +231,6 @@ func TestV1Argon(t *testing.T) {
 	options[HCSOPTION_OWNER] = "unit-test"
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
-		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Hostname: "goofy",
 			Windows:  &specs.Windows{LayerFolders: layers},
@@ -261,7 +259,6 @@ func TestV1ArgonAutoMount(t *testing.T) {
 	options[HCSOPTION_ID] = "TestV1ArgonAutoMount"
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
-		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec:    &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
 	})
 	if err != nil {
@@ -286,7 +283,6 @@ func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
 	options[HCSOPTION_ID] = "TestV1ArgonMultipleBaseLayersAutoMount"
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
-		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec:    &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
 	})
 	if err != nil {
@@ -304,8 +300,9 @@ func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
 // --------------------------------
 
 // A v2 Argon with a single base layer. It also validates hostname functionality is propagated.
+// It also uses an auto-generated ID.
 func TestV2Argon(t *testing.T) {
-	//t.Skip("fornow")
+	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -318,10 +315,8 @@ func TestV2Argon(t *testing.T) {
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
-	//options[HCSOPTION_ID] = "TestV2Argon"
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
-		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Hostname: "mickey",
 			Windows:  &specs.Windows{LayerFolders: layers},
@@ -356,7 +351,6 @@ func TestV2ArgonMultipleBaseLayers(t *testing.T) {
 	options[HCSOPTION_ID] = "TestV2ArgonMultipleBaseLayers"
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
-		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: layers},
 			Root:    &specs.Root{Path: mountPath.(string)},
@@ -383,7 +377,6 @@ func TestV2ArgonAutoMountMultipleBaseLayers(t *testing.T) {
 	options[HCSOPTION_ID] = "TestV2ArgonAutoMountMultipleBaseLayers"
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
-		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec:    &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
 	})
 	if err != nil {
@@ -416,7 +409,6 @@ func TestV1XenonWCOW(t *testing.T) {
 	options[HCSOPTION_ID] = "TestV1XenonWCOW"
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
-		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: append(layers, tempDir),
@@ -444,7 +436,6 @@ func TestV1XenonWCOWNoUVMPath(t *testing.T) {
 	options[HCSOPTION_OWNER] = "unit-test"
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
-		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: append(layersNanoserver, tempDir),
@@ -472,7 +463,6 @@ func TestV1XenonMultipleBaseLayersNoUVMPath(t *testing.T) {
 	options[HCSOPTION_ID] = "TestV1XenonWCOW"
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
-		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: append(layers, tempDir),
@@ -500,11 +490,10 @@ func createv2WCOWUVM(t *testing.T, uvmLayers []string, uvmID string) (Container,
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
 	options[HCSOPTION_IS_UTILITY_VM] = "yes"
 	if uvmID != "" {
-		options[HCSOPTION_ID] = uvmID // TODO Test to make sure this is optional
+		options[HCSOPTION_ID] = uvmID
 	}
 	uvm, err := CreateContainerEx(&CreateOptions{
 		Options: options,
-		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: append(uvmLayers, uvmScratchDir)},
 		},
@@ -515,10 +504,12 @@ func createv2WCOWUVM(t *testing.T, uvmLayers []string, uvmID string) (Container,
 	return uvm, uvmScratchDir
 }
 
-// A single WCOW xenon
+// A single WCOW xenon. Note in this test, neither the UVM or the
+// containers are supplied IDs - they will be autogenerated for us.
+// This is the minimum set of parameters needed to create a V2 WCOW xenon.
 func TestV2XenonWCOW(t *testing.T) {
 	t.Skip("Skipping for now")
-	uvm, uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "TestV2XenonWCOW_UVM")
+	uvm, uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "")
 	defer os.RemoveAll(uvmScratchDir)
 	defer uvm.Terminate()
 	if err := uvm.Start(); err != nil {
@@ -529,13 +520,10 @@ func TestV2XenonWCOW(t *testing.T) {
 	containerScratchDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(containerScratchDir)
 	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String() // TODO: We need a check to verify this matches that of the hosting system (not in test code, in the product code)
-	options[HCSOPTION_ID] = "container"
 	layerFolders := append(layersNanoserver, containerScratchDir)
 	hostedContainer, err := CreateContainerEx(&CreateOptions{
 		HostingSystem: uvm,
 		Options:       options,
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
 	})
 	if err != nil {
@@ -571,7 +559,6 @@ func TestV2XenonWCOWContainerSandboxFolderDoesNotExist(t *testing.T) {
 	hostedContainer, err := CreateContainerEx(&CreateOptions{
 		HostingSystem: uvm,
 		Options:       options,
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
 	})
 	if err != nil {
@@ -609,7 +596,6 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	firstHostedContainer, err := CreateContainerEx(&CreateOptions{
 		HostingSystem: uvm,
 		Options:       options,
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: firstLayerFolders}},
 	})
 	if err != nil {
@@ -625,7 +611,6 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	secondHostedContainer, err := CreateContainerEx(&CreateOptions{
 		HostingSystem: uvm,
 		Options:       options,
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: secondLayerFolders}},
 	})
 	if err != nil {
@@ -664,7 +649,6 @@ func TestV2XenonWCOWCreateLots(t *testing.T) {
 		hostedContainer, err := CreateContainerEx(&CreateOptions{
 			HostingSystem: uvm,
 			Options:       options,
-			Logger:        logrus.WithField("module", "hcsshim unit test"),
 			Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
 		})
 		if err != nil {
@@ -700,7 +684,6 @@ func TestUVMSizing(t *testing.T) {
 //		Id:              uvmID,
 //		Owner:           "unit-test",
 //		SchemaVersion:   SchemaV20(),
-//		Logger:          logrus.WithField("module", "hcsshim unit test"),
 //		IsHostingSystem: true,
 //		Spec: &specs.Spec{
 //			Windows: &specs.Windows{
@@ -742,7 +725,6 @@ func TestUVMSizing(t *testing.T) {
 //		Owner:         "unit-test",
 //		HostingSystem: uvm,
 //		SchemaVersion: SchemaV20(),
-//		Logger:        logrus.WithField("module", "hcsshim unit test"),
 //		Spec:          &specs.Spec{Windows: &specs.Windows{}}, // No layerfolders as we mounted them ourself.
 //	})
 //	if err != nil {
@@ -769,7 +751,6 @@ func TestUVMSizing(t *testing.T) {
 //		Owner:         "unit-test",
 //		HostingSystem: uvm,
 //		SchemaVersion: SchemaV20(),
-//		Logger:        logrus.WithField("module", "hcsshim unit test"),
 //		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
 //		MountedLayers: mountedLayers,
 //	})
@@ -802,7 +783,6 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 	options[HCSOPTION_IS_UTILITY_VM] = "yes"
 	options[HCSOPTION_ID] = uvmID
 	uvm, err := CreateContainerEx(&CreateOptions{
-		Logger: logrus.WithField("module", "hcsshim unit test"),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: []string{uvmScratchDir},
@@ -838,7 +818,6 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 	xenon, err := CreateContainerEx(&CreateOptions{
 		HostingSystem: uvm,
 		Options:       options,
-		Logger:        logrus.WithField("module", "hcsshim unit test"),
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: append(layersBusybox, containerAScratchDir)}},
 	})
 	if err != nil {
@@ -875,6 +854,40 @@ func TestDetermineSchemaVersion(t *testing.T) {
 		t.Fatalf("expected requested v2")
 	}
 }
+
+// TestID validates that the requested ID is retrieved
+func TestIDOwner(t *testing.T) {
+	t.Skip("fornow")
+	tempDir := createWCOWTempDirWithSandbox(t)
+	defer os.RemoveAll(tempDir)
+
+	layers := append(layersNanoserver, tempDir)
+	mountPath, err := Mount(layers, nil)
+	if err != nil {
+		t.Fatalf("failed to mount container storage: %s", err)
+	}
+	defer Unmount(layers, nil, UnmountOperationAll)
+
+	options := make(map[string]string)
+	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
+	options[HCSOPTION_ID] = "gruntbuggly"
+	c, err := CreateContainerEx(&CreateOptions{
+		Options: options,
+		Spec: &specs.Spec{
+			Windows: &specs.Windows{LayerFolders: layers},
+			Root:    &specs.Root{Path: mountPath.(string)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed create: %s", err)
+	}
+	if c.ID() != "gruntbuggly" {
+		t.Fatalf("id not set correctly: %s", c.ID())
+	}
+
+	c.Terminate()
+}
+
 func getDefaultLinuxSpec(t *testing.T) *specs.Spec {
 	content, err := ioutil.ReadFile(`.\testassets\defaultlinuxspec.json`)
 	if err != nil {
@@ -885,6 +898,65 @@ func getDefaultLinuxSpec(t *testing.T) *specs.Spec {
 		t.Fatalf("failed to unmarshal contents of defaultlinuxspec.json: %s", err.Error())
 	}
 	return &spec
+}
+
+// createLCOWTempDirWithSandbox uses an LCOW utility VM to create a blank
+// VHDX and format it ext4.
+func TestCreateLCOWScratch(t *testing.T) {
+	t.Skip("for now")
+	cacheDir := createTempDir(t)
+	cacheFile := filepath.Join(cacheDir, "cache.vhdx")
+	uvm, err := CreateContainerEx(&CreateOptions{Spec: getDefaultLinuxSpec(t)})
+	if err != nil {
+		t.Fatalf("Failed create: %s", err)
+	}
+	defer uvm.Terminate()
+	if err := uvm.Start(); err != nil {
+		t.Fatalf("Failed to start service container: %s", err)
+	}
+
+	// 1: Default size, cache doesn't exist, but no UVM passed. Cannot be created
+	err = CreateLCOWScratch(nil, filepath.Join(cacheDir, "default.vhdx"), DefaultLCOWScratchSizeGB, cacheFile)
+	if err == nil {
+		t.Fatalf("expected an error creating LCOW scratch")
+	}
+	if err.Error() != "cannot create scratch disk as cache is not present and no utility VM supplied" {
+		t.Fatalf("Not expecting error %s", err)
+	}
+
+	// 2: Default size, no cache supplied and no UVM
+	err = CreateLCOWScratch(nil, filepath.Join(cacheDir, "default.vhdx"), DefaultLCOWScratchSizeGB, "")
+	if err == nil {
+		t.Fatalf("expected an error creating LCOW scratch")
+	}
+	if err.Error() != "cannot create scratch disk as cache is not present and no utility VM supplied" {
+		t.Fatalf("Not expecting error %s", err)
+	}
+
+	// 3: Default size. This should work and the cache should be created.
+	err = CreateLCOWScratch(uvm, filepath.Join(cacheDir, "default.vhdx"), DefaultLCOWScratchSizeGB, cacheFile)
+	if err != nil {
+		t.Fatalf("should succeed creating default size cache file: %s", err)
+	}
+	if _, err = os.Stat(cacheFile); err != nil {
+		t.Fatalf("failed to stat cache file after created: %s", err)
+	}
+	if _, err = os.Stat(filepath.Join(cacheDir, "default.vhdx")); err != nil {
+		t.Fatalf("failed to stat default.vhdx after created: %s", err)
+	}
+
+	// 4: Non-defaultsize. This should work and the cache should be created.
+	err = CreateLCOWScratch(uvm, filepath.Join(cacheDir, "nondefault.vhdx"), DefaultLCOWScratchSizeGB+1, cacheFile)
+	if err != nil {
+		t.Fatalf("should succeed creating default size cache file: %s", err)
+	}
+	if _, err = os.Stat(cacheFile); err != nil {
+		t.Fatalf("failed to stat cache file after created: %s", err)
+	}
+	if _, err = os.Stat(filepath.Join(cacheDir, "nondefault.vhdx")); err != nil {
+		t.Fatalf("failed to stat default.vhdx after created: %s", err)
+	}
+
 }
 
 // A v1 LCOW
@@ -900,10 +972,8 @@ func TestV1XenonLCOW(t *testing.T) {
 
 	spec := getDefaultLinuxSpec(t)
 	spec.Windows.LayerFolders = append(layersAlpine, tempDir)
-	//spec.Linux = &specs.Linux{}
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
-		Logger:  logrus.WithField("module", "hcsshim unit test"),
 		Spec:    spec,
 	})
 	if err != nil {
@@ -914,4 +984,148 @@ func TestV1XenonLCOW(t *testing.T) {
 	runCommand(t, c, "echo Hello", `/bin`, "Hello")
 	stopContainer(t, c)
 	c.Terminate()
+}
+
+// TestAllocateSCSI tests allocateSCSI/deallocateSCSI/findSCSIAttachment
+func TestAllocateSCSI(t *testing.T) {
+	t.Skip("for now")
+	v2uvm, v2uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "")
+	defer os.RemoveAll(v2uvmScratchDir)
+	defer v2uvm.Terminate()
+	v2uvmc := v2uvm.(*container)
+
+	c, l, err := findSCSIAttachment(v2uvmc, filepath.Join(v2uvmScratchDir, `sandbox.vhdx`))
+	if err != nil {
+		t.Fatalf("failed to find sandbox %s", err)
+	}
+	if c != 0 && l != 0 {
+		t.Fatalf("sandbox at %d:%d", c, l)
+	}
+
+	for i := 0; i <= (4*64)-2; i++ { // 4 controllers, each with 64 slots but 0:0 is the UVM scratch
+		controller, lun, err := allocateSCSI(v2uvmc, `anything`)
+		if err != nil {
+			t.Fatalf("unexpected error %s", err)
+		}
+		if lun != (i+1)%64 {
+			t.Fatalf("unexpected LUN:%d i=%d", lun, i)
+		}
+		if controller != (i+1)/64 {
+			t.Fatalf("unexpected controller:%d i=%d", controller, i)
+		}
+	}
+	_, _, err = allocateSCSI(v2uvmc, `shouldfail`)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if err.Error() != "no free SCSI locations" {
+		t.Fatalf("expected to have run out of SCSI slots")
+	}
+
+	for c := 0; c < 4; c++ {
+		for l := 0; l < 64; l++ {
+			if !(c == 0 && l == 0) {
+				deallocateSCSI(v2uvmc, c, l)
+			}
+		}
+	}
+	if v2uvmc.scsiLocations.hostPath[0][0] == "" {
+		t.Fatalf("0:0 should still be taken")
+	}
+	c, l, err = findSCSIAttachment(v2uvmc, filepath.Join(v2uvmScratchDir, `sandbox.vhdx`))
+	if err != nil {
+		t.Fatalf("failed to find sandbox %s", err)
+	}
+	if c != 0 && l != 0 {
+		t.Fatalf("sandbox at %d:%d", c, l)
+	}
+}
+
+// TestAddRemoveSCSIDiskv2WCOW validates adding and removing SCSI disks
+// from a utility VM in both attach-only and with a container path. Also does
+// negative testing so that a disk can't be attached twice.
+func TestAddRemoveSCSIDiskv2WCOW(t *testing.T) {
+	t.Skip("for now")
+	v2uvm, v2uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "")
+	defer os.RemoveAll(v2uvmScratchDir)
+	startContainer(t, v2uvm)
+	defer v2uvm.Terminate()
+
+	testAddRemoveSCSIDisk(t, v2uvm, `c:\`)
+}
+
+// TestAddRemoveSCSIDiskv1LCOW validates adding and removing SCSI disks
+// from a utility VM in both attach-only and with a container path. Also does
+// negative testing so that a disk can't be attached twice.
+func TestAddRemoveSCSIDiskv1LCOW(t *testing.T) {
+	uvm, err := CreateContainerEx(&CreateOptions{Spec: getDefaultLinuxSpec(t)})
+	if err != nil {
+		t.Fatalf("Failed create: %s", err)
+	}
+	defer uvm.Terminate()
+	if err := uvm.Start(); err != nil {
+		t.Fatalf("Failed to start service container: %s", err)
+	}
+	testAddRemoveSCSIDisk(t, uvm, "/")
+}
+
+func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string) {
+
+	const numDisks = 1 // 63 as the UVM scratch is at 0:0
+
+	// Create a bunch of directories each containing sandbox.vhdx
+	var disks [numDisks]string
+	for i := 0; i < numDisks; i++ {
+		disks[i] = createWCOWTempDirWithSandbox(t)
+		defer os.RemoveAll(disks[i])
+		disks[i] = filepath.Join(disks[i], `sandbox.vhdx`)
+	}
+
+	// Add each of the disks to the utility VM. Attach-only, no container path
+	for i := 0; i < numDisks; i++ {
+		_, _, err := AddSCSIDisk(uvm, disks[i], "")
+		if err != nil {
+			t.Fatalf("failed to add scsi disk %d %s: %s", i, disks[i], err)
+		}
+	}
+
+	// Try to re-add. These should all fail.
+	for i := 0; i < numDisks; i++ {
+		_, _, err := AddSCSIDisk(uvm, disks[i], "")
+		if err == nil {
+			t.Fatalf("should not be able to re-add the same SCSI disk!")
+		}
+	}
+
+	// Remove them all
+	for i := 0; i < numDisks; i++ {
+		if err := RemoveSCSIDisk(uvm, disks[i]); err != nil {
+			t.Fatalf("expected success: %s", err)
+		}
+	}
+
+	// Now re-add but providing a container path
+	for i := 0; i < numDisks; i++ {
+		_, _, err := AddSCSIDisk(uvm, disks[i], fmt.Sprintf(`c:\%d`, i))
+		if err != nil {
+			t.Fatalf("failed to add scsi disk %d %s: %s", i, disks[i], err)
+		}
+	}
+
+	// Try to re-add. These should all fail.
+	for i := 0; i < numDisks; i++ {
+		_, _, err := AddSCSIDisk(uvm, disks[i], fmt.Sprintf(`%s%d`, pathPrefix, i))
+		if err == nil {
+			t.Fatalf("should not be able to re-add the same SCSI disk!")
+		}
+	}
+
+	// Remove them all
+	for i := 0; i < numDisks; i++ {
+		if err := RemoveSCSIDisk(uvm, disks[i]); err != nil {
+			t.Fatalf("expected success: %s", err)
+		}
+	}
+
+	// TODO: Could extend to validate can't add a 64th disk.
 }

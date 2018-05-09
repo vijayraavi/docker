@@ -55,9 +55,6 @@ type Container interface {
 	// Resume resumes the execution of a container.
 	Resume() error
 
-	// HasPendingUpdates returns true if the container has updates pending to install.
-	HasPendingUpdates() (bool, error)
-
 	// Statistics returns statistics for a container.
 	Statistics() (Statistics, error)
 
@@ -65,10 +62,11 @@ type Container interface {
 	ProcessList() ([]ProcessListItem, error)
 
 	// MappedVirtualDisks returns virtual disks mapped to a utility VM, indexed by controller
+	// This should only be used in the v1 schema.
 	MappedVirtualDisks() (map[int]MappedVirtualDiskController, error)
 
 	// CreateProcess launches a new process within the container.
-	// TODO Remove this from the interface.
+	// This is a legacy API. CreateProcessEx is preferred
 	CreateProcess(c *ProcessConfig) (Process, error)
 
 	// OpenProcess gets an interface to an existing process within the container.
@@ -83,9 +81,7 @@ type Container interface {
 	// SchemaVersion returns the schema version
 	SchemaVersion() *SchemaVersion
 
-	// TODO JJH. We don't need this
-	// HotRemoveVhd is a wrapper for `Modify` to hot-remove a VHD from a utility VM
-	HotRemoveVhd(hostPath string) error
+	HotRemoveVhd(s string) error // TODO Remove this when SCSI all sorted out
 
 	// CreateProcessEx is a wrapper for CreateProcess that creates an
 	// arbirary process (most usefully inside a utility VM) and performs IO copies with
@@ -97,21 +93,18 @@ type Container interface {
 	// CreateExt4Vhdx creates a blank ext4-formatted VHDX of the specified size,
 	// at the destination. If it already exists at the cache location, it's a simple
 	// CopyFile. If not, it invokes operations in the container.
-	CreateExt4Vhdx(destFile string, sizeGB uint32, cacheFile string) error
+	//CreateExt4Vhdx(destFile string, sizeGB uint32, cacheFile string) error
 
 	// DebugLCOWGCS is a debugging feature for LCOW to extract logs for diagnosis
 	DebugLCOWGCS()
 
-	// Not actually sure this is needed
-	//	// UVM gets the utility VM Container object in the case of a V2.0+ schema
-	//	UVM() (*Container, error)
-
 	// ID gets the ID of the Container object
 	ID() string
 
-	// Owner gets the owner of the Container object
-	// Owner() string
+	// DEPRECATED METHODS
 
+	// HasPendingUpdates is deprecated and a no-op. Always returns false/nil
+	HasPendingUpdates() (bool, error)
 }
 
 // Process represents a running or exited process.
