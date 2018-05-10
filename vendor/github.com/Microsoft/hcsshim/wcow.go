@@ -183,14 +183,14 @@ func unmountOnFailure(storageWasMountedByUs bool, layers []string, prevError err
 	return fmt.Errorf("%s - Failed to subseqently unmount automounted storage: %s", prevError, err)
 }
 
-// CreateHCSContainerDocument creates a document suitable for calling HCS to create
+// CreateWCOWHCSContainerDocument creates a document suitable for calling HCS to create
 // a container, both hosted and process isolated. It can create both v1 and v2
 // schema. This is exported just in case a client could find it useful, but
 // not strictly necessary as it will be called by CreateContainerEx().
 // It also optionally mounts the storage if it isn't already.
 
-func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
-	logrus.Debugf("hcsshim: CreateHCSContainerDocument")
+func CreateWCOWHCSContainerDocument(createOptions *CreateOptions) (string, error) {
+	logrus.Debugf("hcsshim: CreateWCOWHCSContainerDocument")
 
 	// TODO: Make this safe if exported so no null pointer dereferences.
 	// TODO: Should this be a Windows function explicitly in the name
@@ -430,7 +430,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 
 		// Create the sandbox in the top-most layer folder, creating the folder if it doesn't already exist.
 		sandboxFolder := createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
-		logrus.Debugf("hcsshim::CreateHCSContainerDocument Sandbox folder: %s", sandboxFolder)
+		logrus.Debugf("hcsshim::CreateWCOWHCSContainerDocument Sandbox folder: %s", sandboxFolder)
 
 		// Create the directory if it doesn't exist
 		if _, err := os.Stat(sandboxFolder); os.IsNotExist(err) {
@@ -443,10 +443,10 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 		// Create sandbox.vhdx if it doesn't exist
 		if _, err := os.Stat(filepath.Join(sandboxFolder, "sandbox.vhdx")); os.IsNotExist(err) {
 			di := DriverInfo{HomeDir: filepath.Dir(sandboxFolder)}
-			logrus.Debugln("hcsshim::CreateHCSContainerDocument Creating Sandbox: DriverInfo", di)
-			logrus.Debugln("hcsshim::CreateHCSContainerDocument Creating Sandbox: LayerID", filepath.Base(sandboxFolder))
-			logrus.Debugln("hcsshim::CreateHCSContainerDocument Creating Sandbox: ParentID", createOptions.Spec.Windows.LayerFolders[0]) // Badly named but in the HCS API
-			logrus.Debugln("hcsshim::CreateHCSContainerDocument Creating Sandbox: LayerChain", createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1])
+			logrus.Debugln("hcsshim::CreateWCOWHCSContainerDocument Creating Sandbox: DriverInfo", di)
+			logrus.Debugln("hcsshim::CreateWCOWHCSContainerDocument Creating Sandbox: LayerID", filepath.Base(sandboxFolder))
+			logrus.Debugln("hcsshim::CreateWCOWHCSContainerDocument Creating Sandbox: ParentID", createOptions.Spec.Windows.LayerFolders[0]) // Badly named but in the HCS API
+			logrus.Debugln("hcsshim::CreateWCOWHCSContainerDocument Creating Sandbox: LayerChain", createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1])
 			if err := CreateSandboxLayer(di, filepath.Base(sandboxFolder), createOptions.Spec.Windows.LayerFolders[0], createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1]); err != nil {
 				return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("failed to CreateSandboxLayer %s", err))
 			}

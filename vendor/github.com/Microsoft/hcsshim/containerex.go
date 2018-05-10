@@ -32,7 +32,6 @@ const (
 	WINDOWS_BUILD_RS3 = 16299
 	WINDOWS_BUILD_RS4 = 17134
 	WINDOWS_BUILD_RS5 = 17659 // TODO Bump to final RS5 build
-
 )
 
 // CreateOptions are the set of fields used to call CreateContainerEx().
@@ -125,7 +124,7 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		return createWCOWv2UVM(createOptions)
 	}
 
-	hcsDocument, err := CreateHCSContainerDocument(createOptions)
+	hcsDocument, err := CreateWCOWHCSContainerDocument(createOptions)
 	if err != nil {
 		return nil, err
 	}
