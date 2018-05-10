@@ -176,7 +176,7 @@ func unmountOnFailure(storageWasMountedByUs bool, layers []string, prevError err
 	if !storageWasMountedByUs {
 		return prevError
 	}
-	err := Unmount(layers, nil, UnmountOperationAll)
+	err := UnmountContainerLayers(layers, nil, UnmountOperationAll)
 	if err == nil {
 		return prevError
 	}
@@ -314,7 +314,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 			rootPath := ""
 			if createOptions.Spec.Root == nil { // Auto-mount to make life easier for API callers
 				var err error
-				iRootPath, err := Mount(createOptions.Spec.Windows.LayerFolders, nil) // Returns interface which needs type assertion depending on schema version
+				iRootPath, err := MountContainerLayers(createOptions.Spec.Windows.LayerFolders, nil) // Returns interface which needs type assertion depending on schema version
 				if err != nil {
 					return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("failed to auto-mount container storage: %s", err))
 				}
@@ -452,7 +452,7 @@ func CreateHCSContainerDocument(createOptions *CreateOptions) (string, error) {
 			}
 		}
 
-		cls, err := Mount(createOptions.Spec.Windows.LayerFolders, createOptions.HostingSystem)
+		cls, err := MountContainerLayers(createOptions.Spec.Windows.LayerFolders, createOptions.HostingSystem)
 		if err != nil {
 			return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("failed to mount container storage into utility VM: %s", err))
 		}

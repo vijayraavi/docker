@@ -44,8 +44,8 @@ var (
 func init() {
 	logrus.SetLevel(logrus.DebugLevel)
 	logrus.SetFormatter(&logrus.TextFormatter{
-		TimestampFormat: "2006-01-02T15:04:05.000000000Z07:00",
-		FullTimestamp:   true,
+		//.		TimestampFormat: "2006-01-02T15:04:05.000000000Z07:00",
+		FullTimestamp: true,
 	})
 
 	os.Setenv("HCSSHIM_LCOW_DEBUG_ENABLE", "something")
@@ -213,16 +213,16 @@ func stopContainer(t *testing.T, c Container) {
 
 // A v1 Argon with a single base layer. It also validates hostname functionality is propagated.
 func TestV1Argon(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
 	layers := append(layersNanoserver, tempDir)
-	mountPath, err := Mount(layers, nil)
+	mountPath, err := MountContainerLayers(layers, nil)
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
 	}
-	defer Unmount(layers, nil, UnmountOperationAll)
+	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
@@ -248,7 +248,7 @@ func TestV1Argon(t *testing.T) {
 
 // A v1 Argon with a single base layer which uses the auto-mount capability
 func TestV1ArgonAutoMount(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -263,7 +263,7 @@ func TestV1ArgonAutoMount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
 	}
-	defer Unmount(layers, nil, UnmountOperationAll)
+	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 	startContainer(t, c)
 	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
 	stopContainer(t, c)
@@ -272,7 +272,7 @@ func TestV1ArgonAutoMount(t *testing.T) {
 
 // A v1 Argon with multiple layers which uses the auto-mount capability
 func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -287,7 +287,7 @@ func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
 	}
-	defer Unmount(layers, nil, UnmountOperationAll)
+	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 	startContainer(t, c)
 	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
 	stopContainer(t, c)
@@ -301,16 +301,16 @@ func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
 // A v2 Argon with a single base layer. It also validates hostname functionality is propagated.
 // It also uses an auto-generated ID.
 func TestV2Argon(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
 	layers := append(layersNanoserver, tempDir)
-	mountPath, err := Mount(layers, nil)
+	mountPath, err := MountContainerLayers(layers, nil)
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
 	}
-	defer Unmount(layers, nil, UnmountOperationAll)
+	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
@@ -334,16 +334,16 @@ func TestV2Argon(t *testing.T) {
 
 // A v2 Argon with multiple layers
 func TestV2ArgonMultipleBaseLayers(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
 	layers := append(layersBusybox, tempDir)
-	mountPath, err := Mount(layers, nil)
+	mountPath, err := MountContainerLayers(layers, nil)
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
 	}
-	defer Unmount(layers, nil, UnmountOperationAll)
+	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
@@ -366,7 +366,7 @@ func TestV2ArgonMultipleBaseLayers(t *testing.T) {
 
 // A v2 Argon with multiple layers which uses the auto-mount capability
 func TestV2ArgonAutoMountMultipleBaseLayers(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -381,7 +381,7 @@ func TestV2ArgonAutoMountMultipleBaseLayers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
 	}
-	defer Unmount(layers, nil, UnmountOperationAll)
+	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 	startContainer(t, c)
 	runCommand(t, c, "cmd /s /c echo Hello", `c:\`, "Hello")
 	stopContainer(t, c)
@@ -394,7 +394,7 @@ func TestV2ArgonAutoMountMultipleBaseLayers(t *testing.T) {
 
 // A v1 WCOW Xenon with a single base layer
 func TestV1XenonWCOW(t *testing.T) {
-	t.Skip("for now")
+	//t.Skip("for now")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -425,7 +425,7 @@ func TestV1XenonWCOW(t *testing.T) {
 
 // A v1 WCOW Xenon with a single base layer but let HCSShim find the utility VM path
 func TestV1XenonWCOWNoUVMPath(t *testing.T) {
-	t.Skip("for now")
+	///t.Skip("for now")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -452,7 +452,7 @@ func TestV1XenonWCOWNoUVMPath(t *testing.T) {
 
 // A v1 WCOW Xenon with multiple layers letting HCSShim find the utilityVM Path
 func TestV1XenonMultipleBaseLayersNoUVMPath(t *testing.T) {
-	t.Skip("for now")
+	//Skip("for now")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -507,7 +507,7 @@ func createv2WCOWUVM(t *testing.T, uvmLayers []string, uvmID string) (Container,
 // containers are supplied IDs - they will be autogenerated for us.
 // This is the minimum set of parameters needed to create a V2 WCOW xenon.
 func TestV2XenonWCOW(t *testing.T) {
-	t.Skip("Skipping for now")
+	//t.Skip("Skipping for now")
 	uvm, uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "")
 	defer os.RemoveAll(uvmScratchDir)
 	defer uvm.Terminate()
@@ -528,7 +528,7 @@ func TestV2XenonWCOW(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)
 	}
-	defer Unmount(layerFolders, uvm, UnmountOperationAll)
+	defer UnmountContainerLayers(layerFolders, uvm, UnmountOperationAll)
 
 	// Start/stop the container
 	startContainer(t, hostedContainer)
@@ -540,7 +540,7 @@ func TestV2XenonWCOW(t *testing.T) {
 // TODO: Have a similar test where the UVM scratch folder does not exist.
 // A single WCOW xenon but where the container sandbox folder is not pre-created by the client
 func TestV2XenonWCOWContainerSandboxFolderDoesNotExist(t *testing.T) {
-	t.Skip("Skipping for now")
+	//t.Skip("Skipping for now")
 	uvm, uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "TestV2XenonWCOWContainerSandboxFolderDoesNotExist_UVM")
 	defer os.RemoveAll(uvmScratchDir)
 	defer uvm.Terminate()
@@ -563,7 +563,7 @@ func TestV2XenonWCOWContainerSandboxFolderDoesNotExist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)
 	}
-	defer Unmount(layerFolders, uvm, UnmountOperationAll)
+	defer UnmountContainerLayers(layerFolders, uvm, UnmountOperationAll)
 
 	// Start/stop the container
 	startContainer(t, hostedContainer)
@@ -577,7 +577,7 @@ func TestV2XenonWCOWContainerSandboxFolderDoesNotExist(t *testing.T) {
 
 // Two v2 WCOW containers in the same UVM, each with a single base layer
 func TestV2XenonWCOWTwoContainers(t *testing.T) {
-	t.Skip("Skipping for now")
+	//t.Skip("Skipping for now")
 	uvm, uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "TestV2XenonWCOWTwoContainers_UVM")
 	defer os.RemoveAll(uvmScratchDir)
 	defer uvm.Terminate()
@@ -600,7 +600,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)
 	}
-	defer Unmount(firstLayerFolders, uvm, UnmountOperationAll)
+	defer UnmountContainerLayers(firstLayerFolders, uvm, UnmountOperationAll)
 
 	// Second hosted container
 	secondContainerScratchDir := createWCOWTempDirWithSandbox(t)
@@ -615,7 +615,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)
 	}
-	defer Unmount(secondLayerFolders, uvm, UnmountOperationAll)
+	defer UnmountContainerLayers(secondLayerFolders, uvm, UnmountOperationAll)
 
 	startContainer(t, firstHostedContainer)
 	runCommand(t, firstHostedContainer, "cmd /s /c echo FirstContainer", `c:\`, "FirstContainer")
@@ -630,7 +630,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 // Lots of v2 WCOW containers in the same UVM, each with a single base layer. Containers aren't
 // actually started, but it stresses the SCSI controller hot-add logic.
 func TestV2XenonWCOWCreateLots(t *testing.T) {
-	t.Skip("Skipping for now")
+	//t.Skip("Skipping for now")
 	uvm, uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "TestV2XenonWCOWTwoContainers_UVM")
 	defer os.RemoveAll(uvmScratchDir)
 	defer uvm.Terminate()
@@ -654,7 +654,7 @@ func TestV2XenonWCOWCreateLots(t *testing.T) {
 			t.Fatalf("CreateContainerEx failed: %s", err)
 		}
 		defer hostedContainer.Terminate()
-		defer Unmount(layerFolders, uvm, UnmountOperationAll)
+		defer UnmountContainerLayers(layerFolders, uvm, UnmountOperationAll)
 	}
 
 	// TODO: Push it over 64 now and will get a failure.
@@ -764,7 +764,7 @@ func TestUVMSizing(t *testing.T) {
 
 // TestCreateContainerExv2XenonWCOWMultiLayer creates a V2 Xenon having multiple image layers
 func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
-	t.Skip("for now")
+	//t.Skip("for now")
 	uvmID := "TestCreateContainerExv2XenonWCOWMultiLayer_UVM"
 	uvmScratchDir, err := ioutil.TempDir("", "hcsshimtestcase")
 	if err != nil {
@@ -832,7 +832,7 @@ func TestCreateContainerExv2XenonWCOWMultiLayer(t *testing.T) {
 
 // Note that the .syso file is required to manifest the test app
 func TestDetermineSchemaVersion(t *testing.T) {
-	t.Skip("for now")
+	//t.Skip("for now")
 	m := make(map[string]string)
 	if sv := determineSchemaVersion(nil); !sv.IsV10() { // TODO: Toggle this at some point so default is 2.0
 		t.Fatalf("expected v2")
@@ -856,16 +856,16 @@ func TestDetermineSchemaVersion(t *testing.T) {
 
 // TestID validates that the requested ID is retrieved
 func TestIDOwner(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
 	layers := append(layersNanoserver, tempDir)
-	mountPath, err := Mount(layers, nil)
+	mountPath, err := MountContainerLayers(layers, nil)
 	if err != nil {
 		t.Fatalf("failed to mount container storage: %s", err)
 	}
-	defer Unmount(layers, nil, UnmountOperationAll)
+	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
@@ -902,7 +902,7 @@ func getDefaultLinuxSpec(t *testing.T) *specs.Spec {
 // createLCOWTempDirWithSandbox uses an LCOW utility VM to create a blank
 // VHDX and format it ext4.
 func TestCreateLCOWScratch(t *testing.T) {
-	t.Skip("for now")
+	//t.Skip("for now")
 	cacheDir := createTempDir(t)
 	cacheFile := filepath.Join(cacheDir, "cache.vhdx")
 	uvm, err := CreateContainerEx(&CreateOptions{Spec: getDefaultLinuxSpec(t)})
@@ -961,7 +961,7 @@ func TestCreateLCOWScratch(t *testing.T) {
 // A v1 LCOW
 // TODO LCOW doesn't work currently
 func TestV1XenonLCOW(t *testing.T) {
-	t.Skip("for now")
+	//t.Skip("for now")
 	tempDir, _ := createLCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -983,161 +983,4 @@ func TestV1XenonLCOW(t *testing.T) {
 	runCommand(t, c, "echo Hello", `/bin`, "Hello")
 	stopContainer(t, c)
 	c.Terminate()
-}
-
-// TestAllocateSCSI tests allocateSCSI/deallocateSCSI/findSCSIAttachment
-func TestAllocateSCSI(t *testing.T) {
-	t.Skip("for now")
-	v2uvm, v2uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "")
-	defer os.RemoveAll(v2uvmScratchDir)
-	defer v2uvm.Terminate()
-	v2uvmc := v2uvm.(*container)
-
-	c, l, err := findSCSIAttachment(v2uvmc, filepath.Join(v2uvmScratchDir, `sandbox.vhdx`))
-	if err != nil {
-		t.Fatalf("failed to find sandbox %s", err)
-	}
-	if c != 0 && l != 0 {
-		t.Fatalf("sandbox at %d:%d", c, l)
-	}
-
-	for i := 0; i <= (4*64)-2; i++ { // 4 controllers, each with 64 slots but 0:0 is the UVM scratch
-		controller, lun, err := allocateSCSI(v2uvmc, `anything`)
-		if err != nil {
-			t.Fatalf("unexpected error %s", err)
-		}
-		if lun != (i+1)%64 {
-			t.Fatalf("unexpected LUN:%d i=%d", lun, i)
-		}
-		if controller != (i+1)/64 {
-			t.Fatalf("unexpected controller:%d i=%d", controller, i)
-		}
-	}
-	_, _, err = allocateSCSI(v2uvmc, `shouldfail`)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-	if err.Error() != "no free SCSI locations" {
-		t.Fatalf("expected to have run out of SCSI slots")
-	}
-
-	for c := 0; c < 4; c++ {
-		for l := 0; l < 64; l++ {
-			if !(c == 0 && l == 0) {
-				deallocateSCSI(v2uvmc, c, l)
-			}
-		}
-	}
-	if v2uvmc.scsiLocations.hostPath[0][0] == "" {
-		t.Fatalf("0:0 should still be taken")
-	}
-	c, l, err = findSCSIAttachment(v2uvmc, filepath.Join(v2uvmScratchDir, `sandbox.vhdx`))
-	if err != nil {
-		t.Fatalf("failed to find sandbox %s", err)
-	}
-	if c != 0 && l != 0 {
-		t.Fatalf("sandbox at %d:%d", c, l)
-	}
-}
-
-// TestAddRemoveSCSIDiskv2WCOW validates adding and removing SCSI disks
-// from a utility VM in both attach-only and with a container path. Also does
-// negative testing so that a disk can't be attached twice.
-func TestAddRemoveSCSIDiskv2WCOW(t *testing.T) {
-	t.Skip("for now")
-	v2uvm, v2uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "")
-	defer os.RemoveAll(v2uvmScratchDir)
-	startContainer(t, v2uvm)
-	defer v2uvm.Terminate()
-
-	testAddRemoveSCSIDisk(t, v2uvm, `c:\`, "windows")
-}
-
-// TestAddRemoveSCSIDiskv1LCOW validates adding and removing SCSI disks
-// from a utility VM in both attach-only and with a container path. Also does
-// negative testing so that a disk can't be attached twice.
-func TestAddRemoveSCSIDiskv1LCOW(t *testing.T) {
-	spec := getDefaultLinuxSpec(t)
-	uvm, err := CreateContainerEx(&CreateOptions{Spec: spec})
-	if err != nil {
-		t.Fatalf("Failed create: %s", err)
-	}
-	startContainer(t, uvm)
-	defer uvm.Terminate()
-
-	testAddRemoveSCSIDisk(t, uvm, "/", "linux")
-}
-
-func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string, operatingSystem string) {
-	numDisks := 63 // Windows: 63 as the UVM scratch is at 0:0
-	if operatingSystem == "linux" {
-		numDisks-- // TODO: Why is the limit 62?
-	}
-
-	// Create a bunch of directories each containing sandbox.vhdx
-	disks := make([]string, numDisks)
-	for i := 0; i < numDisks; i++ {
-		if operatingSystem == "windows" {
-			disks[i] = createWCOWTempDirWithSandbox(t)
-		} else {
-			disks[i], _ = createLCOWTempDirWithSandbox(t)
-		}
-		defer os.RemoveAll(disks[i])
-		disks[i] = filepath.Join(disks[i], `sandbox.vhdx`)
-	}
-
-	// Add each of the disks to the utility VM. Attach-only, no container path
-	logrus.Debugln("First - adding in attach-only")
-	for i := 0; i < numDisks; i++ {
-		_, _, err := AddSCSIDisk(uvm, disks[i], "")
-		if err != nil {
-			t.Fatalf("failed to add scsi disk %d %s: %s", i, disks[i], err)
-		}
-	}
-
-	// Try to re-add. These should all fail.
-	logrus.Debugln("Next - trying to re-add")
-	for i := 0; i < numDisks; i++ {
-		_, _, err := AddSCSIDisk(uvm, disks[i], "")
-		if err == nil {
-			t.Fatalf("should not be able to re-add the same SCSI disk!")
-		}
-	}
-
-	// Remove them all
-	logrus.Debugln("Removing them all")
-	for i := 0; i < numDisks; i++ {
-		if err := RemoveSCSIDisk(uvm, disks[i]); err != nil {
-			t.Fatalf("expected success: %s", err)
-		}
-	}
-
-	// Now re-add but providing a container path
-	logrus.Debugln("Next - re-adding with a container path")
-	for i := 0; i < numDisks; i++ {
-		_, _, err := AddSCSIDisk(uvm, disks[i], fmt.Sprintf(`%s%d`, pathPrefix, i))
-		if err != nil {
-			time.Sleep(10 * time.Minute)
-			t.Fatalf("failed to add scsi disk %d %s: %s", i, disks[i], err)
-		}
-	}
-
-	// Try to re-add. These should all fail.
-	logrus.Debugln("Next - trying to re-add")
-	for i := 0; i < numDisks; i++ {
-		_, _, err := AddSCSIDisk(uvm, disks[i], fmt.Sprintf(`%s%d`, pathPrefix, i))
-		if err == nil {
-			t.Fatalf("should not be able to re-add the same SCSI disk!")
-		}
-	}
-
-	// Remove them all
-	logrus.Debugln("Next - Removing them")
-	for i := 0; i < numDisks; i++ {
-		if err := RemoveSCSIDisk(uvm, disks[i]); err != nil {
-			t.Fatalf("expected success: %s", err)
-		}
-	}
-
-	// TODO: Could extend to validate can't add a 64th disk (windows). 63rd (linux).
 }
