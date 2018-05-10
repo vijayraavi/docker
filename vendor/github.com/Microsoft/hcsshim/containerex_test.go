@@ -128,7 +128,6 @@ func createLCOWTempDirWithSandbox(t *testing.T) (string, string) {
 			t.Fatalf("Failed to start service container: %s", err)
 		}
 	}
-	t.Logf("Creating EXT4 sandbox for LCOW test cases")
 	tempDir := createTempDir(t)
 	cacheSandboxFile = filepath.Join(cacheSandboxDir, "sandbox.vhdx")
 	if err := CreateLCOWScratch(lcowServiceContainer, filepath.Join(tempDir, "sandbox.vhdx"), DefaultLCOWScratchSizeGB, cacheSandboxFile); err != nil {
@@ -1051,37 +1050,44 @@ func TestAddRemoveSCSIDiskv2WCOW(t *testing.T) {
 	startContainer(t, v2uvm)
 	defer v2uvm.Terminate()
 
-	testAddRemoveSCSIDisk(t, v2uvm, `c:\`)
+	testAddRemoveSCSIDisk(t, v2uvm, `c:\`, "windows")
 }
 
 // TestAddRemoveSCSIDiskv1LCOW validates adding and removing SCSI disks
 // from a utility VM in both attach-only and with a container path. Also does
 // negative testing so that a disk can't be attached twice.
 func TestAddRemoveSCSIDiskv1LCOW(t *testing.T) {
-	uvm, err := CreateContainerEx(&CreateOptions{Spec: getDefaultLinuxSpec(t)})
+	spec := getDefaultLinuxSpec(t)
+	uvm, err := CreateContainerEx(&CreateOptions{Spec: spec})
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
 	}
+	startContainer(t, uvm)
 	defer uvm.Terminate()
-	if err := uvm.Start(); err != nil {
-		t.Fatalf("Failed to start service container: %s", err)
-	}
-	testAddRemoveSCSIDisk(t, uvm, "/")
+
+	testAddRemoveSCSIDisk(t, uvm, "/", "linux")
 }
 
-func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string) {
-
-	const numDisks = 1 // 63 as the UVM scratch is at 0:0
+func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string, operatingSystem string) {
+	numDisks := 63 // Windows: 63 as the UVM scratch is at 0:0
+	if operatingSystem == "linux" {
+		numDisks-- // TODO: Why is the limit 62?
+	}
 
 	// Create a bunch of directories each containing sandbox.vhdx
-	var disks [numDisks]string
+	disks := make([]string, numDisks)
 	for i := 0; i < numDisks; i++ {
-		disks[i] = createWCOWTempDirWithSandbox(t)
+		if operatingSystem == "windows" {
+			disks[i] = createWCOWTempDirWithSandbox(t)
+		} else {
+			disks[i], _ = createLCOWTempDirWithSandbox(t)
+		}
 		defer os.RemoveAll(disks[i])
 		disks[i] = filepath.Join(disks[i], `sandbox.vhdx`)
 	}
 
 	// Add each of the disks to the utility VM. Attach-only, no container path
+	logrus.Debugln("First - adding in attach-only")
 	for i := 0; i < numDisks; i++ {
 		_, _, err := AddSCSIDisk(uvm, disks[i], "")
 		if err != nil {
@@ -1090,6 +1096,7 @@ func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string) {
 	}
 
 	// Try to re-add. These should all fail.
+	logrus.Debugln("Next - trying to re-add")
 	for i := 0; i < numDisks; i++ {
 		_, _, err := AddSCSIDisk(uvm, disks[i], "")
 		if err == nil {
@@ -1098,6 +1105,7 @@ func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string) {
 	}
 
 	// Remove them all
+	logrus.Debugln("Removing them all")
 	for i := 0; i < numDisks; i++ {
 		if err := RemoveSCSIDisk(uvm, disks[i]); err != nil {
 			t.Fatalf("expected success: %s", err)
@@ -1105,14 +1113,17 @@ func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string) {
 	}
 
 	// Now re-add but providing a container path
+	logrus.Debugln("Next - re-adding with a container path")
 	for i := 0; i < numDisks; i++ {
-		_, _, err := AddSCSIDisk(uvm, disks[i], fmt.Sprintf(`c:\%d`, i))
+		_, _, err := AddSCSIDisk(uvm, disks[i], fmt.Sprintf(`%s%d`, pathPrefix, i))
 		if err != nil {
+			time.Sleep(10 * time.Minute)
 			t.Fatalf("failed to add scsi disk %d %s: %s", i, disks[i], err)
 		}
 	}
 
 	// Try to re-add. These should all fail.
+	logrus.Debugln("Next - trying to re-add")
 	for i := 0; i < numDisks; i++ {
 		_, _, err := AddSCSIDisk(uvm, disks[i], fmt.Sprintf(`%s%d`, pathPrefix, i))
 		if err == nil {
@@ -1121,11 +1132,12 @@ func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string) {
 	}
 
 	// Remove them all
+	logrus.Debugln("Next - Removing them")
 	for i := 0; i < numDisks; i++ {
 		if err := RemoveSCSIDisk(uvm, disks[i]); err != nil {
 			t.Fatalf("expected success: %s", err)
 		}
 	}
 
-	// TODO: Could extend to validate can't add a 64th disk.
+	// TODO: Could extend to validate can't add a 64th disk (windows). 63rd (linux).
 }

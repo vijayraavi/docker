@@ -81,21 +81,14 @@ type Container interface {
 	// SchemaVersion returns the schema version
 	SchemaVersion() *SchemaVersion
 
-	HotRemoveVhd(s string) error // TODO Remove this when SCSI all sorted out
-
 	// CreateProcessEx is a wrapper for CreateProcess that creates an
 	// arbirary process (most usefully inside a utility VM) and performs IO copies with
 	// timeout between the pipes optionally provided as input, and the pipes in the process.
 	// It is the responsibility of the caller to call Close() on the process returned.
 	CreateProcessEx(opts *CreateProcessEx) (Process, *ByteCounts, error)
 
-	// TODO: Name this with LCOW?
-	// CreateExt4Vhdx creates a blank ext4-formatted VHDX of the specified size,
-	// at the destination. If it already exists at the cache location, it's a simple
-	// CopyFile. If not, it invokes operations in the container.
-	//CreateExt4Vhdx(destFile string, sizeGB uint32, cacheFile string) error
-
 	// DebugLCOWGCS is a debugging feature for LCOW to extract logs for diagnosis
+	// TODO Remove This from here.
 	DebugLCOWGCS()
 
 	// ID gets the ID of the Container object

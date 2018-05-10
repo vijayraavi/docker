@@ -205,9 +205,18 @@ func AddSCSIDisk(uvm Container, hostPath string, containerPath string) (int, int
 			}
 		}
 		if controller == -1 || lun == -1 {
-			uvmc.HotRemoveVhd(hostPath) // TODO Make this a common external function
+			// We're somewhat stuffed here. Can't remove it as we don't know the controller/lun
 			return -1, -1, fmt.Errorf("failed to find %s in mapped virtual disks after hot-adding", hostPath)
 		}
+
+		uvmc.scsiLocations.Lock()
+		defer uvmc.scsiLocations.Unlock()
+		if uvmc.scsiLocations.hostPath[controller][lun] != "" {
+			removeSCSI(uvm, hostPath, controller, lun)
+			return -1, -1, fmt.Errorf("internal consistency error - %d:%d is in use by %s", controller, lun, hostPath)
+		}
+		uvmc.scsiLocations.hostPath[controller][lun] = hostPath
+
 		logrus.Debugf("hcsshim::AddSCSIDisk id:%s hostPath:%s added at %d:%d sv:%s", uvmc.id, hostPath, controller, lun, uvmc.schemaVersion.String())
 		return controller, lun, nil
 	}
@@ -262,6 +271,10 @@ func RemoveSCSIDisk(uvm Container, hostPath string) error {
 	defer uvmc.scsiLocations.Unlock()
 
 	// Make sure is actually attached
+
+	// AH. TODO 5/10. This is a problem for LCOW or at least v1 as we're not tracking the attachments. Only do this for v2.
+	// For v1. Or at v1 add after we query, take the lock and add the same information locally.
+
 	controller, lun, err := findSCSIAttachment(uvmc, hostPath)
 	if err != nil {
 		return fmt.Errorf("cannot remove SCSI disk %s as it is not attached to container %s: %s", hostPath, uvmc.id, err)
@@ -541,8 +554,4 @@ func removeSCSIOnMountFailure(c Container, hostPath string, controller int, lun 
 	if err := removeSCSI(c, hostPath, controller, lun); err != nil {
 		logrus.Warnf("Possibly leaked SCSI disk on error removal path: %s", err)
 	}
-}
-
-func (container *container) HotRemoveVhd(foo string) error {
-	panic("JJH - need to remove this")
 }

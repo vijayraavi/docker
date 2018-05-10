@@ -512,6 +512,7 @@ func (container *container) MappedVirtualDisks() (map[int]MappedVirtualDiskContr
 	}
 
 	logrus.Debugf(title+" succeeded id=%s", container.id)
+	logrus.Debugf("%+v", properties.MappedVirtualDiskControllers) // TODO Hack hack temporary debugging LCOW v1
 	return properties.MappedVirtualDiskControllers, nil
 }
 
