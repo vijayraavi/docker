@@ -295,7 +295,7 @@ func CreateLCOWScratch(uvm Container, destFile string, sizeGB uint32, cacheFile 
 
 	uvmc.DebugLCOWGCS()
 
-	controller, lun, err := AddSCSIDisk(uvm, destFile, "")
+	controller, lun, err := AddSCSI(uvm, destFile, "")
 	if err != nil {
 		// TODO Rollback
 	}
@@ -312,7 +312,7 @@ func CreateLCOWScratch(uvm Container, destFile string, sizeGB uint32, cacheFile 
 		CreateInUtilityVm: true,
 	})
 	if err != nil {
-		removeSCSIDisk(uvm, destFile, controller, lun)
+		removeSCSI(uvm, destFile, controller, lun)
 		return fmt.Errorf("failed to run %+v following hot-add %s to utility VM: %s", testdCommand, destFile, err)
 	}
 	defer testdProc.Close()
@@ -320,11 +320,11 @@ func CreateLCOWScratch(uvm Container, destFile string, sizeGB uint32, cacheFile 
 	testdProc.WaitTimeout(defaultTimeoutSeconds)
 	testdExitCode, err := testdProc.ExitCode()
 	if err != nil {
-		removeSCSIDisk(uvm, destFile, controller, lun)
+		removeSCSI(uvm, destFile, controller, lun)
 		return fmt.Errorf("failed to get exit code from from %+v following hot-add %s to utility VM: %s", testdCommand, destFile, err)
 	}
 	if testdExitCode != 0 {
-		removeSCSIDisk(uvm, destFile, controller, lun)
+		removeSCSI(uvm, destFile, controller, lun)
 		return fmt.Errorf("`%+v` return non-zero exit code (%d) following hot-add %s to utility VM", testdCommand, testdExitCode, destFile)
 	}
 
@@ -340,18 +340,18 @@ func CreateLCOWScratch(uvm Container, destFile string, sizeGB uint32, cacheFile 
 		Stdout:            &lsOutput,
 	})
 	if err != nil {
-		removeSCSIDisk(uvm, destFile, controller, lun)
+		removeSCSI(uvm, destFile, controller, lun)
 		return fmt.Errorf("failed to `%+v` following hot-add %s to utility VM: %s", lsCommand, destFile, err)
 	}
 	defer lsProc.Close()
 	lsProc.WaitTimeout(defaultTimeoutSeconds)
 	lsExitCode, err := lsProc.ExitCode()
 	if err != nil {
-		removeSCSIDisk(uvm, destFile, controller, lun)
+		removeSCSI(uvm, destFile, controller, lun)
 		return fmt.Errorf("failed to get exit code from `%+v` following hot-add %s to utility VM: %s", lsCommand, destFile, err)
 	}
 	if lsExitCode != 0 {
-		removeSCSIDisk(uvm, destFile, controller, lun)
+		removeSCSI(uvm, destFile, controller, lun)
 		return fmt.Errorf("`%+v` return non-zero exit code (%d) following hot-add %s to utility VM", lsCommand, lsExitCode, destFile)
 	}
 	device := fmt.Sprintf(`/dev/%s`, strings.TrimSpace(lsOutput.String()))
@@ -369,23 +369,23 @@ func CreateLCOWScratch(uvm Container, destFile string, sizeGB uint32, cacheFile 
 		Stderr:            &mkfsStderr,
 	})
 	if err != nil {
-		removeSCSIDisk(uvm, destFile, controller, lun)
+		removeSCSI(uvm, destFile, controller, lun)
 		return fmt.Errorf("failed to `%+v` following hot-add %s to utility VM: %s", mkfsCommand, destFile, err)
 	}
 	defer mkfsProc.Close()
 	mkfsProc.WaitTimeout(defaultTimeoutSeconds)
 	mkfsExitCode, err := mkfsProc.ExitCode()
 	if err != nil {
-		removeSCSIDisk(uvm, destFile, controller, lun)
+		removeSCSI(uvm, destFile, controller, lun)
 		return fmt.Errorf("failed to get exit code from `%+v` following hot-add %s to utility VM: %s", mkfsCommand, destFile, err)
 	}
 	if mkfsExitCode != 0 {
-		removeSCSIDisk(uvm, destFile, controller, lun)
+		removeSCSI(uvm, destFile, controller, lun)
 		return fmt.Errorf("`%+v` return non-zero exit code (%d) following hot-add %s to utility VM: %s", mkfsCommand, mkfsExitCode, destFile, strings.TrimSpace(mkfsStderr.String()))
 	}
 
 	// Hot-Remove before we copy it
-	if err := removeSCSIDisk(uvm, destFile, controller, lun); err != nil {
+	if err := removeSCSI(uvm, destFile, controller, lun); err != nil {
 		return fmt.Errorf("failed to hot-remove: %s", err)
 	}
 

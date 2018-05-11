@@ -53,7 +53,7 @@ func findSCSIAttachment(container *container, findThisHostPath string) (int, int
 	return -1, -1, fmt.Errorf("%s is not attached to SCSI", findThisHostPath)
 }
 
-// AddSCSIDisk adds a SCSI disk to a utility VM at the next available location.
+// AddSCSI adds a SCSI disk to a utility VM at the next available location.
 //
 // In the v1 world, we do the modify call, HCS allocates a place on the SCSI bus,
 // and we have to query back to HCS to determine where it landed.
@@ -68,14 +68,14 @@ func findSCSIAttachment(container *container, findThisHostPath string) (int, int
 //
 // TODO: Consider a structure here so that we can extend for future functionality without
 //       breaking the API surface.
-func AddSCSIDisk(uvm Container, hostPath string, containerPath string) (int, int, error) {
+func AddSCSI(uvm Container, hostPath string, containerPath string) (int, int, error) {
 	controller := -1
 	lun := -1
 	if uvm == nil {
-		return -1, -1, fmt.Errorf("no utility VM passed to AddSCSIDisk")
+		return -1, -1, fmt.Errorf("no utility VM passed to AddSCSI")
 	}
 	uvmc := uvm.(*container)
-	logrus.Debugf("hcsshim::AddSCSIDisk id:%s hostPath:%s containerPath:%s sv:%s", uvmc.id, hostPath, containerPath, uvmc.schemaVersion.String())
+	logrus.Debugf("hcsshim::AddSCSI id:%s hostPath:%s containerPath:%s sv:%s", uvmc.id, hostPath, containerPath, uvmc.schemaVersion.String())
 
 	if uvmc.schemaVersion.IsV10() {
 		modification := &ResourceModificationRequestResponse{
@@ -89,11 +89,11 @@ func AddSCSIDisk(uvm Container, hostPath string, containerPath string) (int, int
 			Request: "Add",
 		}
 		if err := uvmc.Modify(modification); err != nil {
-			return -1, -1, fmt.Errorf("hcsshim::AddSCSIDisk: failed to modify utility VM configuration: %s", err)
+			return -1, -1, fmt.Errorf("hcsshim::AddSCSI: failed to modify utility VM configuration: %s", err)
 		}
 
 		// Get the list of mapped virtual disks to find the controller and LUN IDs
-		logrus.Debugf("hcsshim::AddSCSIDisk: %s querying mapped virtual disks", hostPath)
+		logrus.Debugf("hcsshim::AddSCSI: %s querying mapped virtual disks", hostPath)
 		mvdControllers, err := uvmc.MappedVirtualDisks()
 		if err != nil {
 			return -1, -1, fmt.Errorf("failed to get mapped virtual disks: %s", err)
@@ -117,12 +117,12 @@ func AddSCSIDisk(uvm Container, hostPath string, containerPath string) (int, int
 		uvmc.scsiLocations.Lock()
 		defer uvmc.scsiLocations.Unlock()
 		if uvmc.scsiLocations.hostPath[controller][lun] != "" {
-			removeSCSIDisk(uvm, hostPath, controller, lun)
+			removeSCSI(uvm, hostPath, controller, lun)
 			return -1, -1, fmt.Errorf("internal consistency error - %d:%d is in use by %s", controller, lun, hostPath)
 		}
 		uvmc.scsiLocations.hostPath[controller][lun] = hostPath
 
-		logrus.Debugf("hcsshim::AddSCSIDisk id:%s hostPath:%s added at %d:%d sv:%s", uvmc.id, hostPath, controller, lun, uvmc.schemaVersion.String())
+		logrus.Debugf("hcsshim::AddSCSI id:%s hostPath:%s added at %d:%d sv:%s", uvmc.id, hostPath, controller, lun, uvmc.schemaVersion.String())
 		return controller, lun, nil
 	}
 
@@ -151,26 +151,26 @@ func AddSCSIDisk(uvm Container, hostPath string, containerPath string) (int, int
 			ContainerPath: containerPath,
 			Lun:           uint8(lun),
 			AttachOnly:    (containerPath == ""),
-			// TODO: Controller: uint8(controller), // NOT IN HCS API CURRENTLY
+			// TODO: Controller: uint8(controller), // TODO NOT IN HCS API CURRENTLY
 		},
 	}
 	if err := uvm.Modify(SCSIModification); err != nil {
 		deallocateSCSI(uvmc, controller, lun)
-		return -1, -1, fmt.Errorf("hcsshim::AddSCSIDisk: failed to modify utility VM configuration: %s", err)
+		return -1, -1, fmt.Errorf("hcsshim::AddSCSI: failed to modify utility VM configuration: %s", err)
 	}
-	logrus.Debugf("hcsshim::AddSCSIDisk id:%s hostPath:%s added at %d:%d sv:%s", uvmc.id, hostPath, controller, lun, uvmc.schemaVersion.String())
+	logrus.Debugf("hcsshim::AddSCSI id:%s hostPath:%s added at %d:%d sv:%s", uvmc.id, hostPath, controller, lun, uvmc.schemaVersion.String())
 	return controller, lun, nil
 
 }
 
-// RemoveSCSIDisk removes a SCSI disk from a utility VM. As an external API, it
-// is "safe". Internal use can call removeSCSIDisk.
-func RemoveSCSIDisk(uvm Container, hostPath string) error {
+// RemoveSCSI removes a SCSI disk from a utility VM. As an external API, it
+// is "safe". Internal use can call RemoveSCSI.
+func RemoveSCSI(uvm Container, hostPath string) error {
 	if uvm == nil {
-		return fmt.Errorf("no utility VM passed to RemoveSCSIDisk")
+		return fmt.Errorf("no utility VM passed to RemoveSCSI")
 	}
 	uvmc := uvm.(*container)
-	logrus.Debugf("hcsshim::RemoveSCSIDisk id:%s hostPath:%s sv:%s", uvmc.id, hostPath, uvmc.schemaVersion.String())
+	logrus.Debugf("hcsshim::RemoveSCSI id:%s hostPath:%s sv:%s", uvmc.id, hostPath, uvmc.schemaVersion.String())
 
 	uvmc.scsiLocations.Lock()
 	defer uvmc.scsiLocations.Unlock()
@@ -181,17 +181,17 @@ func RemoveSCSIDisk(uvm Container, hostPath string) error {
 		return fmt.Errorf("cannot remove SCSI disk %s as it is not attached to container %s: %s", hostPath, uvmc.id, err)
 	}
 
-	if err := removeSCSIDisk(uvm, hostPath, controller, lun); err != nil {
+	if err := removeSCSI(uvm, hostPath, controller, lun); err != nil {
 		return fmt.Errorf("failed to remove SCSI disk %s from container %s: %s", hostPath, uvmc.id, err)
 
 	}
-	logrus.Debugf("hcsshim::RemoveSCSIDisk: %s removed from %s %d:%d", hostPath, uvmc.id, controller, lun)
+	logrus.Debugf("hcsshim::RemoveSCSI: %s removed from %s %d:%d", hostPath, uvmc.id, controller, lun)
 	return nil
 }
 
-// removeSCSIDisk is the internally callable "unsafe" version of RemoveSCSIDisk. The mutex
+// removeSCSI is the internally callable "unsafe" version of RemoveSCSI. The mutex
 // MUST be held when calling this function.
-func removeSCSIDisk(uvm Container, hostPath string, controller int, lun int) error {
+func removeSCSI(uvm Container, hostPath string, controller int, lun int) error {
 	var scsiModification interface{}
 	if uvm.(*container).schemaVersion.IsV10() {
 		scsiModification = &ResourceModificationRequestResponse{
