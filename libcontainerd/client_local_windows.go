@@ -122,8 +122,8 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 		Id:            id,
 		Owner:         "moby",
 		SchemaVersion: schemaVersion,
-		Logger:        logrus.WithField("container", id),
-		Spec:          spec,
+		//		Logger:        logrus.WithField("container", id),
+		Spec: spec,
 	}
 
 	if schemaVersion.IsV20() {
@@ -131,13 +131,13 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 			uvmID := fmt.Sprintf("%s_uvm", id)
 			uvmScratchDir := `c:\foobar` // TODO
 
-			uvmLayerFolder, err := hcsshim.UVMFolderFromLayerFolders(spec.Windows.LayerFolders)
+			uvmLayerFolder, err := hcsshim.LocateWCOWUVMFolderFromLayerFolders(spec.Windows.LayerFolders)
 			if err != nil {
 				return err
 			}
 
 			// Create a scratch for the UVM to boot from
-			if err := hcsshim.CreateWindowsUVMSandbox(uvmLayerFolder, uvmScratchDir, uvmID); err != nil {
+			if err := hcsshim.CreateWCOWUVMSandbox(uvmLayerFolder, uvmScratchDir, uvmID); err != nil {
 				return err
 			}
 
@@ -149,14 +149,14 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 
 			// Create it
 			uvm, err := hcsshim.CreateContainerEx(&hcsshim.CreateOptions{
-				Id:              uvmID,
-				Owner:           "moby",
-				SchemaVersion:   schemaVersion,
-				Logger:          logrus.WithField("container", id),
-				IsHostingSystem: true,
+				Id:            uvmID,
+				Owner:         "moby",
+				SchemaVersion: schemaVersion,
+				//				Logger:          logrus.WithField("container", id),
+				AsHostingSystem: true,
 				Spec: &specs.Spec{
 					Windows: &specs.Windows{
-						LayerFolders: []string{uvmScratchDir},
+						LayerFolders: []string{spec.Windows.LayerFolders[0], uvmScratchDir},                  // HACK TEMPORARY the [0] but.
 						HyperV:       &specs.WindowsHyperV{filepath.Join(uvmLayerFolder, `UtilityVM\Files`)}, // TODO CUrrently this is required
 						Resources:    uvmResources,
 					},
@@ -173,16 +173,17 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 			}
 
 			// Mount the containers storage in the UVM
-			cls, err := hcsshim.Mount(spec.Windows.LayerFolders, uvm, schemaVersion)
-			if err != nil {
-				uvm.Terminate()
-				return fmt.Errorf("failed to mount container storage: %s", err)
-			}
-			combinedLayers := cls.(hcsshim.CombinedLayersV2)
-			containerCreateOptions.MountedLayers = &hcsshim.ContainersResourcesStorageV2{
-				Layers: combinedLayers.Layers,
-				Path:   combinedLayers.ContainerRootPath,
-			}
+			//cls, err := hcsshim.MountContainerLayers(spec.Windows.LayerFolders, uvm)
+			//			_, err = hcsshim.MountContainerLayers(spec.Windows.LayerFolders, uvm)
+			//			if err != nil {
+			//				uvm.Terminate()
+			//				return fmt.Errorf("failed to mount container storage: %s", err)
+			//			}
+			//			combinedLayers := cls.(hcsshim.CombinedLayersV2)
+			//			containerCreateOptions.MountedLayers = &hcsshim.ContainersResourcesStorageV2{
+			//				Layers: combinedLayers.Layers,
+			//				Path:   combinedLayers.ContainerRootPath,
+			//			}
 		} // If a Hyper-V container
 	}
 
@@ -1068,7 +1069,7 @@ func (c *client) shutdownContainer(ctr *container) error {
 
 	// Handle the utility VM lifetime in v2. Once the containers sandbox is unmounted, we just shoot it. We don't need to unmount VSMB (minor optimisation)
 	if ctr.hcsUVM != nil {
-		if unmountErr := hcsshim.Unmount(ctr.ociSpec.Windows.LayerFolders, ctr.hcsUVM, hcsshim.SchemaV20(), hcsshim.UnmountOperationSCSI); unmountErr != nil {
+		if unmountErr := hcsshim.UnmountContainerLayers(ctr.ociSpec.Windows.LayerFolders, ctr.hcsUVM, hcsshim.UnmountOperationSCSI); unmountErr != nil {
 			c.logger.WithError(unmountErr).WithField("container", ctr.id).Error("failed to unmount storage from utility VM")
 			if returnError == nil {
 				returnError = unmountErr

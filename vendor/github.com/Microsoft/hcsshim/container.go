@@ -501,6 +501,9 @@ func (container *container) ProcessList() ([]ProcessListItem, error) {
 //   }
 //}
 func (container *container) MappedVirtualDisks() (map[int]MappedVirtualDiskController, error) {
+	if !container.schemaVersion.IsV10() {
+		return nil, fmt.Errorf("MappedVirtualDisks is only supported for schema v1 containers")
+	}
 	container.handleLock.RLock()
 	defer container.handleLock.RUnlock()
 	operation := "MappedVirtualDiskList"
@@ -517,7 +520,7 @@ func (container *container) MappedVirtualDisks() (map[int]MappedVirtualDiskContr
 	}
 
 	logrus.Debugf(title+" succeeded id=%s", container.id)
-	logrus.Debugf("%+v", properties.MappedVirtualDiskControllers) // TODO Hack hack temporary debugging LCOW v1
+	logrus.Debugf("%+v", properties.MappedVirtualDiskControllers)
 	return properties.MappedVirtualDiskControllers, nil
 }
 

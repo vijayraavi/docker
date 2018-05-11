@@ -34,12 +34,12 @@ const (
 type CreateOptions struct {
 
 	// Common parameters
-	Id            string         // Identifier for the container
-	Owner         string         // Specifies the owner. Defaults to executable name.
-	Spec          *specs.Spec    // Definition of the container or utility VM being created
-	SchemaVersion *SchemaVersion // Requested Schema Version. Defaults to v2 for RS5, v1 for RS1..RS4
-	HostingSystem Container      // Container object representing a utility or service VM in which the container is to be created.
-	AsUtilityVM   bool           // Create is for a utility/service VM
+	Id              string         // Identifier for the container
+	Owner           string         // Specifies the owner. Defaults to executable name.
+	Spec            *specs.Spec    // Definition of the container or utility VM being created
+	SchemaVersion   *SchemaVersion // Requested Schema Version. Defaults to v2 for RS5, v1 for RS1..RS4
+	HostingSystem   Container      // Container object representing a utility or service VM in which the container is to be created.
+	AsHostingSystem bool           // This is a utility VM for hosting containers, or for use as a service VM
 
 	// LCOW specific parameters
 	KirdPath          string // Folder in which kernel and initrd reside. Defaults to \Program Files\Linux Containers
@@ -120,7 +120,7 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 
 	// Is a WCOW request.
 
-	if createOptions.AsUtilityVM {
+	if createOptions.AsHostingSystem {
 		// TODO Should be able to put this into CreateHCSContainerDocument
 		return createWCOWv2UVM(createOptions)
 	}

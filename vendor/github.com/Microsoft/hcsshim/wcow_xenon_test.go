@@ -352,9 +352,9 @@ func createv2WCOWUVM(t *testing.T, uvmLayers []string, uvmId string, resources *
 	}
 
 	createOptions := &CreateOptions{
-		AsUtilityVM:   true,
-		SchemaVersion: SchemaV20(),
-		Spec:          spec,
+		AsHostingSystem: true,
+		SchemaVersion:   SchemaV20(),
+		Spec:            spec,
 	}
 	if uvmId != "" {
 		createOptions.Id = uvmId
