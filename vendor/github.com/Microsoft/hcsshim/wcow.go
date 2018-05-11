@@ -124,7 +124,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 	}
 	uvm := &ComputeSystemV2{
 		Owner:         createOptions.actualOwner,
-		SchemaVersion: createOptions.sv,
+		SchemaVersion: createOptions.actualSchemaVersion,
 		VirtualMachine: &VirtualMachineV2{
 			Chipset: &VirtualMachinesResourcesChipsetV2{
 				UEFI: &VirtualMachinesResourcesUefiV2{
@@ -338,7 +338,7 @@ func CreateWCOWHCSContainerDocument(createOptions *CreateOptions) (string, error
 			if createOptions.Spec.Root != nil && createOptions.Spec.Root.Path != "" {
 				return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, fmt.Errorf("invalid container spec - Root.Path must be omitted for a Hyper-V container"))
 			}
-			if createOptions.sv.IsV10() {
+			if createOptions.actualSchemaVersion.IsV10() {
 				v1.HvPartition = true
 				if createOptions.Spec.Windows.HyperV.UtilityVMPath != "" {
 					v1.HvRuntime = &HvRuntime{ImagePath: createOptions.Spec.Windows.HyperV.UtilityVMPath}
@@ -420,7 +420,7 @@ func CreateWCOWHCSContainerDocument(createOptions *CreateOptions) (string, error
 	// If so, the containerRootPath should go into
 	//  specs.Root.Path. However, we need also a way to pass the combinedLayers.Layers
 
-	if createOptions.HostingSystem != nil && createOptions.sv.IsV20() {
+	if createOptions.HostingSystem != nil && createOptions.actualSchemaVersion.IsV20() {
 		// Perform the mount of the layer folders into the utility vm
 
 		//		uvmFolder, err := LocateWCOWUVMFolderFromLayerFolders(createOptions.Spec.Windows.LayerFolders)
@@ -479,7 +479,7 @@ func CreateWCOWHCSContainerDocument(createOptions *CreateOptions) (string, error
 
 	}
 
-	if createOptions.sv.IsV10() {
+	if createOptions.actualSchemaVersion.IsV10() {
 		v1b, err := json.Marshal(v1)
 		if err != nil {
 			return "", unmountOnFailure(storageWasMountedByUs, createOptions.Spec.Windows.LayerFolders, err)

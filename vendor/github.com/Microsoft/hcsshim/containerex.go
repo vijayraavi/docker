@@ -12,18 +12,12 @@ import (
 
 const (
 	// HCSOPTION_ constants are string values which can be added in the RuntimeOptions of a call to CreateContainerEx.
-	HCSOPTION_SCHEMA_VERSION              = "hcs.schema.version"                // HCS:  Request a schema version. Content is a SchemaVersion object. Defaults to v2 for RS5, v1 for RS1..RS4
-	HCSOPTION_ADDITIONAL_JSON_V1          = "hcs.additional.v1.json"            // HCS:  Additional JSON to merge into Create calls in HCS for V1 schema. Default is none
-	HCSOPTION_ADDITIONAL_JSON_V2          = "hcs.additional.v2.json"            // HCS:  Additional JSON to merge into Create calls in HCS for V2.x schema. Default is none
-	HCSOPTION_IS_UTILITY_VM               = "hcs.is.utility.vm"                 // HCS:  If defined, the spec is for a utility VM. Default is a container.
-	HCSOPTION_WCOW_V2_UVM_MEMORY_OVERHEAD = "hcs.wcow.v2.uvm.additional.memory" // WCOW: v2 schema MB of memory to add to WCOW UVM when calculating resources. Defaults to 256MB
-	HCSOPTION_LCOW_KIRD_PATH              = "lcow.kirdpath"                     // LCOW: Folder in which kernel and initrd reside. Defaults to \Program Files\Linux Containers
-	HCSOPTION_LCOW_KERNEL_FILE            = "lcow.kernel"                       // LCOW: Filename under kirdpath for the kernel. Defaults to bootx64.efi
-	HCSOPTION_LCOW_INITRD_FILE            = "lcow.initrd"                       // LCOW: Filename under kirdpath for the initrd. Defaults to initrd.img
-	HCSOPTION_LCOW_BOOT_PARAMETERS        = "lcow.bootparameters"               // LCOW: Additional boot parameters for starting the kernel. Default is no additional parameters
-	HCSOPTION_LCOW_GLOBALMODE             = "lcow.globalmode"                   // LCOW: Utility VM lifetime. Presence of this causes global mode which is insecure, but more efficient. Default is non-global
-	HCSOPTION_LCOW_SANDBOXSIZE_GB         = "lcow.sandboxsize.gb"               // LCOW: Size of sandbox in GB
-	HCSOPTION_LCOW_TIMEOUT                = "lcow.timeout"                      // LCOW: Timeout (seconds) waiting for utility VM operations to complete.
+	//HCSOPTION_ADDITIONAL_JSON_V1 = "hcs.additional.v1.json" // HCS:  Additional JSON to merge into Create calls in HCS for V1 schema. Default is none
+	//HCSOPTION_ADDITIONAL_JSON_V2 = "hcs.additional.v2.json" // HCS:  Additional JSON to merge into Create calls in HCS for V2.x schema. Default is none
+	//HCSOPTION_WCOW_V2_UVM_MEMORY_OVERHEAD = "hcs.wcow.v2.uvm.additional.memory" // WCOW: v2 schema MB of memory to add to WCOW UVM when calculating resources. Defaults to 256MB
+	//HCSOPTION_LCOW_GLOBALMODE     = "lcow.globalmode"     // LCOW: Utility VM lifetime. Presence of this causes global mode which is insecure, but more efficient. Default is non-global
+	//HCSOPTION_LCOW_SANDBOXSIZE_GB = "lcow.sandboxsize.gb" // LCOW: Size of sandbox in GB
+	//HCSOPTION_LCOW_TIMEOUT = "lcow.timeout" // LCOW: Timeout (seconds) waiting for utility VM operations to complete.
 
 	// WINDOWS_BUILD_ constants are hopefully self explanatory :) RS2 was a client-only release in case you're asking why it's not in the list.
 	WINDOWS_BUILD_RS1 = 14393
@@ -38,21 +32,28 @@ const (
 // where layer1 is the base read-only layer, layern is the top-most read-only
 // layer, and sandbox is the RW layer. This is for historical reasons only.
 type CreateOptions struct {
-	Id            string            // Identifier for the container
-	Owner         string            // Specifies the owner. Defaults to executable name.
-	Spec          *specs.Spec       // Definition of the container or utility VM being created
-	Options       map[string]string // Runtime options. See HCSOPTION_ constants for possible values.
-	HostingSystem Container         // Container object representing a utility or service VM
-	//Logger        *logrus.Entry     // For logging
+
+	// Common parameters
+	Id            string         // Identifier for the container
+	Owner         string         // Specifies the owner. Defaults to executable name.
+	Spec          *specs.Spec    // Definition of the container or utility VM being created
+	SchemaVersion *SchemaVersion // Requested Schema Version. Defaults to v2 for RS5, v1 for RS1..RS4
+	HostingSystem Container      // Container object representing a utility or service VM in which the container is to be created.
+	AsUtilityVM   bool           // Create is for a utility/service VM
+
+	// LCOW specific parameters
+	KirdPath          string // Folder in which kernel and initrd reside. Defaults to \Program Files\Linux Containers
+	KernelFile        string // Filename under KirdPath for the kernel. Defaults to bootx64.efi
+	InitrdFile        string // Filename under KirdPath for the initrd image. Defaults to initrd.img
+	KernelBootOptions string // Additional boot options for the kernel
 
 	// Internal fields
-	sv             *SchemaVersion // Calculated based on Windows build and optional caller-supplied override
-	actualId       string         // Identifier for the container
-	actualOwner    string         // Owner for the container
-	lcowkird       string         // LCOW kernel/initrd path
-	lcowkernel     string         // LCOW kernel file
-	lcowinitrd     string         // LCOW initrd file
-	lcowbootparams string         // LCOW additional boot parameters
+	actualSchemaVersion *SchemaVersion // Calculated based on Windows build and optional caller-supplied override
+	actualId            string         // Identifier for the container
+	actualOwner         string         // Owner for the container
+	actualKirdPath      string         // LCOW kernel/initrd path
+	actualKernelFile    string         // LCOW kernel file
+	actualInitrdFile    string         // LCOW initrd file
 }
 
 // valueFromStringMap scans a map[string]string such as runtime options or
@@ -73,7 +74,7 @@ func valueFromStringMap(m map[string]string, name string) string {
 // scenarios, including v1 HCS schema calls, as well as more complex v2 HCS schema
 // calls.
 func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
-	logrus.Debugf("hcsshim::CreateContainerEx options: %+v", createOptions.Options)
+	logrus.Debugf("hcsshim::CreateContainerEx options: %+v", createOptions)
 
 	createOptions.actualId = createOptions.Id
 	if createOptions.actualId == "" {
@@ -97,10 +98,10 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		if !createOptions.HostingSystem.SchemaVersion().IsV20() {
 			return nil, fmt.Errorf("supplied hosting system must be a v2 schema container")
 		}
-		createOptions.sv = createOptions.HostingSystem.SchemaVersion()
+		createOptions.actualSchemaVersion = createOptions.HostingSystem.SchemaVersion()
 	} else {
-		createOptions.sv = determineSchemaVersion(createOptions.Options)
-		logrus.Debugf("hcsshim::CreateContainerEx using schema %s", createOptions.sv.String())
+		createOptions.actualSchemaVersion = determineSchemaVersion(createOptions.SchemaVersion)
+		logrus.Debugf("hcsshim::CreateContainerEx using schema %s", createOptions.actualSchemaVersion.String())
 	}
 
 	if createOptions.Spec.Linux != nil {
@@ -108,7 +109,7 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 			return nil, fmt.Errorf("containerSpec 'Windows' field must container layer folders for a Linux container")
 		}
 		getLCOWSettings(createOptions)
-		if createOptions.sv.IsV10() {
+		if createOptions.actualSchemaVersion.IsV10() {
 			logrus.Debugln("hcsshim::CreateContainerEx Calling createLCOWv1")
 			return createLCOWv1(createOptions)
 		} else {
@@ -119,7 +120,7 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 
 	// Is a WCOW request.
 
-	if valueFromStringMap(createOptions.Options, HCSOPTION_IS_UTILITY_VM) != "" {
+	if createOptions.AsUtilityVM {
 		// TODO Should be able to put this into CreateHCSContainerDocument
 		return createWCOWv2UVM(createOptions)
 	}
@@ -128,7 +129,7 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	return createContainer(createOptions.actualId, hcsDocument, createOptions.sv)
+	return createContainer(createOptions.actualId, hcsDocument, createOptions.actualSchemaVersion)
 }
 
 // UVMResourcesFromContainerSpec takes a container spec and generates a

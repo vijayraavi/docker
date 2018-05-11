@@ -66,21 +66,16 @@ func (sv *SchemaVersion) String() string {
 
 // determineSchemaVersion works out what schema version to use based on build and
 // requested option.
-func determineSchemaVersion(options map[string]string) *SchemaVersion {
+func determineSchemaVersion(requestedSV *SchemaVersion) *SchemaVersion {
 	sv := SchemaV10()
 	if GetOSVersion().Build >= WINDOWS_BUILD_RS5 {
 		sv = SchemaV10() // TODO: When do we flip this to V2 for RS5? Answer - when functionally complete. Templating. CredSpecs. Networking. LCOW...
 	}
-	if requested := valueFromStringMap(options, HCSOPTION_SCHEMA_VERSION); requested != "" {
-		requestedSV := &SchemaVersion{}
-		if err := json.Unmarshal([]byte(requested), &requestedSV); err == nil {
-			if err := requestedSV.isSupported(); err == nil {
-				sv = requestedSV
-			} else {
-				logrus.Warnf("Ignoring option '%s': %s: %s", HCSOPTION_SCHEMA_VERSION, requested, err)
-			}
+	if requestedSV != nil {
+		if err := requestedSV.isSupported(); err == nil {
+			sv = requestedSV
 		} else {
-			logrus.Warnf("hcsshim: Ignoring invalid option '%s': %s (%s)", HCSOPTION_SCHEMA_VERSION, requested, err.Error())
+			logrus.Warnf("Ignoring unsupported requested schema version %+v", requestedSV)
 		}
 	}
 	return sv

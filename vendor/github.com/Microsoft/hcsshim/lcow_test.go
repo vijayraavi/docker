@@ -115,15 +115,12 @@ func TestV1XenonLCOW(t *testing.T) {
 	tempDir, _ := createLCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
-
 	spec := getDefaultLinuxSpec(t)
 	spec.Windows.LayerFolders = append(layersAlpine, tempDir)
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:      "TextV1XenonLCOW",
-		Options: options,
-		Spec:    spec,
+		Id:            "TextV1XenonLCOW",
+		SchemaVersion: SchemaV10(),
+		Spec:          spec,
 	})
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)

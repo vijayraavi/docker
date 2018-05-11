@@ -24,12 +24,10 @@ func TestV1Argon(t *testing.T) {
 	}
 	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
 	c, err := CreateContainerEx(&CreateOptions{
-		Options: options,
-		Id:      "TestV1Argon",
-		Owner:   "unit-test",
+		SchemaVersion: SchemaV10(),
+		Id:            "TestV1Argon",
+		Owner:         "unit-test",
 		Spec: &specs.Spec{
 			Hostname: "goofy",
 			Windows:  &specs.Windows{LayerFolders: layers},
@@ -53,12 +51,10 @@ func TestV1ArgonAutoMount(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	layers := append(layersBusybox, tempDir)
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:      "TestV1ArgonAutoMount",
-		Options: options,
-		Spec:    &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
+		Id:            "TestV1ArgonAutoMount",
+		SchemaVersion: SchemaV10(),
+		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
 	})
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
@@ -77,12 +73,10 @@ func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	layers := append(layersBusybox, tempDir)
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:      "TestV1ArgonMultipleBaseLayersAutoMount",
-		Options: options,
-		Spec:    &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
+		Id:            "TestV1ArgonMultipleBaseLayersAutoMount",
+		SchemaVersion: SchemaV10(),
+		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
 	})
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
@@ -112,10 +106,8 @@ func TestV2Argon(t *testing.T) {
 	}
 	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
 	c, err := CreateContainerEx(&CreateOptions{
-		Options: options,
+		SchemaVersion: SchemaV20(),
 		Spec: &specs.Spec{
 			Hostname: "mickey",
 			Windows:  &specs.Windows{LayerFolders: layers},
@@ -145,11 +137,9 @@ func TestV2ArgonMultipleBaseLayers(t *testing.T) {
 	}
 	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
 	c, err := CreateContainerEx(&CreateOptions{
-		Options: options,
-		Id:      "TestV2ArgonMultipleBaseLayers",
+		SchemaVersion: SchemaV20(),
+		Id:            "TestV2ArgonMultipleBaseLayers",
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: layers},
 			Root:    &specs.Root{Path: mountPath.(string)},
@@ -171,12 +161,10 @@ func TestV2ArgonAutoMountMultipleBaseLayers(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	layers := append(layersBusybox, tempDir)
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:      "TestV2ArgonAutoMountMultipleBaseLayers",
-		Options: options,
-		Spec:    &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
+		SchemaVersion: SchemaV20(),
+		Id:            "TestV2ArgonAutoMountMultipleBaseLayers",
+		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
 	})
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)

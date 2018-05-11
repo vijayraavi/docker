@@ -24,19 +24,18 @@ const (
 )
 
 func getLCOWSettings(createOptions *CreateOptions) {
-	createOptions.lcowkird = valueFromStringMap(createOptions.Options, HCSOPTION_LCOW_KIRD_PATH)
-	if createOptions.lcowkird == "" {
-		createOptions.lcowkird = filepath.Join(os.Getenv("ProgramFiles"), "Linux Containers")
+	createOptions.actualKirdPath = createOptions.KirdPath
+	if createOptions.actualKirdPath == "" {
+		createOptions.actualKirdPath = filepath.Join(os.Getenv("ProgramFiles"), "Linux Containers")
 	}
-	createOptions.lcowkernel = valueFromStringMap(createOptions.Options, HCSOPTION_LCOW_KERNEL_FILE)
-	if createOptions.lcowkernel == "" {
-		createOptions.lcowkernel = "bootx64.efi"
+	createOptions.actualKernelFile = createOptions.KernelFile
+	if createOptions.actualKernelFile == "" {
+		createOptions.actualKernelFile = "bootx64.efi"
 	}
-	createOptions.lcowinitrd = valueFromStringMap(createOptions.Options, HCSOPTION_LCOW_INITRD_FILE)
-	if createOptions.lcowinitrd == "" {
-		createOptions.lcowinitrd = "initrd.img"
+	createOptions.actualInitrdFile = createOptions.InitrdFile
+	if createOptions.actualInitrdFile == "" {
+		createOptions.actualInitrdFile = "initrd.img"
 	}
-	createOptions.lcowbootparams = valueFromStringMap(createOptions.Options, HCSOPTION_LCOW_BOOT_PARAMETERS)
 }
 
 // createLCOWv1 creates a Linux (LCOW) container using the V1 schema.
@@ -51,10 +50,10 @@ func createLCOWv1(createOptions *CreateOptions) (Container, error) {
 		TerminateOnLastHandleClosed: true,
 	}
 	configuration.HvRuntime = &HvRuntime{
-		ImagePath:           createOptions.lcowkird,
-		LinuxKernelFile:     createOptions.lcowkernel,
-		LinuxInitrdFile:     createOptions.lcowinitrd,
-		LinuxBootParameters: createOptions.lcowbootparams,
+		ImagePath:           createOptions.actualKirdPath,
+		LinuxKernelFile:     createOptions.actualKernelFile,
+		LinuxInitrdFile:     createOptions.actualInitrdFile,
+		LinuxBootParameters: createOptions.KernelBootOptions,
 	}
 
 	// TODO These checks were elsewhere. In common with v2 too.

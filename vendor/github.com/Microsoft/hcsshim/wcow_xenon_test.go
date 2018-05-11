@@ -24,11 +24,9 @@ func TestV1XenonWCOW(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LocateWCOWUVMFolderFromLayerFolders failed %s", err)
 	}
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:      "TestV1XenonWCOW",
-		Options: options,
+		Id:            "TestV1XenonWCOW",
+		SchemaVersion: SchemaV10(),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: append(layers, tempDir),
@@ -50,12 +48,10 @@ func TestV1XenonWCOWNoUVMPath(t *testing.T) {
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:      "TestV1XenonWCOWNoUVMPath",
-		Owner:   "unit-test",
-		Options: options,
+		Id:            "TestV1XenonWCOWNoUVMPath",
+		Owner:         "unit-test",
+		SchemaVersion: SchemaV10(),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: append(layersNanoserver, tempDir),
@@ -78,11 +74,9 @@ func TestV1XenonMultipleBaseLayersNoUVMPath(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	layers := layersBusybox
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:      "TestV1XenonWCOW",
-		Options: options,
+		Id:            "TestV1XenonWCOW",
+		SchemaVersion: SchemaV10(),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: append(layers, tempDir),
@@ -117,11 +111,9 @@ func TestV2XenonWCOW(t *testing.T) {
 	// Create the container hosted inside the utility VM
 	containerScratchDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(containerScratchDir)
-	options := make(map[string]string)
 	layerFolders := append(layersNanoserver, containerScratchDir)
 	hostedContainer, err := CreateContainerEx(&CreateOptions{
 		HostingSystem: uvm,
-		Options:       options,
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
 	})
 	if err != nil {
@@ -185,13 +177,11 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	// First hosted container
 	firstContainerScratchDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(firstContainerScratchDir)
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
 	firstLayerFolders := append(layersNanoserver, firstContainerScratchDir)
 	firstHostedContainer, err := CreateContainerEx(&CreateOptions{
 		Id:            "FirstContainer",
 		HostingSystem: uvm,
-		Options:       options,
+		SchemaVersion: SchemaV20(),
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: firstLayerFolders}},
 	})
 	if err != nil {
@@ -206,7 +196,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	secondHostedContainer, err := CreateContainerEx(&CreateOptions{
 		Id:            "SecondContainer",
 		HostingSystem: uvm,
-		Options:       options,
+		SchemaVersion: SchemaV20(),
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: secondLayerFolders}},
 	})
 	if err != nil {
@@ -335,13 +325,11 @@ func TestV2XenonWCOWCreateLots(t *testing.T) {
 	for i := 0; i < 64; i++ {
 		containerScratchDir := createWCOWTempDirWithSandbox(t)
 		defer os.RemoveAll(containerScratchDir)
-		options := make(map[string]string)
-		options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
 		layerFolders := append(layersNanoserver, containerScratchDir)
 		hostedContainer, err := CreateContainerEx(&CreateOptions{
 			Id:            fmt.Sprintf("container%d", i),
 			HostingSystem: uvm,
-			Options:       options,
+			SchemaVersion: SchemaV20(),
 			Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
 		})
 		if err != nil {
@@ -362,13 +350,11 @@ func createv2WCOWUVM(t *testing.T, uvmLayers []string, uvmId string, resources *
 	if resources != nil {
 		spec.Windows.Resources = resources
 	}
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
-	options[HCSOPTION_IS_UTILITY_VM] = "yes"
 
 	createOptions := &CreateOptions{
-		Options: options,
-		Spec:    spec,
+		AsUtilityVM:   true,
+		SchemaVersion: SchemaV20(),
+		Spec:          spec,
 	}
 	if uvmId != "" {
 		createOptions.Id = uvmId
@@ -407,13 +393,10 @@ func TestV2XenonWCOWMultiLayer(t *testing.T) {
 	defer os.RemoveAll(containerScratchDir)
 
 	// Create the container
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
 	containerLayers := append(layersBusybox, containerScratchDir)
 	xenon, err := CreateContainerEx(&CreateOptions{
 		Id:            "container",
 		HostingSystem: uvm,
-		Options:       options,
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: containerLayers}},
 	})
 	if err != nil {

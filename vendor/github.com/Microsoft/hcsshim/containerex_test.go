@@ -185,11 +185,9 @@ func TestID(t *testing.T) {
 	}
 	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 
-	options := make(map[string]string)
-	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
 	c, err := CreateContainerEx(&CreateOptions{
-		Id:      "gruntbuggly",
-		Options: options,
+		Id:            "gruntbuggly",
+		SchemaVersion: SchemaV20(),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: layers},
 			Root:    &specs.Root{Path: mountPath.(string)},
