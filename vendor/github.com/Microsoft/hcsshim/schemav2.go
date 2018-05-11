@@ -135,11 +135,6 @@ type ContainerV2 struct {
 	RegistryChanges   *RegistryChangesV2                     `json:"RegistryChanges,omitempty"`
 }
 
-type SchemaVersion struct {
-	Major int32 `json:"Major"`
-	Minor int32 `json:"Minor"`
-}
-
 type HostedSystemV2 struct {
 	SchemaVersion *SchemaVersion `json:"SchemaVersion,omitempty"`
 	Container     *ContainerV2   `json:"Container,omitempty"`
@@ -318,38 +313,6 @@ type ComputeSystemV2 struct {
 	ShouldTerminateOnLastHandleClosed bool              `json:"ShouldTerminateOnLastHandleClosed,omitempty"`
 	VirtualMachine                    *VirtualMachineV2 `json:"VirtualMachine,omitempty"`
 }
-
-// Type of Request Support in ModifySystem (v1) or ModifySettingsRequest (v2)
-type RequestType string
-
-// Type of Resource in ModifySystem (v1) or ModifySettingsRequest (v2)
-type ResourceType string
-
-// RequestType const
-const (
-	RequestTypeAdd    RequestType = "Add"
-	RequestTypeRemove RequestType = "Remove"
-	RequestTypeUpdate RequestType = "Update" // V2
-)
-
-// ResourceType const
-const (
-	ResourceTypeMemory             ResourceType = "Memory"
-	ResourceTypeCpuGroup           ResourceType = "CpuGroup"
-	ResourceTypeMappedDirectory    ResourceType = "MappedDirectory"
-	ResourceTypeMappedPipe         ResourceType = "MappedPipe"
-	ResourceTypeMappedVirtualDisk  ResourceType = "MappedVirtualDisk"
-	ResourceTypeNetwork            ResourceType = "Network"
-	ResourceTypeVSmbShare          ResourceType = "VSmbShare"
-	ResourceTypePlan9Share         ResourceType = "Plan9Share"
-	ResourceTypeCombinedLayers     ResourceType = "CombinedLayers"
-	ResourceTypeHvSocket           ResourceType = "HvSocket"
-	ResourceTypeSharedMemoryRegion ResourceType = "SharedMemoryRegion"
-	ResourceTypeVPMemDevice        ResourceType = "VPMemDevice"
-	ResourceTypeGpu                ResourceType = "Gpu"
-	ResourceTypeCosIndex           ResourceType = "CosIndex" // v2.1
-	ResourceTypeRmid               ResourceType = "Rmid"     // v2.1
-)
 
 type ModifySettingsRequestV2 struct {
 	ResourceUri    string       `json:ResourceUri,omitempty"`

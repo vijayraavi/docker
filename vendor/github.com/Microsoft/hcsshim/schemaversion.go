@@ -7,6 +7,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type SchemaVersion struct {
+	Major int32 `json:"Major"`
+	Minor int32 `json:"Minor"`
+}
+
 // SchemaV10 makes it easy for callers to get a v1.0 schema version object
 func SchemaV10() *SchemaVersion {
 	return &SchemaVersion{Major: 1, Minor: 0}

@@ -1,5 +1,3 @@
-// +build windows
-
 //
 // These unit tests must run on a system setup to run both Argons and Xenons,
 // have docker installed, and have the nanoserver (WCOW) and alpine (LCOW)
@@ -77,23 +75,23 @@ func TestAllocateSCSI(t *testing.T) {
 	}
 }
 
-// TestAddRemoveSCSIDiskv2WCOW validates adding and removing SCSI disks
+// TestAddRemoveSCSIv2WCOW validates adding and removing SCSI disks
 // from a utility VM in both attach-only and with a container path. Also does
 // negative testing so that a disk can't be attached twice.
-func TestAddRemoveSCSIDiskv2WCOW(t *testing.T) {
+func TestAddRemoveSCSIv2WCOW(t *testing.T) {
 	t.Skip("for now")
 	v2uvm, v2uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "", nil)
 	defer os.RemoveAll(v2uvmScratchDir)
 	startContainer(t, v2uvm)
 	defer v2uvm.Terminate()
 
-	testAddRemoveSCSIDisk(t, v2uvm, `c:\`, "windows")
+	testAddRemoveSCSI(t, v2uvm, `c:\`, "windows")
 }
 
-// TestAddRemoveSCSIDiskv1LCOW validates adding and removing SCSI disks
+// TestAddRemoveSCSIv1LCOW validates adding and removing SCSI disks
 // from a utility VM in both attach-only and with a container path. Also does
 // negative testing so that a disk can't be attached twice.
-func TestAddRemoveSCSIDiskv1LCOW(t *testing.T) {
+func TestAddRemoveSCSIv1LCOW(t *testing.T) {
 	t.Skip("for now")
 	spec := getDefaultLinuxSpec(t)
 	uvm, err := CreateContainerEx(&CreateOptions{Spec: spec})
@@ -103,10 +101,10 @@ func TestAddRemoveSCSIDiskv1LCOW(t *testing.T) {
 	startContainer(t, uvm)
 	defer uvm.Terminate()
 
-	testAddRemoveSCSIDisk(t, uvm, "/", "linux")
+	testAddRemoveSCSI(t, uvm, "/", "linux")
 }
 
-func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string, operatingSystem string) {
+func testAddRemoveSCSI(t *testing.T, uvm Container, pathPrefix string, operatingSystem string) {
 	numDisks := 63 // Windows: 63 as the UVM scratch is at 0:0
 	if operatingSystem == "linux" {
 		numDisks-- // HCS v1 for Linux has the UVM scratch at 0:0 and reserves 0:1 for the container scratch, even if it's not attached.
@@ -127,7 +125,7 @@ func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string, opera
 	// Add each of the disks to the utility VM. Attach-only, no container path
 	logrus.Debugln("First - adding in attach-only")
 	for i := 0; i < numDisks; i++ {
-		_, _, err := AddSCSIDisk(uvm, disks[i], "")
+		_, _, err := AddSCSI(uvm, disks[i], "")
 		if err != nil {
 			t.Fatalf("failed to add scsi disk %d %s: %s", i, disks[i], err)
 		}
@@ -136,7 +134,7 @@ func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string, opera
 	// Try to re-add. These should all fail.
 	logrus.Debugln("Next - trying to re-add")
 	for i := 0; i < numDisks; i++ {
-		_, _, err := AddSCSIDisk(uvm, disks[i], "")
+		_, _, err := AddSCSI(uvm, disks[i], "")
 		if err == nil {
 			t.Fatalf("should not be able to re-add the same SCSI disk!")
 		}
@@ -145,7 +143,7 @@ func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string, opera
 	// Remove them all
 	logrus.Debugln("Removing them all")
 	for i := 0; i < numDisks; i++ {
-		if err := RemoveSCSIDisk(uvm, disks[i]); err != nil {
+		if err := RemoveSCSI(uvm, disks[i]); err != nil {
 			t.Fatalf("expected success: %s", err)
 		}
 	}
@@ -153,7 +151,7 @@ func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string, opera
 	// Now re-add but providing a container path
 	logrus.Debugln("Next - re-adding with a container path")
 	for i := 0; i < numDisks; i++ {
-		_, _, err := AddSCSIDisk(uvm, disks[i], fmt.Sprintf(`%s%d`, pathPrefix, i))
+		_, _, err := AddSCSI(uvm, disks[i], fmt.Sprintf(`%s%d`, pathPrefix, i))
 		if err != nil {
 			time.Sleep(10 * time.Minute)
 			t.Fatalf("failed to add scsi disk %d %s: %s", i, disks[i], err)
@@ -163,7 +161,7 @@ func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string, opera
 	// Try to re-add. These should all fail.
 	logrus.Debugln("Next - trying to re-add")
 	for i := 0; i < numDisks; i++ {
-		_, _, err := AddSCSIDisk(uvm, disks[i], fmt.Sprintf(`%s%d`, pathPrefix, i))
+		_, _, err := AddSCSI(uvm, disks[i], fmt.Sprintf(`%s%d`, pathPrefix, i))
 		if err == nil {
 			t.Fatalf("should not be able to re-add the same SCSI disk!")
 		}
@@ -172,7 +170,7 @@ func testAddRemoveSCSIDisk(t *testing.T, uvm Container, pathPrefix string, opera
 	// Remove them all
 	logrus.Debugln("Next - Removing them")
 	for i := 0; i < numDisks; i++ {
-		if err := RemoveSCSIDisk(uvm, disks[i]); err != nil {
+		if err := RemoveSCSI(uvm, disks[i]); err != nil {
 			t.Fatalf("expected success: %s", err)
 		}
 	}

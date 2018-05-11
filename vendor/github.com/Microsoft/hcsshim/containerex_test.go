@@ -1,5 +1,3 @@
-// +build windows
-
 //
 // These unit tests must run on a system setup to run both Argons and Xenons,
 // have docker installed, and have the nanoserver (WCOW) and alpine (LCOW)
