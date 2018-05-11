@@ -122,7 +122,7 @@ func AddSCSI(uvm Container, hostPath string, containerPath string) (int, int, er
 		}
 		uvmc.scsiLocations.hostPath[controller][lun] = hostPath
 
-		logrus.Debugf("hcsshim::AddSCSI id:%s hostPath:%s added at %d:%d sv:%s", uvmc.id, hostPath, controller, lun, uvmc.schemaVersion.String())
+		logrus.Debugf("hcsshim::AddSCSI success id:%s hostPath:%s added at %d:%d sv:%s", uvmc.id, hostPath, controller, lun, uvmc.schemaVersion.String())
 		return controller, lun, nil
 	}
 
@@ -164,14 +164,12 @@ func AddSCSI(uvm Container, hostPath string, containerPath string) (int, int, er
 }
 
 // RemoveSCSI removes a SCSI disk from a utility VM. As an external API, it
-// is "safe". Internal use can call RemoveSCSI.
+// is "safe". Internal use can call removeSCSI.
 func RemoveSCSI(uvm Container, hostPath string) error {
 	if uvm == nil {
 		return fmt.Errorf("no utility VM passed to RemoveSCSI")
 	}
 	uvmc := uvm.(*container)
-	logrus.Debugf("hcsshim::RemoveSCSI id:%s hostPath:%s sv:%s", uvmc.id, hostPath, uvmc.schemaVersion.String())
-
 	uvmc.scsiLocations.Lock()
 	defer uvmc.scsiLocations.Unlock()
 
@@ -185,7 +183,6 @@ func RemoveSCSI(uvm Container, hostPath string) error {
 		return fmt.Errorf("failed to remove SCSI disk %s from container %s: %s", hostPath, uvmc.id, err)
 
 	}
-	logrus.Debugf("hcsshim::RemoveSCSI: %s removed from %s %d:%d", hostPath, uvmc.id, controller, lun)
 	return nil
 }
 
@@ -193,6 +190,7 @@ func RemoveSCSI(uvm Container, hostPath string) error {
 // MUST be held when calling this function.
 func removeSCSI(uvm Container, hostPath string, controller int, lun int) error {
 	var scsiModification interface{}
+	logrus.Debugf("hcsshim::RemoveSCSI id:%s hostPath:%s sv:%s", uvm.(*container).id, hostPath, uvm.(*container).schemaVersion.String())
 	if uvm.(*container).schemaVersion.IsV10() {
 		scsiModification = &ResourceModificationRequestResponse{
 			Resource: "MappedVirtualDisk",
@@ -207,15 +205,12 @@ func removeSCSI(uvm Container, hostPath string, controller int, lun int) error {
 			ResourceType: ResourceTypeMappedVirtualDisk,
 			RequestType:  RequestTypeRemove,
 			ResourceUri:  fmt.Sprintf("VirtualMachine/Devices/SCSI/%d/%d", controller, lun),
-			HostedSettings: ContainersResourcesMappedDirectoryV2{
-				Lun: uint8(lun),
-				// TODO: Extend for controller once HCS supports that.
-			},
 		}
 	}
 	if err := uvm.Modify(scsiModification); err != nil {
 		return err
 	}
 	uvm.(*container).scsiLocations.hostPath[controller][lun] = ""
+	logrus.Debugf("hcsshim::RemoveSCSI: Success %s removed from %s %d:%d", hostPath, uvm.(*container).id, controller, lun)
 	return nil
 }

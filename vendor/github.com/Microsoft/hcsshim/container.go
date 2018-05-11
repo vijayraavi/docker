@@ -767,7 +767,7 @@ func (container *container) Modify(config interface{}) error {
 	err = hcsModifyComputeSystem(container.handle, requestString, &resultp)
 	re := processHcsResult(resultp)
 	if err != nil {
-		err = makeContainerError(container, operation, re, "", err)
+		err = makeContainerError(container, operation, re, requestString, err)
 		return err
 	}
 	logrus.Debugf(title+" succeeded id=%s", container.id)

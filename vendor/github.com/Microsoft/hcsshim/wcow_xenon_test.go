@@ -383,7 +383,7 @@ func createv2WCOWUVM(t *testing.T, uvmLayers []string, uvmId string, resources *
 
 // TestV2XenonWCOWMultiLayer creates a V2 Xenon having multiple image layers
 func TestV2XenonWCOWMultiLayer(t *testing.T) {
-	t.Skip("for now")
+	//t.Skip("for now")
 
 	uvmMemory := uint64(1 * 1024 * 1024 * 1024)
 	uvmCPUCount := uint64(2)
