@@ -14,15 +14,13 @@ import (
 // createLCOWTempDirWithSandbox uses an LCOW utility VM to create a blank
 // VHDX and format it ext4.
 func createLCOWTempDirWithSandbox(t *testing.T) (string, string) {
-	options := make(map[string]string)
-	options[HCSOPTION_ID] = "global"
 	dls := getDefaultLinuxSpec(t)
 	if lcowServiceContainer == nil {
 		cacheSandboxDir = createTempDir(t)
 		var err error
 		lcowServiceContainer, err = CreateContainerEx(&CreateOptions{
-			Options: options,
-			Spec:    dls,
+			Id:   "global",
+			Spec: dls,
 		})
 		if err != nil {
 			t.Fatalf("Failed create: %s", err)
@@ -119,11 +117,11 @@ func TestV1XenonLCOW(t *testing.T) {
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
-	options[HCSOPTION_ID] = "TestV1XenonLCOW"
 
 	spec := getDefaultLinuxSpec(t)
 	spec.Windows.LayerFolders = append(layersAlpine, tempDir)
 	c, err := CreateContainerEx(&CreateOptions{
+		Id:      "TextV1XenonLCOW",
 		Options: options,
 		Spec:    spec,
 	})

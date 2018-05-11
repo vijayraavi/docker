@@ -26,10 +26,10 @@ func TestV1Argon(t *testing.T) {
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
-	options[HCSOPTION_ID] = "TestV1Argon"
-	options[HCSOPTION_OWNER] = "unit-test"
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
+		Id:      "TestV1Argon",
+		Owner:   "unit-test",
 		Spec: &specs.Spec{
 			Hostname: "goofy",
 			Windows:  &specs.Windows{LayerFolders: layers},
@@ -55,8 +55,8 @@ func TestV1ArgonAutoMount(t *testing.T) {
 	layers := append(layersBusybox, tempDir)
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
-	options[HCSOPTION_ID] = "TestV1ArgonAutoMount"
 	c, err := CreateContainerEx(&CreateOptions{
+		Id:      "TestV1ArgonAutoMount",
 		Options: options,
 		Spec:    &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
 	})
@@ -79,8 +79,8 @@ func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
 	layers := append(layersBusybox, tempDir)
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV10().String()
-	options[HCSOPTION_ID] = "TestV1ArgonMultipleBaseLayersAutoMount"
 	c, err := CreateContainerEx(&CreateOptions{
+		Id:      "TestV1ArgonMultipleBaseLayersAutoMount",
 		Options: options,
 		Spec:    &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
 	})
@@ -147,9 +147,9 @@ func TestV2ArgonMultipleBaseLayers(t *testing.T) {
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
-	options[HCSOPTION_ID] = "TestV2ArgonMultipleBaseLayers"
 	c, err := CreateContainerEx(&CreateOptions{
 		Options: options,
+		Id:      "TestV2ArgonMultipleBaseLayers",
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: layers},
 			Root:    &specs.Root{Path: mountPath.(string)},
@@ -173,8 +173,8 @@ func TestV2ArgonAutoMountMultipleBaseLayers(t *testing.T) {
 	layers := append(layersBusybox, tempDir)
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
-	options[HCSOPTION_ID] = "TestV2ArgonAutoMountMultipleBaseLayers"
 	c, err := CreateContainerEx(&CreateOptions{
+		Id:      "TestV2ArgonAutoMountMultipleBaseLayers",
 		Options: options,
 		Spec:    &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
 	})

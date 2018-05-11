@@ -13,8 +13,6 @@ import (
 const (
 	// HCSOPTION_ constants are string values which can be added in the RuntimeOptions of a call to CreateContainerEx.
 	HCSOPTION_SCHEMA_VERSION              = "hcs.schema.version"                // HCS:  Request a schema version. Content is a SchemaVersion object. Defaults to v2 for RS5, v1 for RS1..RS4
-	HCSOPTION_OWNER                       = "hcs.container.owner"               // HCS:  Specified the owner. Defaults to executable name
-	HCSOPTION_ID                          = "hcs.container.id"                  // HCS:  Specifies the ID of a created container. Defaults to a GUID if not supplied
 	HCSOPTION_ADDITIONAL_JSON_V1          = "hcs.additional.v1.json"            // HCS:  Additional JSON to merge into Create calls in HCS for V1 schema. Default is none
 	HCSOPTION_ADDITIONAL_JSON_V2          = "hcs.additional.v2.json"            // HCS:  Additional JSON to merge into Create calls in HCS for V2.x schema. Default is none
 	HCSOPTION_IS_UTILITY_VM               = "hcs.is.utility.vm"                 // HCS:  If defined, the spec is for a utility VM. Default is a container.
@@ -40,6 +38,8 @@ const (
 // where layer1 is the base read-only layer, layern is the top-most read-only
 // layer, and sandbox is the RW layer. This is for historical reasons only.
 type CreateOptions struct {
+	Id            string            // Identifier for the container
+	Owner         string            // Specifies the owner. Defaults to executable name.
 	Spec          *specs.Spec       // Definition of the container or utility VM being created
 	Options       map[string]string // Runtime options. See HCSOPTION_ constants for possible values.
 	HostingSystem Container         // Container object representing a utility or service VM
@@ -47,8 +47,8 @@ type CreateOptions struct {
 
 	// Internal fields
 	sv             *SchemaVersion // Calculated based on Windows build and optional caller-supplied override
-	id             string         // Identifier for the container
-	owner          string         // Owner for the container
+	actualId       string         // Identifier for the container
+	actualOwner    string         // Owner for the container
 	lcowkird       string         // LCOW kernel/initrd path
 	lcowkernel     string         // LCOW kernel file
 	lcowinitrd     string         // LCOW initrd file
@@ -75,17 +75,17 @@ func valueFromStringMap(m map[string]string, name string) string {
 func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 	logrus.Debugf("hcsshim::CreateContainerEx options: %+v", createOptions.Options)
 
-	createOptions.id = valueFromStringMap(createOptions.Options, HCSOPTION_ID)
-	if createOptions.id == "" {
+	createOptions.actualId = createOptions.Id
+	if createOptions.actualId == "" {
 		g, err := GenerateGUID()
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate GUID for container ID: %s", err)
 		}
-		createOptions.id = g.ToString()
+		createOptions.actualId = g.ToString()
 	}
-	createOptions.owner = valueFromStringMap(createOptions.Options, HCSOPTION_OWNER)
-	if createOptions.owner == "" {
-		createOptions.owner = filepath.Base(os.Args[0])
+	createOptions.actualOwner = createOptions.Owner
+	if createOptions.actualOwner == "" {
+		createOptions.actualOwner = filepath.Base(os.Args[0])
 	}
 
 	if createOptions.Spec == nil {
@@ -128,7 +128,7 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	return createContainer(createOptions.id, hcsDocument, createOptions.sv)
+	return createContainer(createOptions.actualId, hcsDocument, createOptions.sv)
 }
 
 // UVMResourcesFromContainerSpec takes a container spec and generates a

@@ -187,8 +187,8 @@ func TestID(t *testing.T) {
 
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
-	options[HCSOPTION_ID] = "gruntbuggly"
 	c, err := CreateContainerEx(&CreateOptions{
+		Id:      "gruntbuggly",
 		Options: options,
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: layers},

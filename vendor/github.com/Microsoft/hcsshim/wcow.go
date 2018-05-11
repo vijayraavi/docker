@@ -38,7 +38,7 @@ func LocateWCOWUVMFolderFromLayerFolders(layerFolders []string) (string, error) 
 }
 
 func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
-	logrus.Debugf("hcsshim::createWCOWv2UVM Creating utility VM id=%s", createOptions.id)
+	logrus.Debugf("hcsshim::createWCOWv2UVM Creating utility VM id=%s", createOptions.actualId)
 
 	iocis := "invalid OCI spec:"
 	if len(createOptions.Spec.Windows.LayerFolders) < 2 {
@@ -98,7 +98,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 	}
 
 	// Create sandbox.vhdx in the sandbox folder based on the template, granting the correct permissions to it
-	if err := CreateWCOWUVMSandbox(uvmFolder, sandboxFolder, createOptions.id); err != nil {
+	if err := CreateWCOWUVMSandbox(uvmFolder, sandboxFolder, createOptions.actualId); err != nil {
 		return nil, fmt.Errorf("failed to create UVM sandbox: %s", err)
 	}
 
@@ -123,7 +123,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 		}
 	}
 	uvm := &ComputeSystemV2{
-		Owner:         createOptions.owner,
+		Owner:         createOptions.actualOwner,
 		SchemaVersion: createOptions.sv,
 		VirtualMachine: &VirtualMachineV2{
 			Chipset: &VirtualMachinesResourcesChipsetV2{
@@ -163,7 +163,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	uvmContainer, err := createContainer(createOptions.id, string(uvmb), SchemaV20())
+	uvmContainer, err := createContainer(createOptions.actualId, string(uvmb), SchemaV20())
 	if err != nil {
 		logrus.Debugln("failed to create UVM: ", err)
 		return nil, err
@@ -207,8 +207,8 @@ func CreateWCOWHCSContainerDocument(createOptions *CreateOptions) (string, error
 
 	v1 := &ContainerConfig{
 		SystemType:              "Container",
-		Name:                    createOptions.id,
-		Owner:                   createOptions.owner,
+		Name:                    createOptions.actualId,
+		Owner:                   createOptions.actualOwner,
 		HvPartition:             false,
 		IgnoreFlushesDuringBoot: createOptions.Spec.Windows.IgnoreFlushesDuringBoot,
 	}
@@ -216,7 +216,7 @@ func CreateWCOWHCSContainerDocument(createOptions *CreateOptions) (string, error
 	// IgnoreFlushesDuringBoot is a property of the SCSI attachment for the sandbox. Set when it's hot-added to the utility VM
 	// ID is a property on the create call in V2 rather than part of the schema.
 	v2 := &ComputeSystemV2{
-		Owner:                             createOptions.owner,
+		Owner:                             createOptions.actualOwner,
 		SchemaVersion:                     SchemaV20(),
 		ShouldTerminateOnLastHandleClosed: true,
 	}

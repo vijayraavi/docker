@@ -44,10 +44,10 @@ func createLCOWv1(createOptions *CreateOptions) (Container, error) {
 
 	configuration := &ContainerConfig{
 		HvPartition:   true,
-		Name:          createOptions.id,
+		Name:          createOptions.actualId,
 		SystemType:    "container",
 		ContainerType: "linux",
-		Owner:         createOptions.owner,
+		Owner:         createOptions.actualOwner,
 		TerminateOnLastHandleClosed: true,
 	}
 	configuration.HvRuntime = &HvRuntime{
@@ -192,7 +192,7 @@ func createLCOWv1(createOptions *CreateOptions) (Container, error) {
 	}
 	configuration.MappedDirectories = mds
 
-	container, err := CreateContainer(createOptions.id, configuration)
+	container, err := CreateContainer(createOptions.actualId, configuration)
 	if err != nil {
 		return nil, err
 	}
