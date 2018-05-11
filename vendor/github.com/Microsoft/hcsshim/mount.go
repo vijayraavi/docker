@@ -21,7 +21,6 @@ import (
 // TODO Should this return a string or an object? More efficient as object, but requires more client work to marshall it again.
 func MountContainerLayers(layerFolders []string, hostingSystem Container) (interface{}, error) {
 	logrus.Debugln("hcsshim::MountContainerLayers", layerFolders, hostingSystem)
-	//	panic("JJH")
 	if hostingSystem == nil {
 		if len(layerFolders) < 2 {
 			return nil, fmt.Errorf("need at least two layers - base and sandbox")
@@ -61,6 +60,10 @@ func MountContainerLayers(layerFolders []string, hostingSystem Container) (inter
 	//  Each VSMB share is ref-counted so that multiple containers in the same utility VM can share them.
 	// TODO OK check here.
 	c := hostingSystem.(*container)
+	if !c.schemaVersion.IsV20() {
+		return nil, fmt.Errorf("hosting system for mount must be schema v2")
+	}
+
 	c.vsmbShares.Lock()
 	if c.vsmbShares.guids == nil {
 		c.vsmbShares.guids = make(map[string]int)
