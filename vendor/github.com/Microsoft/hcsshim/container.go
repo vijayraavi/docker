@@ -39,6 +39,11 @@ const (
 	mappedVirtualDiskQuery = `{ "PropertyTypes" : ["MappedVirtualDisk"]}`
 )
 
+type vsmbShare struct {
+	refCount uint32
+	guid     string
+}
+
 type container struct {
 	handleLock     sync.RWMutex
 	handle         hcsSystem
@@ -47,7 +52,7 @@ type container struct {
 	schemaVersion  SchemaVersion
 	vsmbShares     struct {
 		sync.Mutex
-		guids map[string]int // Refcount
+		shares map[string]vsmbShare
 	}
 	scsiLocations struct {
 		sync.Mutex

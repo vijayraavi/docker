@@ -64,11 +64,11 @@ func MountContainerLayers(layerFolders []string, hostingSystem Container) (inter
 	//  Each VSMB share is ref-counted so that multiple containers in the same utility VM can share them.
 	var vsmbAdded []string
 	for _, layerPath := range layerFolders[:len(layerFolders)-1] {
-		guid, err := AddVSMB(hostingSystem, layerPath, VsmbFlagReadOnly|VsmbFlagPseudoOplocks|VsmbFlagTakeBackupPrivilege|VsmbFlagCacheIO|VsmbFlagShareRead)
+		err := AddVSMB(hostingSystem, layerPath, VsmbFlagReadOnly|VsmbFlagPseudoOplocks|VsmbFlagTakeBackupPrivilege|VsmbFlagCacheIO|VsmbFlagShareRead)
 		if err != nil {
 			removeVSMBOnMountFailure(hostingSystem, vsmbAdded)
 		}
-		vsmbAdded = append(vsmbAdded, guid)
+		vsmbAdded = append(vsmbAdded, layerPath)
 	}
 
 	// 	Add the sandbox at an unused SCSI location. The container path inside the utility VM will be C:\<GUID> where
@@ -212,8 +212,8 @@ func UnmountContainerLayers(layerFolders []string, hostingSystem Container, op U
 	// only removed once the count drops to zero. This allows multiple containers
 	// to share layers.
 	if len(layerFolders) > 1 && (op&UnmountOperationVSMB) == UnmountOperationVSMB {
-		if c.vsmbShares.guids == nil {
-			c.vsmbShares.guids = make(map[string]int)
+		if c.vsmbShares.shares == nil {
+			c.vsmbShares.shares = make(map[string]vsmbShare)
 		}
 		for _, layerPath := range layerFolders[:len(layerFolders)-1] {
 			if e := RemoveVSMB(c, layerPath); e != nil {
