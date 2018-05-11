@@ -13,7 +13,7 @@ import (
 
 // A v1 Argon with a single base layer. It also validates hostname functionality is propagated.
 func TestV1Argon(t *testing.T) {
-	//t.Skip("fornow")
+	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 

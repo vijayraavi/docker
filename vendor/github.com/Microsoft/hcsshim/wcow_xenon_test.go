@@ -383,7 +383,7 @@ func createv2WCOWUVM(t *testing.T, uvmLayers []string, uvmID string, resources *
 
 // TestV2XenonWCOWMultiLayer creates a V2 Xenon having multiple image layers
 func TestV2XenonWCOWMultiLayer(t *testing.T) {
-	//t.Skip("for now")
+	t.Skip("for now")
 
 	uvmMemory := uint64(1 * 1024 * 1024 * 1024)
 	uvmCPUCount := uint64(2)
@@ -403,17 +403,18 @@ func TestV2XenonWCOWMultiLayer(t *testing.T) {
 	}
 
 	// Create a sandbox for the hosted container
-	containerAScratchDir := createWCOWTempDirWithSandbox(t)
-	defer os.RemoveAll(containerAScratchDir)
+	containerScratchDir := createWCOWTempDirWithSandbox(t)
+	defer os.RemoveAll(containerScratchDir)
 
 	// Create the container
 	options := make(map[string]string)
 	options[HCSOPTION_SCHEMA_VERSION] = SchemaV20().String()
-	options[HCSOPTION_ID] = "containerA"
+	options[HCSOPTION_ID] = "container"
+	containerLayers := append(layersBusybox, containerScratchDir)
 	xenon, err := CreateContainerEx(&CreateOptions{
 		HostingSystem: uvm,
 		Options:       options,
-		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: append(layersBusybox, containerAScratchDir)}},
+		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: containerLayers}},
 	})
 	if err != nil {
 		t.Fatalf("CreateContainerEx failed: %s", err)
@@ -424,4 +425,8 @@ func TestV2XenonWCOWMultiLayer(t *testing.T) {
 	runCommand(t, xenon, "echo Container", `c:\`, "Container")
 	stopContainer(t, xenon)
 	xenon.Terminate()
+	if err := UnmountContainerLayers(containerLayers, uvm, UnmountOperationAll); err != nil {
+		t.Fatalf("unmount failed: %s", err)
+	}
+
 }

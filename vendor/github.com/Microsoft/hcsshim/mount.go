@@ -212,37 +212,11 @@ func UnmountContainerLayers(layerFolders []string, hostingSystem Container, op U
 	// only removed once the count drops to zero. This allows multiple containers
 	// to share layers.
 	if len(layerFolders) > 1 && (op&UnmountOperationVSMB) == UnmountOperationVSMB {
-		c.vsmbShares.Lock()
 		if c.vsmbShares.guids == nil {
 			c.vsmbShares.guids = make(map[string]int)
 		}
 		for _, layerPath := range layerFolders[:len(layerFolders)-1] {
-			logrus.Debugf("hcsshim::UnmountContainerLayers Processing layerPath %s as read-only VSMB share", layerPath)
-			_, filename := filepath.Split(layerPath)
-			guid, err := NameToGuid(filename)
-			if err != nil {
-				logrus.Warnf("may have leaked a VSMB share - failed to NameToGuid on %s: %s", filename, err)
-				continue
-			}
-			if _, ok := c.vsmbShares.guids[guid.ToString()]; !ok {
-				logrus.Warnf("layer %s is not mounted as a VSMB share - cannot unmount!", layerPath)
-				continue
-			}
-			c.vsmbShares.guids[guid.ToString()]--
-			if c.vsmbShares.guids[guid.ToString()] > 0 {
-				logrus.Debugf("VSMB read-only layer %s is still in use by another container, not removing from utility VM", layerPath)
-				continue
-			}
-			delete(c.vsmbShares.guids, guid.ToString())
-			logrus.Debugf("hcsshim::UnmountContainerLayers Processing layerPath %s: Perfoming modify to remove VSMB share", layerPath)
-			modification := &ModifySettingsRequestV2{
-				ResourceType: ResourceTypeVSmbShare,
-				RequestType:  RequestTypeRemove,
-				Settings:     VirtualMachinesResourcesStorageVSmbShareV2{Name: guid.ToString()},
-				ResourceUri:  fmt.Sprintf("virtualmachine/devices/virtualsmbshares/%s", guid.ToString()),
-			}
-			if err := hostingSystem.Modify(modification); err != nil {
-				e := fmt.Errorf("failed to remove vsmb share %s: %s: %s", layerPath, modification, err)
+			if e := RemoveVSMB(c, layerPath); e != nil {
 				logrus.Debugln(e)
 				if retError == nil {
 					retError = e
@@ -251,37 +225,11 @@ func UnmountContainerLayers(layerFolders []string, hostingSystem Container, op U
 				}
 			}
 		}
-		c.vsmbShares.Unlock()
 	}
 
 	// TODO (possibly) Consider deleting the container directory in the utility VM
 
 	return retError
-}
-
-// removeVSMB removes a VSMB share from a utility VM. The mutex must be
-// held when calling this function
-func removeVSMB(c Container, id string) error {
-	if _, ok := c.(*container).vsmbShares.guids[id]; !ok {
-		return fmt.Errorf("failed to remove vsmbShare %s as it is not in utility VM %s", id, c.(*container).id)
-	} else {
-		c.(*container).vsmbShares.guids[id]--
-		logrus.Debugf("hcsshim::removeVSMB: %s refcount after decrement: %d", id, c.(*container).vsmbShares.guids[id])
-		if c.(*container).vsmbShares.guids[id] == 0 {
-			delete(c.(*container).vsmbShares.guids, id)
-			modification := &ModifySettingsRequestV2{
-				ResourceType: ResourceTypeVSmbShare,
-				RequestType:  RequestTypeRemove,
-				// TODO: https://microsoft.visualstudio.com/OS/_queries?_a=edit&id=17031676&triage=true. Settings should not be required, just ResourceUri
-				Settings:    VirtualMachinesResourcesStorageVSmbShareV2{Name: id},
-				ResourceUri: fmt.Sprintf("virtualmachine/devices/virtualsmbshares/%s", id),
-			}
-			if err := c.Modify(modification); err != nil {
-				return fmt.Errorf("failed to remove vsmbShare %s from utility VM %s after refcount dropped to zero: %s", id, c.(*container).id, err)
-			}
-		}
-	}
-	return nil
 }
 
 // removeVSMBOnMountFailure is a helper to roll-back any VSMB shares added to a utility VM on a failure path
