@@ -100,3 +100,25 @@ func removeVSMB(uvm Container, path string) error {
 	logrus.Debugf("hcsshim::RemoveVSMB Success %s id:%s successfully removed from utility VM", path, uvmc.id)
 	return nil
 }
+
+// GetVSMBGUID returns the GUID used to mount a VSMB share in a utility VM
+func GetVSMBGUID(uvm Container, path string) (string, error) {
+	if uvm == nil {
+		return "", fmt.Errorf("no utility VM passed to GetVSMBShareGUID")
+	}
+	uvmc := uvm.(*container)
+	if uvmc.vsmbShares.shares == nil {
+		return "", fmt.Errorf("no vsmbShares in utility VM!")
+	}
+	if path == "" {
+		return "", fmt.Errorf("no path passed to GetVSMBShareGUID")
+	}
+	uvmc.vsmbShares.Lock()
+	defer uvmc.vsmbShares.Unlock()
+	path = strings.ToLower(path)
+	if _, ok := uvmc.vsmbShares.shares[path]; !ok {
+		return "", fmt.Errorf("%s not found as VSMB share in %s", path, uvmc.id)
+	}
+	logrus.Debugf("hcsshim::GetVSMBGUID Success %s id:%s guid:%s", path, uvmc.id, uvmc.vsmbShares.shares[path].guid)
+	return uvmc.vsmbShares.shares[path].guid, nil
+}

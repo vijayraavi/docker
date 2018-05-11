@@ -4,8 +4,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	//	"github.com/sirupsen/logrus"
 )
 
 // TestWCOWVSMB tests adding/removing VSMB from a v2 Windows utility VM
@@ -18,7 +16,7 @@ func TestWCOWVSMB(t *testing.T) {
 	v2uvmc := v2uvm.(*container)
 
 	dir := strings.ToUpper(createTempDir(t)) // Force upper-case
-	var iterations uint32 = 10
+	var iterations uint32 = 3
 	for i := 0; i < int(iterations); i++ {
 		if err := AddVSMB(v2uvm, dir, VsmbFlagReadOnly|VsmbFlagPseudoOplocks|VsmbFlagTakeBackupPrivilege|VsmbFlagCacheIO|VsmbFlagShareRead); err != nil {
 			t.Fatalf("AddVSMB failed: %s", err)
@@ -35,6 +33,15 @@ func TestWCOWVSMB(t *testing.T) {
 	}
 	if v2uvmc.vsmbShares.shares[strings.ToLower(dir)].refCount != iterations {
 		t.Fatalf("iteration mismatch: %d %d", iterations, v2uvmc.vsmbShares.shares[strings.ToLower(dir)].refCount)
+	}
+
+	// Verify the GUID matches the internal data-structure
+	g, err := GetVSMBGUID(v2uvm, dir)
+	if err != nil {
+		t.Fatalf("failed to find guid")
+	}
+	if v2uvmc.vsmbShares.shares[strings.ToLower(dir)].guid != g {
+		t.Fatalf("guid from GetVSMBShareGUID doesn't match")
 	}
 
 	// Remove them all

@@ -92,9 +92,15 @@ func MountContainerLayers(layerFolders []string, hostingSystem Container) (inter
 	// 	read-only layer folders.
 	layers := []ContainersResourcesLayerV2{}
 	for _, vsmb := range vsmbAdded {
+		vsmbGUID, err := GetVSMBGUID(hostingSystem, vsmb)
+		if err != nil {
+			removeVSMBOnMountFailure(hostingSystem, vsmbAdded)
+			removeSCSIOnMountFailure(hostingSystem, hostPath, controller, lun)
+			return nil, err
+		}
 		layers = append(layers, ContainersResourcesLayerV2{
-			Id:   vsmb,
-			Path: fmt.Sprintf(`\\?\VMSMB\VSMB-{dcc079ae-60ba-4d07-847c-3493609c0870}\%s`, vsmb),
+			Id:   vsmbGUID,
+			Path: fmt.Sprintf(`\\?\VMSMB\VSMB-{dcc079ae-60ba-4d07-847c-3493609c0870}\%s`, vsmbGUID),
 		})
 	}
 	combinedLayers := CombinedLayersV2{
