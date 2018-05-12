@@ -13,7 +13,7 @@ import (
 
 // A v1 Argon with a single base layer. It also validates hostname functionality is propagated.
 func TestV1Argon(t *testing.T) {
-	//	t.Skip("fornow")
+	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -46,7 +46,7 @@ func TestV1Argon(t *testing.T) {
 
 // A v1 Argon with a single base layer which uses the auto-mount capability
 func TestV1ArgonAutoMount(t *testing.T) {
-	//t.Skip("fornow")
+	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -68,7 +68,7 @@ func TestV1ArgonAutoMount(t *testing.T) {
 
 // A v1 Argon with multiple layers which uses the auto-mount capability
 func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
-	//t.Skip("fornow")
+	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -95,7 +95,7 @@ func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
 // A v2 Argon with a single base layer. It also validates hostname functionality is propagated.
 // It also uses an auto-generated ID.
 func TestV2Argon(t *testing.T) {
-	//t.Skip("fornow")
+	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -126,7 +126,7 @@ func TestV2Argon(t *testing.T) {
 
 // A v2 Argon with multiple layers
 func TestV2ArgonMultipleBaseLayers(t *testing.T) {
-	//t.Skip("fornow")
+	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 

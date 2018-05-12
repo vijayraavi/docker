@@ -176,7 +176,7 @@ func TestUVMSizing(t *testing.T) {
 
 // TestID validates that the requested ID is retrieved
 func TestID(t *testing.T) {
-	//t.Skip("fornow")
+	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
