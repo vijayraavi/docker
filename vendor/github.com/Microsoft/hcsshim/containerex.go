@@ -128,7 +128,7 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		if createOptions.HostingSystem == nil {
 			createOptions.Spec.Root.Path = mcl.(string) // Argon v1 or v2
 		} else {
-			createOptions.Spec.Root.Path = mcl.(CombinedLayersV2).ContainerRootPath // v2 Xenon
+			createOptions.Spec.Root.Path = mcl.(CombinedLayersV2).ContainerRootPath // v2 Xenon WCOW
 		}
 	}
 

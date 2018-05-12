@@ -314,7 +314,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 // Lots of v2 WCOW containers in the same UVM, each with a single base layer. Containers aren't
 // actually started, but it stresses the SCSI controller hot-add logic.
 func TestV2XenonWCOWCreateLots(t *testing.T) {
-	//t.Skip("Skipping for now")
+	t.Skip("Skipping for now")
 	uvm, uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "TestV2XenonWCOWTwoContainers_UVM", nil)
 	defer os.RemoveAll(uvmScratchDir)
 	defer uvm.Terminate()
@@ -322,7 +322,8 @@ func TestV2XenonWCOWCreateLots(t *testing.T) {
 		t.Fatalf("Failed start utility VM: %s", err)
 	}
 
-	for i := 0; i < 64; i++ {
+	// 63 as 0:0 is already taken as the UVMs scratch. So that leaves us with 64-1 left for container scratches on SCSI
+	for i := 0; i < 63; i++ {
 		containerScratchDir := createWCOWTempDirWithSandbox(t)
 		defer os.RemoveAll(containerScratchDir)
 		layerFolders := append(layersNanoserver, containerScratchDir)
@@ -339,7 +340,9 @@ func TestV2XenonWCOWCreateLots(t *testing.T) {
 		defer UnmountContainerLayers(layerFolders, uvm, UnmountOperationAll)
 	}
 
-	// TODO: Push it over 64 now and will get a failure.
+	// TODO: Should check the internal structures here for VSMB and SCSI
+
+	// TODO: Push it over 63 now and will get a failure.
 }
 
 // Helper for the v2 Xenon tests to create a utility VM. Returns the container

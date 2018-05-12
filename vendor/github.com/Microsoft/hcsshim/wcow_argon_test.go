@@ -156,7 +156,7 @@ func TestV2ArgonMultipleBaseLayers(t *testing.T) {
 
 // A v2 Argon with multiple layers which uses the auto-mount capability
 func TestV2ArgonAutoMountMultipleBaseLayers(t *testing.T) {
-	//t.Skip("fornow")
+	t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 

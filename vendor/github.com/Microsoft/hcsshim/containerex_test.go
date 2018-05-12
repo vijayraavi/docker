@@ -38,13 +38,13 @@ var (
 )
 
 func init() {
-	if os.Getenv("HCSSHIM_TEST_DEBUG") != "" {
-		logrus.SetLevel(logrus.DebugLevel)
-		logrus.SetFormatter(&logrus.TextFormatter{
-			//.		TimestampFormat: "2006-01-02T15:04:05.000000000Z07:00",
-			FullTimestamp: true,
-		})
-	}
+	//if os.Getenv("HCSSHIM_TEST_DEBUG") != "" {
+	logrus.SetLevel(logrus.DebugLevel)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		//.		TimestampFormat: "2006-01-02T15:04:05.000000000Z07:00",
+		FullTimestamp: true,
+	})
+	//}
 
 	os.Setenv("HCSSHIM_LCOW_DEBUG_ENABLE", "something")
 	layersNanoserver = getLayers("microsoft/nanoserver:latest")
@@ -171,7 +171,7 @@ func stopContainer(t *testing.T, c Container) {
 
 // TODO: Test UVMResourcesFromContainerSpec
 func TestUVMSizing(t *testing.T) {
-
+	t.Skip("for now - not implemented at all")
 }
 
 // TestID validates that the requested ID is retrieved

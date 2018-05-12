@@ -126,56 +126,53 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 		Spec: spec,
 	}
 
-	if schemaVersion.IsV20() {
-		if spec.Windows.HyperV != nil {
-			uvmID := fmt.Sprintf("%s_uvm", id)
-			uvmScratchDir := `c:\foobar` // TODO
+	if schemaVersion.IsV20() && spec.Windows.HyperV != nil {
+		uvmID := fmt.Sprintf("%s_uvm", id)
+		uvmScratchDir := `c:\foobar` // TODO
 
-			uvmLayerFolder, err := hcsshim.LocateWCOWUVMFolderFromLayerFolders(spec.Windows.LayerFolders)
-			if err != nil {
-				return err
-			}
+		uvmLayerFolder, err := hcsshim.LocateWCOWUVMFolderFromLayerFolders(spec.Windows.LayerFolders)
+		if err != nil {
+			return err
+		}
 
-			// Create a scratch for the UVM to boot from
-			if err := hcsshim.CreateWCOWUVMSandbox(uvmLayerFolder, uvmScratchDir, uvmID); err != nil {
-				return err
-			}
+		// Create a scratch for the UVM to boot from
+		if err := hcsshim.CreateWCOWUVMSandbox(uvmLayerFolder, uvmScratchDir, uvmID); err != nil {
+			return err
+		}
 
-			// Calculate the UVM sizing
-			uvmResources, err := hcsshim.UVMResourcesFromContainerSpec(spec)
-			if err != nil {
-				return err
-			}
+		// Calculate the UVM sizing
+		uvmResources, err := hcsshim.UVMResourcesFromContainerSpec(spec)
+		if err != nil {
+			return err
+		}
 
-			// Create it
-			uvm, err := hcsshim.CreateContainerEx(&hcsshim.CreateOptions{
-				Id:            uvmID,
-				Owner:         "moby",
-				SchemaVersion: schemaVersion,
-				//				Logger:          logrus.WithField("container", id),
-				AsHostingSystem: true,
-				Spec: &specs.Spec{
-					Windows: &specs.Windows{
-						LayerFolders: []string{spec.Windows.LayerFolders[0], uvmScratchDir},                  // HACK TEMPORARY the [0] but.
-						HyperV:       &specs.WindowsHyperV{filepath.Join(uvmLayerFolder, `UtilityVM\Files`)}, // TODO CUrrently this is required
-						Resources:    uvmResources,
-					},
+		// Create it
+		uvm, err := hcsshim.CreateContainerEx(&hcsshim.CreateOptions{
+			Id:              uvmID,
+			Owner:           "moby",
+			SchemaVersion:   schemaVersion,
+			AsHostingSystem: true,
+			Spec: &specs.Spec{
+				Windows: &specs.Windows{
+					LayerFolders: []string{spec.Windows.LayerFolders[0], uvmScratchDir},                  // HACK TEMPORARY the [0] but.
+					HyperV:       &specs.WindowsHyperV{filepath.Join(uvmLayerFolder, `UtilityVM\Files`)}, // TODO CUrrently this is required
+					Resources:    uvmResources,
 				},
-			})
-			if err != nil {
-				return fmt.Errorf("failed to create utility VM: %s", err)
-			}
-			ctr.hcsUVM = uvm
-			containerCreateOptions.HostingSystem = uvm
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create utility VM: %s", err)
+		}
+		ctr.hcsUVM = uvm
+		containerCreateOptions.HostingSystem = uvm
 
-			if err := uvm.Start(); err != nil {
-				return fmt.Errorf("failed to start utility VM: %s", err)
-			}
-		} // If a Hyper-V container
+		if err := uvm.Start(); err != nil {
+			return fmt.Errorf("failed to start utility VM: %s", err)
+		}
 	}
 
 	logrus.Debugln("Calling CreateContainerEx")
-	hcsContainer, err := hcsshim.CreateContainerEx(containerCreateOptions) // For Xenon, this will auto-mount for us. Argon, it's already mounted.
+	hcsContainer, err := hcsshim.CreateContainerEx(containerCreateOptions) // For Xenon v2, this will auto-mount for us. Argon, it's already mounted. Xenon V1, HCS does it for us.
 	if err != nil {
 		logrus.Debugf("failed to create container: %s", err)
 		if ctr.hcsUVM != nil {
