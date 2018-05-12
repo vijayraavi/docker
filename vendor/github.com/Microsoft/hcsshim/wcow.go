@@ -394,36 +394,6 @@ func CreateWCOWHCSContainerDocument(createOptions *CreateOptions) (string, error
 		}
 	}
 
-	// TODO: We should have an external way of allowing the client to perform the mount.
-	// If so, the containerRootPath should go into
-	//  specs.Root.Path. However, we need also a way to pass the combinedLayers.Layers
-
-	// TODO: Not sure this should be here - the autocreation.
-
-	if createOptions.HostingSystem != nil && createOptions.actualSchemaVersion.IsV20() {
-
-		// Create the sandbox in the top-most layer folder, creating the folder if it doesn't already exist.
-		sandboxFolder := createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
-		logrus.Debugf("hcsshim::CreateWCOWHCSContainerDocument Sandbox folder: %s", sandboxFolder)
-
-		// Create the directory if it doesn't exist
-		if _, err := os.Stat(sandboxFolder); os.IsNotExist(err) {
-			logrus.Debugf("hcsshim::CreateHCSContainerDocument Creating folder: %s ", sandboxFolder)
-			if err := os.MkdirAll(sandboxFolder, 0777); err != nil {
-				return "", fmt.Errorf("failed to create container sandbox folder: %s", err)
-			}
-		}
-
-		// Create sandbox.vhdx if it doesn't exist
-		if _, err := os.Stat(filepath.Join(sandboxFolder, "sandbox.vhdx")); os.IsNotExist(err) {
-			di := DriverInfo{HomeDir: filepath.Dir(sandboxFolder)}
-			if err := CreateSandboxLayer(di, filepath.Base(sandboxFolder), createOptions.Spec.Windows.LayerFolders[0], createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1]); err != nil {
-				return "", fmt.Errorf("failed to CreateSandboxLayer %s", err)
-			}
-		}
-
-	}
-
 	if createOptions.actualSchemaVersion.IsV10() {
 		v1b, err := json.Marshal(v1)
 		if err != nil {

@@ -103,11 +103,36 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		}
 	}
 
+	//
 	// Is a WCOW request.
+	//
 
+	// Is it a Utility VM?
 	if createOptions.AsHostingSystem {
-		// TODO Should be able to put this into CreateHCSContainerDocument
 		return createWCOWv2UVM(createOptions)
+	}
+
+	// So it's a container.
+
+	// Create the sandbox in the top-most layer folder, creating the folder if it doesn't already exist.
+	sandboxFolder := createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
+	logrus.Debugf("hcsshim::CreateContainerEx Sandbox folder: %s", sandboxFolder)
+
+	// Create the directory if it doesn't exist
+	if _, err := os.Stat(sandboxFolder); os.IsNotExist(err) {
+		logrus.Debugf("hcsshim::CreateContainerEx container sandbox folder does not exist so creating: %s ", sandboxFolder)
+		if err := os.MkdirAll(sandboxFolder, 0777); err != nil {
+			return nil, fmt.Errorf("failed to auto-create container sandbox folder %s: %s", sandboxFolder, err)
+		}
+	}
+
+	// Create sandbox.vhdx if it doesn't exist
+	if _, err := os.Stat(filepath.Join(sandboxFolder, "sandbox.vhdx")); os.IsNotExist(err) {
+		logrus.Debugf("hcsshim::CreateContainerEx container sandbox.vhdx does not exist so creating in %s ", sandboxFolder)
+		di := DriverInfo{HomeDir: filepath.Dir(sandboxFolder)}
+		if err := CreateSandboxLayer(di, filepath.Base(sandboxFolder), createOptions.Spec.Windows.LayerFolders[0], createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1]); err != nil {
+			return nil, fmt.Errorf("failed to CreateSandboxLayer %s", err)
+		}
 	}
 
 	// TODO: Move the regex to validate the root to here.
