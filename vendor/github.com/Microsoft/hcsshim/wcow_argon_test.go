@@ -13,7 +13,7 @@ import (
 
 // A v1 Argon with a single base layer. It also validates hostname functionality is propagated.
 func TestV1Argon(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -46,7 +46,7 @@ func TestV1Argon(t *testing.T) {
 
 // A v1 Argon with a single base layer which uses the auto-mount capability
 func TestV1ArgonAutoMount(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -68,11 +68,14 @@ func TestV1ArgonAutoMount(t *testing.T) {
 
 // A v1 Argon with multiple layers which uses the auto-mount capability
 func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
-	t.Skip("fornow")
-	tempDir := createWCOWTempDirWithSandbox(t)
-	defer os.RemoveAll(tempDir)
+	//t.Skip("fornow")
 
-	layers := append(layersBusybox, tempDir)
+	// This is the important bit for this test. It's deleted here. We call the helper only to allocate a temporary directory
+	containerScratchDir := createTempDir(t)
+	os.RemoveAll(containerScratchDir)
+	defer os.RemoveAll(containerScratchDir) // As auto-created
+
+	layers := append(layersBusybox, containerScratchDir)
 	c, err := CreateContainerEx(&CreateOptions{
 		Id:            "TestV1ArgonMultipleBaseLayersAutoMount",
 		SchemaVersion: SchemaV10(),
@@ -95,7 +98,7 @@ func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
 // A v2 Argon with a single base layer. It also validates hostname functionality is propagated.
 // It also uses an auto-generated ID.
 func TestV2Argon(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -126,7 +129,7 @@ func TestV2Argon(t *testing.T) {
 
 // A v2 Argon with multiple layers
 func TestV2ArgonMultipleBaseLayers(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
@@ -154,13 +157,17 @@ func TestV2ArgonMultipleBaseLayers(t *testing.T) {
 	c.Terminate()
 }
 
-// A v2 Argon with multiple layers which uses the auto-mount capability
+// A v2 Argon with multiple layers which uses the auto-mount capability and auto-create
 func TestV2ArgonAutoMountMultipleBaseLayers(t *testing.T) {
-	t.Skip("fornow")
-	tempDir := createWCOWTempDirWithSandbox(t)
-	defer os.RemoveAll(tempDir)
+	//t.Skip("fornow")
 
-	layers := append(layersBusybox, tempDir)
+	// This is the important bit for this test. It's deleted here. We call the helper only to allocate a temporary directory
+	containerScratchDir := createTempDir(t)
+	os.RemoveAll(containerScratchDir)
+	defer os.RemoveAll(containerScratchDir) // As auto-created
+
+	layers := append(layersBusybox, containerScratchDir)
+
 	c, err := CreateContainerEx(&CreateOptions{
 		SchemaVersion: SchemaV20(),
 		Id:            "TestV2ArgonAutoMountMultipleBaseLayers",
