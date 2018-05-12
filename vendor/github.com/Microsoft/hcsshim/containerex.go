@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
@@ -54,20 +53,6 @@ type CreateOptions struct {
 	actualKirdPath      string         // LCOW kernel/initrd path
 	actualKernelFile    string         // LCOW kernel file
 	actualInitrdFile    string         // LCOW initrd file
-}
-
-// valueFromStringMap scans a map[string]string such as runtime options or
-// annotations in a spec for a value. Keys are case insensitive. Values are not.
-func valueFromStringMap(m map[string]string, name string) string {
-	if m == nil {
-		return ""
-	}
-	for k, v := range m {
-		if strings.EqualFold(k, name) {
-			return v
-		}
-	}
-	return ""
 }
 
 // CreateContainerEx creates a container. It can cope with a  wide variety of
@@ -125,8 +110,34 @@ func CreateContainerEx(createOptions *CreateOptions) (Container, error) {
 		return createWCOWv2UVM(createOptions)
 	}
 
+	// TODO: Move the regex to validate the root to here.
+
+	// Do we need to auto-mount on behalf of the end user?
+	weMountedStorage := false
+	origSpecRoot := createOptions.Spec.Root
+	if createOptions.Spec.Root == nil {
+		createOptions.Spec.Root = &specs.Root{}
+	}
+	if createOptions.Spec.Root.Path == "" {
+		logrus.Debugln("hcsshim::CreateContainerEx Auto-mounting storage")
+		mcl, err := MountContainerLayers(createOptions.Spec.Windows.LayerFolders, createOptions.HostingSystem)
+		if err != nil {
+			return nil, fmt.Errorf("failed to auto-mount container storage: %s", err)
+		}
+		weMountedStorage = true
+		if createOptions.HostingSystem == nil {
+			createOptions.Spec.Root.Path = mcl.(string) // Argon v1 or v2
+		} else {
+			createOptions.Spec.Root.Path = mcl.(CombinedLayersV2).ContainerRootPath // v2 Xenon
+		}
+	}
+
 	hcsDocument, err := CreateWCOWHCSContainerDocument(createOptions)
 	if err != nil {
+		if weMountedStorage {
+			UnmountContainerLayers(createOptions.Spec.Windows.LayerFolders, createOptions.HostingSystem, UnmountOperationAll) // TODO Ignoring error for now
+			createOptions.Spec.Root = origSpecRoot
+		}
 		return nil, err
 	}
 	return createContainer(createOptions.actualId, hcsDocument, createOptions.actualSchemaVersion)

@@ -20,7 +20,7 @@ import (
 
 // TODO Should this return a string or an object? More efficient as object, but requires more client work to marshall it again.
 func MountContainerLayers(layerFolders []string, hostingSystem Container) (interface{}, error) {
-	logrus.Debugln("hcsshim::MountContainerLayers", layerFolders, hostingSystem)
+	logrus.Debugln("hcsshim::MountContainerLayers", layerFolders, !(hostingSystem == nil))
 	if hostingSystem == nil {
 		if len(layerFolders) < 2 {
 			return nil, fmt.Errorf("need at least two layers - base and sandbox")
@@ -138,7 +138,7 @@ const (
 
 // UnmountContainerLayers is a helper for clients to hide all the complexity of layer unmounting
 func UnmountContainerLayers(layerFolders []string, hostingSystem Container, op UnmountOperation) error {
-	logrus.Debugln("hcsshim::UnmountContainerLayers", layerFolders, hostingSystem)
+	logrus.Debugln("hcsshim::UnmountContainerLayers", layerFolders, !(hostingSystem == nil))
 	if hostingSystem == nil {
 		// Must be an argon - folders are mounted on the host
 		if op != UnmountOperationAll {

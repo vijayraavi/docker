@@ -38,11 +38,13 @@ var (
 )
 
 func init() {
-	logrus.SetLevel(logrus.DebugLevel)
-	logrus.SetFormatter(&logrus.TextFormatter{
-		//.		TimestampFormat: "2006-01-02T15:04:05.000000000Z07:00",
-		FullTimestamp: true,
-	})
+	if os.Getenv("HCSSHIM_TEST_DEBUG") != "" {
+		logrus.SetLevel(logrus.DebugLevel)
+		logrus.SetFormatter(&logrus.TextFormatter{
+			//.		TimestampFormat: "2006-01-02T15:04:05.000000000Z07:00",
+			FullTimestamp: true,
+		})
+	}
 
 	os.Setenv("HCSSHIM_LCOW_DEBUG_ENABLE", "something")
 	layersNanoserver = getLayers("microsoft/nanoserver:latest")
@@ -174,7 +176,7 @@ func TestUVMSizing(t *testing.T) {
 
 // TestID validates that the requested ID is retrieved
 func TestID(t *testing.T) {
-	t.Skip("fornow")
+	//t.Skip("fornow")
 	tempDir := createWCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 

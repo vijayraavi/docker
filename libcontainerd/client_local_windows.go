@@ -171,24 +171,11 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 			if err := uvm.Start(); err != nil {
 				return fmt.Errorf("failed to start utility VM: %s", err)
 			}
-
-			// Mount the containers storage in the UVM
-			//cls, err := hcsshim.MountContainerLayers(spec.Windows.LayerFolders, uvm)
-			//			_, err = hcsshim.MountContainerLayers(spec.Windows.LayerFolders, uvm)
-			//			if err != nil {
-			//				uvm.Terminate()
-			//				return fmt.Errorf("failed to mount container storage: %s", err)
-			//			}
-			//			combinedLayers := cls.(hcsshim.CombinedLayersV2)
-			//			containerCreateOptions.MountedLayers = &hcsshim.ContainersResourcesStorageV2{
-			//				Layers: combinedLayers.Layers,
-			//				Path:   combinedLayers.ContainerRootPath,
-			//			}
 		} // If a Hyper-V container
 	}
 
 	logrus.Debugln("Calling CreateContainerEx")
-	hcsContainer, err := hcsshim.CreateContainerEx(containerCreateOptions)
+	hcsContainer, err := hcsshim.CreateContainerEx(containerCreateOptions) // For Xenon, this will auto-mount for us. Argon, it's already mounted.
 	if err != nil {
 		logrus.Debugf("failed to create container: %s", err)
 		if ctr.hcsUVM != nil {

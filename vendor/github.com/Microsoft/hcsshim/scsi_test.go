@@ -22,7 +22,7 @@ import (
 
 // TestAllocateSCSI tests allocateSCSI/deallocateSCSI/findSCSIAttachment
 func TestAllocateSCSI(t *testing.T) {
-	t.Skip("for now")
+	//	t.Skip("for now")
 	v2uvm, v2uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "", nil)
 	defer os.RemoveAll(v2uvmScratchDir)
 	defer v2uvm.Terminate()
@@ -79,7 +79,7 @@ func TestAllocateSCSI(t *testing.T) {
 // from a utility VM in both attach-only and with a container path. Also does
 // negative testing so that a disk can't be attached twice.
 func TestAddRemoveSCSIv2WCOW(t *testing.T) {
-	t.Skip("for now")
+	//	t.Skip("for now")
 	v2uvm, v2uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "", nil)
 	defer os.RemoveAll(v2uvmScratchDir)
 	startContainer(t, v2uvm)
@@ -92,7 +92,7 @@ func TestAddRemoveSCSIv2WCOW(t *testing.T) {
 // from a utility VM in both attach-only and with a container path. Also does
 // negative testing so that a disk can't be attached twice.
 func TestAddRemoveSCSIv1LCOW(t *testing.T) {
-	t.Skip("for now")
+	//	t.Skip("for now")
 	spec := getDefaultLinuxSpec(t)
 	uvm, err := CreateContainerEx(&CreateOptions{Spec: spec})
 	if err != nil {

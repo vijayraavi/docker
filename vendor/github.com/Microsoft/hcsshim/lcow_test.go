@@ -52,7 +52,7 @@ func getDefaultLinuxSpec(t *testing.T) *specs.Spec {
 // createLCOWTempDirWithSandbox uses an LCOW utility VM to create a blank
 // VHDX and format it ext4.
 func TestCreateLCOWScratch(t *testing.T) {
-	t.Skip("for now")
+	//t.Skip("for now")
 	cacheDir := createTempDir(t)
 	cacheFile := filepath.Join(cacheDir, "cache.vhdx")
 	uvm, err := CreateContainerEx(&CreateOptions{Spec: getDefaultLinuxSpec(t)})
@@ -111,7 +111,7 @@ func TestCreateLCOWScratch(t *testing.T) {
 // A v1 LCOW
 // TODO LCOW doesn't work currently
 func TestV1XenonLCOW(t *testing.T) {
-	t.Skip("for now")
+	//t.Skip("for now")
 	tempDir, _ := createLCOWTempDirWithSandbox(t)
 	defer os.RemoveAll(tempDir)
 
