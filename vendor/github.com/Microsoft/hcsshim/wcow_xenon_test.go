@@ -128,8 +128,6 @@ func TestV1XenonWCOWSingleMappedDirectory(t *testing.T) {
 		t.Fatalf("Failed create: %s", err)
 	}
 
-	// TODO BUGBUG NEED TO UNMOUNT TO VSMB SHARE FOR THE CONTAINER
-
 	// Start/stop the container
 	startContainer(t, hostedContainer)
 	runCommand(t, hostedContainer, `cmd /s /c dir /b c:\foo`, `c:\`, "foo.txt")
@@ -466,7 +464,7 @@ func TestV2XenonWCOWMultiLayer(t *testing.T) {
 
 // TestV2XenonWCOWSingleMappedDirectory tests a V2 Xenon WCOW with a single mapped directory
 func TestV2XenonWCOWSingleMappedDirectory(t *testing.T) {
-	t.Skip("Skipping for now")
+	//t.Skip("Skipping for now")
 	uvm, uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "", nil)
 	defer os.RemoveAll(uvmScratchDir)
 	defer uvm.Terminate()
@@ -500,6 +498,8 @@ func TestV2XenonWCOWSingleMappedDirectory(t *testing.T) {
 		t.Fatalf("CreateContainerEx failed: %s", err)
 	}
 	defer UnmountContainerLayers(layerFolders, uvm, UnmountOperationAll)
+
+	// TODO BUGBUG NEED TO UNMOUNT TO VSMB SHARE FOR THE CONTAINER
 
 	// Start/stop the container
 	startContainer(t, hostedContainer)

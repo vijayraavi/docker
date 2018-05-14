@@ -322,55 +322,61 @@ func createWCOWContainer(coi *createOptionsExInternal) (Container, error) {
 		}
 	}
 
-	// Auto-mount the mounts
-	var vsmbAddedByUs []string
+	// Auto-mount the mounts. There's only something to do for v2 xenons. In argons and v1 xenon,
+	// it's done by the HCS directly.
+	var vsmbMountsAddedByUs []string
 	for _, mount := range coi.Spec.Mounts {
 		if mount.Destination == "" || mount.Source == "" {
 			thisError := fmt.Errorf("invalid OCI spec - a mount must have a source and a destination")
-			thisError = undoMountOnFailure(coi, origSpecRoot, weMountedStorage, vsmbAddedByUs, thisError)
+			thisError = undoMountOnFailure(coi, origSpecRoot, weMountedStorage, vsmbMountsAddedByUs, thisError)
 			return nil, thisError
 		}
 
 		if coi.HostingSystem != nil {
-			// Hot-add the VSMB shares to the utility VM
-			// Read-only?
 			logrus.Debugf("hcsshim::createWCOWContainer Hot-adding VSMB share for OCI mount %+v", mount)
+			// Hot-add the VSMB shares to the utility VM
+			// TODO: What are the right flags. Asked swernli
+			// TODO: Read-only
 			err := AddVSMB(coi.HostingSystem, mount.Source, VsmbFlagReadOnly|VsmbFlagPseudoOplocks|VsmbFlagTakeBackupPrivilege|VsmbFlagCacheIO|VsmbFlagShareRead)
-			err = fmt.Errorf("contrived")
 			if err != nil {
 				thisError := fmt.Errorf("failed to add VSMB share to utility VM for mount %+v: %s", mount, err)
-				thisError = undoMountOnFailure(coi, origSpecRoot, weMountedStorage, vsmbAddedByUs, thisError)
+				thisError = undoMountOnFailure(coi, origSpecRoot, weMountedStorage, vsmbMountsAddedByUs, thisError)
 				return nil, thisError
 			} else {
-				vsmbAddedByUs = append(vsmbAddedByUs, mount.Source)
+				vsmbMountsAddedByUs = append(vsmbMountsAddedByUs, mount.Source)
 			}
-		} else {
-			// In the argon case, is there anything to do? TODO
 		}
 	}
 
 	hcsDocument, err := createWCOWHCSContainerDocument(coi)
 	if err != nil {
-		err = undoMountOnFailure(coi, origSpecRoot, weMountedStorage, vsmbAddedByUs, err)
+		err = undoMountOnFailure(coi, origSpecRoot, weMountedStorage, vsmbMountsAddedByUs, err)
 		return nil, err
 	}
 
 	return createContainer(coi.actualId, hcsDocument, coi.actualSchemaVersion)
 }
 
-func undoMountOnFailure(coi *createOptionsExInternal, origSpecRoot *specs.Root, weMountedStorage bool, vsmbAddedByUs []string, currentError error) error {
+func undoMountOnFailure(coi *createOptionsExInternal, origSpecRoot *specs.Root, weMountedStorage bool, vsmbMountsAddedByUs []string, currentError error) error {
 	logrus.Debugf("hcsshim::undoMountOnFailure Unwinding container layers")
 	retError := currentError
 	if weMountedStorage {
 		logrus.Debugf("hcsshim::undoMountOnFailure Unwinding container layers")
 		if unmountError := UnmountContainerLayers(coi.Spec.Windows.LayerFolders, coi.HostingSystem, UnmountOperationAll); unmountError != nil {
-			logrus.Warnf("may have leaked storage: %s", unmountError)
+			logrus.Warnf("may have leaked container layers storage on unwind: %s", unmountError)
 			retError = errors.Wrapf(currentError, fmt.Sprintf("may have leaked some storage - hcsshim auto-mounted container storage, but was unable to complete the unmount: %s", unmountError))
 		}
 		coi.Spec.Root = origSpecRoot
 	}
 
-	// TODO: Unwind vsmb
+	// Unwind vsmb bind-mounts
+	for _, vsmbMountAddedByUs := range vsmbMountsAddedByUs {
+		logrus.Debugf("hcsshim::undoMountOnFailure Unwinding VSMB Mount %s", vsmbMountAddedByUs)
+		if unmountError := RemoveVSMB(coi.HostingSystem, vsmbMountAddedByUs); unmountError != nil {
+			logrus.Warnf("may have leaked vsmb for bind-mount on unwind: %s: %s", vsmbMountAddedByUs, unmountError)
+			retError = errors.Wrapf(currentError, fmt.Sprintf("may have leaked some storage - hcsshim auto-mounted vsmb bind-mount, but was unable to complete the unmount: %s", unmountError))
+		}
+	}
 
 	return retError
 }
