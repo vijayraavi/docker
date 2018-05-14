@@ -94,7 +94,7 @@ func TestAddRemoveSCSIv2WCOW(t *testing.T) {
 func TestAddRemoveSCSIv1LCOW(t *testing.T) {
 	t.Skip("for now")
 	spec := getDefaultLinuxSpec(t)
-	uvm, err := CreateContainerEx(&CreateOptions{Spec: spec})
+	uvm, err := CreateContainerEx(&CreateOptionsEx{Spec: spec})
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
 	}

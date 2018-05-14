@@ -26,7 +26,6 @@ func AddVSMB(uvm Container, path string, flags int32) error {
 		uvmc.vsmbShares.shares = make(map[string]vsmbShare)
 	}
 	if _, ok := uvmc.vsmbShares.shares[path]; !ok {
-
 		_, filename := filepath.Split(path)
 		guid, err := NameToGuid(filename)
 		if err != nil {
@@ -102,6 +101,7 @@ func removeVSMB(uvm Container, path string) error {
 }
 
 // GetVSMBGUID returns the GUID used to mount a VSMB share in a utility VM
+// TODO: Rename path to hostPath
 func GetVSMBGUID(uvm Container, path string) (string, error) {
 	if uvm == nil {
 		return "", fmt.Errorf("no utility VM passed to GetVSMBShareGUID")

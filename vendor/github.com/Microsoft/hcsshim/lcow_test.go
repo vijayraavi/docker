@@ -18,7 +18,7 @@ func createLCOWTempDirWithSandbox(t *testing.T) (string, string) {
 	if lcowServiceContainer == nil {
 		cacheSandboxDir = createTempDir(t)
 		var err error
-		lcowServiceContainer, err = CreateContainerEx(&CreateOptions{
+		lcowServiceContainer, err = CreateContainerEx(&CreateOptionsEx{
 			Id:   "global",
 			Spec: dls,
 		})
@@ -55,7 +55,7 @@ func TestCreateLCOWScratch(t *testing.T) {
 	t.Skip("for now")
 	cacheDir := createTempDir(t)
 	cacheFile := filepath.Join(cacheDir, "cache.vhdx")
-	uvm, err := CreateContainerEx(&CreateOptions{Spec: getDefaultLinuxSpec(t)})
+	uvm, err := CreateContainerEx(&CreateOptionsEx{Spec: getDefaultLinuxSpec(t)})
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
 	}
@@ -117,7 +117,7 @@ func TestV1XenonLCOW(t *testing.T) {
 
 	spec := getDefaultLinuxSpec(t)
 	spec.Windows.LayerFolders = append(layersAlpine, tempDir)
-	c, err := CreateContainerEx(&CreateOptions{
+	c, err := CreateContainerEx(&CreateOptionsEx{
 		Id:            "TextV1XenonLCOW",
 		SchemaVersion: SchemaV10(),
 		Spec:          spec,

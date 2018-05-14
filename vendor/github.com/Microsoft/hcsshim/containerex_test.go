@@ -187,7 +187,7 @@ func TestID(t *testing.T) {
 	}
 	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 
-	c, err := CreateContainerEx(&CreateOptions{
+	c, err := CreateContainerEx(&CreateOptionsEx{
 		Id:            "gruntbuggly",
 		SchemaVersion: SchemaV20(),
 		Spec: &specs.Spec{
