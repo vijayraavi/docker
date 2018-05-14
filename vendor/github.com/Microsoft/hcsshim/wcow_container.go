@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -140,7 +141,6 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 	}
 
 	// Strip off the top-most RW/Sandbox layer as that's passed in separately to HCS for v1
-	// TODO Should this be inside the check below?
 	v1.LayerFolderPath = coi.Spec.Windows.LayerFolders[len(coi.Spec.Windows.LayerFolders)-1]
 
 	if coi.HostingSystem == nil ||
@@ -156,12 +156,18 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 		v1.VolumePath = coi.Spec.Root.Path[:len(coi.Spec.Root.Path)-1] // Strip the trailing backslash. Required for v1.
 		v2Container.Storage.Path = coi.Spec.Root.Path
 	} else {
+		// A hosting system was supplied, implying v2 Xenon; OR a v1 Xenon.
 		if coi.actualSchemaVersion.IsV10() {
+			// V1 Xenon
 			v1.HvPartition = true
-			// TODO: Do we need a check for nil pointer here? Or done previously
+			if coi.Spec == nil || coi.Spec.Windows == nil || coi.Spec.Windows.HyperV == nil { // Be resilient to nil de-reference
+				return "", fmt.Errorf(`invalid container spec - Spec.Windows.HyperV is nil`)
+			}
 			if coi.Spec.Windows.HyperV.UtilityVMPath != "" {
+				// Client-supplied utility VM path
 				v1.HvRuntime = &HvRuntime{ImagePath: coi.Spec.Windows.HyperV.UtilityVMPath}
 			} else {
+				// Client was lazy. Let's locate it from the layer folders instead.
 				uvmImagePath, err := LocateWCOWUVMFolderFromLayerFolders(coi.Spec.Windows.LayerFolders)
 				if err != nil {
 					return "", err
@@ -169,6 +175,7 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 				v1.HvRuntime = &HvRuntime{ImagePath: filepath.Join(uvmImagePath, `UtilityVM`)}
 			}
 		} else {
+			// Hosting system was supplied, so is v2 Xenon.
 			v2Container.Storage.Path = coi.Spec.Root.Path
 			// This is a little inefficient, but makes it MUCH easier for clients. Build the combinedLayers.Layers structure.
 			for _, layerFolder := range coi.Spec.Windows.LayerFolders[:len(coi.Spec.Windows.LayerFolders)-1] {
@@ -185,7 +192,7 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 		}
 	}
 
-	if coi.HostingSystem == nil { // ie Not a v2 xenon. As the mounted layers were passed in instead.
+	if coi.HostingSystem == nil { // Argon v1 or v2
 		for _, layerPath := range coi.Spec.Windows.LayerFolders[:len(coi.Spec.Windows.LayerFolders)-1] {
 			_, filename := filepath.Split(layerPath)
 			g, err := NameToGuid(filename)
@@ -283,8 +290,6 @@ func createWCOWContainer(coi *createOptionsExInternal) (Container, error) {
 		}
 	}
 
-	// TODO: Move the regex to validate the root to here.
-
 	// Do we need to auto-mount on behalf of the end user?
 	weMountedStorage := false
 	origSpecRoot := coi.Spec.Root
@@ -308,7 +313,10 @@ func createWCOWContainer(coi *createOptionsExInternal) (Container, error) {
 	hcsDocument, err := createWCOWHCSContainerDocument(coi)
 	if err != nil {
 		if weMountedStorage {
-			UnmountContainerLayers(coi.Spec.Windows.LayerFolders, coi.HostingSystem, UnmountOperationAll) // TODO Ignoring error for now
+			if unmountError := UnmountContainerLayers(coi.Spec.Windows.LayerFolders, coi.HostingSystem, UnmountOperationAll); unmountError != nil {
+				logrus.Warnf("may have leaked storage: %s", err)
+				err = errors.Wrapf(err, fmt.Sprintf("may have leaked some storage - hcsshim auto-mounted container storage, but was unable to complete the unmount: %s", unmountError))
+			}
 			coi.Spec.Root = origSpecRoot
 		}
 		return nil, err

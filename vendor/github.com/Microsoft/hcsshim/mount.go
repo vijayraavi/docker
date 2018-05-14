@@ -239,7 +239,7 @@ func UnmountContainerLayers(layerFolders []string, hostingSystem Container, op U
 }
 
 // removeVSMBOnMountFailure is a helper to roll-back any VSMB shares added to a utility VM on a failure path
-// The mutex  must NOT be held when calling this function.
+// The mutex must NOT be held when calling this function.
 func removeVSMBOnMountFailure(c Container, toRemove []string) {
 	if len(toRemove) == 0 {
 		return
@@ -254,7 +254,7 @@ func removeVSMBOnMountFailure(c Container, toRemove []string) {
 }
 
 // removeSCSIOnMountFailure is a helper to roll-back a SCSI disk added to a utility VM on a failure path.
-// The mutex  must NOT be held when calling this function.
+// The mutex must NOT be held when calling this function.
 func removeSCSIOnMountFailure(c Container, hostPath string, controller int, lun int) {
 	c.(*container).scsiLocations.Lock()
 	defer c.(*container).scsiLocations.Unlock()
