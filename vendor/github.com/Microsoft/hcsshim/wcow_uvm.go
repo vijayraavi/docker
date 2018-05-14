@@ -99,45 +99,45 @@ func LocateWCOWUVMFolderFromLayerFolders(layerFolders []string) (string, error) 
 	return uvmFolder, nil
 }
 
-func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
-	logrus.Debugf("hcsshim::createWCOWv2UVM Creating utility VM id=%s", createOptions.actualId)
+func createWCOWv2UVM(coi *createOptionsInternal) (Container, error) {
+	logrus.Debugf("hcsshim::createWCOWv2UVM Creating utility VM id=%s", coi.actualId)
 
 	iocis := "invalid OCI spec:"
-	if len(createOptions.Spec.Windows.LayerFolders) < 2 {
+	if len(coi.Spec.Windows.LayerFolders) < 2 {
 		return nil, fmt.Errorf("%s Windows.LayerFolders must have length of at least 2 for a hosting system", iocis)
 	}
-	if len(createOptions.Spec.Hostname) > 0 {
+	if len(coi.Spec.Hostname) > 0 {
 		return nil, fmt.Errorf("%s Hostname cannot be set for a hosting system", iocis)
 	}
-	if createOptions.Spec.Windows.Resources != nil && createOptions.Spec.Windows.Resources.CPU != nil && createOptions.Spec.Windows.Resources.CPU.Shares != nil {
+	if coi.Spec.Windows.Resources != nil && coi.Spec.Windows.Resources.CPU != nil && coi.Spec.Windows.Resources.CPU.Shares != nil {
 		return nil, fmt.Errorf("%s Windows.Resources.CPU.Shares must not be set for a hosting system", iocis)
 	}
-	if createOptions.Spec.Windows.Resources != nil && createOptions.Spec.Windows.Resources.CPU != nil && createOptions.Spec.Windows.Resources.CPU.Maximum != nil {
+	if coi.Spec.Windows.Resources != nil && coi.Spec.Windows.Resources.CPU != nil && coi.Spec.Windows.Resources.CPU.Maximum != nil {
 		return nil, fmt.Errorf("%s Windows.Resources.CPU.Maximum must not be set for a hosting system", iocis)
 	}
-	if createOptions.Spec.Root != nil {
+	if coi.Spec.Root != nil {
 		return nil, fmt.Errorf("%s Root must not be set for a hosting system", iocis)
 	}
-	if createOptions.Spec.Windows.Resources != nil && createOptions.Spec.Windows.Resources.Storage != nil {
+	if coi.Spec.Windows.Resources != nil && coi.Spec.Windows.Resources.Storage != nil {
 		return nil, fmt.Errorf("%s Windows.Resources.Storage must not be set for a hosting system", iocis)
 	}
-	if createOptions.Spec.Windows.CredentialSpec != nil {
+	if coi.Spec.Windows.CredentialSpec != nil {
 		return nil, fmt.Errorf("%s Windows.CredentialSpec must not be set for a hosting system", iocis)
 	}
-	if createOptions.Spec.Windows.Network != nil {
+	if coi.Spec.Windows.Network != nil {
 		return nil, fmt.Errorf("%s Windows.Network must not be set for a hosting system", iocis) // Need to revisit, but blocking everything currently not hooked up
 	}
-	if 0 != len(createOptions.Spec.Mounts) {
+	if 0 != len(coi.Spec.Mounts) {
 		return nil, fmt.Errorf("%s Mounts must not be set for a hosting system", iocis)
 	}
 
-	uvmFolder, err := LocateWCOWUVMFolderFromLayerFolders(createOptions.Spec.Windows.LayerFolders)
+	uvmFolder, err := LocateWCOWUVMFolderFromLayerFolders(coi.Spec.Windows.LayerFolders)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate utility VM folder from layer folders: %s", err)
 	}
 
 	// Create the sandbox in the top-most layer folder, creating the folder if it doesn't already exist.
-	sandboxFolder := createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
+	sandboxFolder := coi.Spec.Windows.LayerFolders[len(coi.Spec.Windows.LayerFolders)-1]
 	logrus.Debugf("hcsshim::createWCOWv2UVM Sandbox folder: %s", sandboxFolder)
 
 	// Create the directory if it doesn't exist
@@ -149,7 +149,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 	}
 
 	// Create sandbox.vhdx in the sandbox folder based on the template, granting the correct permissions to it
-	if err := CreateWCOWUVMSandbox(uvmFolder, sandboxFolder, createOptions.actualId); err != nil {
+	if err := CreateWCOWUVMSandbox(uvmFolder, sandboxFolder, coi.actualId); err != nil {
 		return nil, fmt.Errorf("failed to create UVM sandbox: %s", err)
 	}
 
@@ -165,17 +165,17 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 	if numCPU() == 1 {
 		processors = 1
 	}
-	if createOptions.Spec.Windows.Resources != nil {
-		if createOptions.Spec.Windows.Resources.Memory != nil && createOptions.Spec.Windows.Resources.Memory.Limit != nil {
-			memory = int32(*createOptions.Spec.Windows.Resources.Memory.Limit / 1024 / 1024) // OCI spec is in bytes. HCS takes MB
+	if coi.Spec.Windows.Resources != nil {
+		if coi.Spec.Windows.Resources.Memory != nil && coi.Spec.Windows.Resources.Memory.Limit != nil {
+			memory = int32(*coi.Spec.Windows.Resources.Memory.Limit / 1024 / 1024) // OCI spec is in bytes. HCS takes MB
 		}
-		if createOptions.Spec.Windows.Resources.CPU != nil && createOptions.Spec.Windows.Resources.CPU.Count != nil {
-			processors = int32(*createOptions.Spec.Windows.Resources.CPU.Count)
+		if coi.Spec.Windows.Resources.CPU != nil && coi.Spec.Windows.Resources.CPU.Count != nil {
+			processors = int32(*coi.Spec.Windows.Resources.CPU.Count)
 		}
 	}
 	uvm := &ComputeSystemV2{
-		Owner:         createOptions.actualOwner,
-		SchemaVersion: createOptions.actualSchemaVersion,
+		Owner:         coi.actualOwner,
+		SchemaVersion: coi.actualSchemaVersion,
 		VirtualMachine: &VirtualMachineV2{
 			Chipset: &VirtualMachinesResourcesChipsetV2{
 				UEFI: &VirtualMachinesResourcesUefiV2{
@@ -214,7 +214,7 @@ func createWCOWv2UVM(createOptions *CreateOptions) (Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	uvmContainer, err := createContainer(createOptions.actualId, string(uvmb), SchemaV20())
+	uvmContainer, err := createContainer(coi.actualId, string(uvmb), SchemaV20())
 	if err != nil {
 		logrus.Debugln("failed to create UVM: ", err)
 		return nil, err

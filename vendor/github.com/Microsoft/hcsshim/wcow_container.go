@@ -14,63 +14,60 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// CreateWCOWHCSContainerDocument creates a document suitable for calling HCS to create
+// createWCOWHCSContainerDocument creates a document suitable for calling HCS to create
 // a container, both hosted and process isolated. It can create both v1 and v2
-// schema. This is exported just in case a client could find it useful, but
-// not strictly necessary as it will be called by CreateContainerEx().
-//
-// The containers storage should have been mounted already.
+// schema. The containers storage should have been mounted already.
 
-func CreateWCOWHCSContainerDocument(createOptions *CreateOptions) (string, error) {
+func createWCOWHCSContainerDocument(coi *createOptionsInternal) (string, error) {
 	logrus.Debugf("hcsshim: CreateWCOWHCSContainerDocument")
 
 	// TODO: Make this safe if exported so no null pointer dereferences.
 	// TODO: Should this be a Windows function explicitly in the name
 
-	if createOptions.Spec == nil {
+	if coi.Spec == nil {
 		return "", fmt.Errorf("cannot create HCS container document - OCI spec is missing")
 	}
 
-	if createOptions.Spec.Windows == nil {
+	if coi.Spec.Windows == nil {
 		return "", fmt.Errorf("cannot create HCS container document - OCI spec Windows section is missing ")
 	}
 
 	v1 := &ContainerConfig{
 		SystemType:              "Container",
-		Name:                    createOptions.actualId,
-		Owner:                   createOptions.actualOwner,
+		Name:                    coi.actualId,
+		Owner:                   coi.actualOwner,
 		HvPartition:             false,
-		IgnoreFlushesDuringBoot: createOptions.Spec.Windows.IgnoreFlushesDuringBoot,
+		IgnoreFlushesDuringBoot: coi.Spec.Windows.IgnoreFlushesDuringBoot,
 	}
 
 	// IgnoreFlushesDuringBoot is a property of the SCSI attachment for the sandbox. Set when it's hot-added to the utility VM
 	// ID is a property on the create call in V2 rather than part of the schema.
 	v2 := &ComputeSystemV2{
-		Owner:                             createOptions.actualOwner,
+		Owner:                             coi.actualOwner,
 		SchemaVersion:                     SchemaV20(),
 		ShouldTerminateOnLastHandleClosed: true,
 	}
 	v2Container := &ContainerV2{Storage: &ContainersResourcesStorageV2{}}
 
 	// TODO: Still want to revisit this.
-	if createOptions.Spec.Windows.LayerFolders == nil || len(createOptions.Spec.Windows.LayerFolders) < 2 {
+	if coi.Spec.Windows.LayerFolders == nil || len(coi.Spec.Windows.LayerFolders) < 2 {
 		return "", fmt.Errorf("invalid spec - not enough layer folders supplied")
 	}
 
-	if createOptions.Spec.Hostname != "" {
-		v1.HostName = createOptions.Spec.Hostname
-		v2Container.GuestOS = &GuestOsV2{HostName: createOptions.Spec.Hostname}
+	if coi.Spec.Hostname != "" {
+		v1.HostName = coi.Spec.Hostname
+		v2Container.GuestOS = &GuestOsV2{HostName: coi.Spec.Hostname}
 	}
 
-	if createOptions.Spec.Windows.Resources != nil {
-		if createOptions.Spec.Windows.Resources.CPU != nil {
-			if createOptions.Spec.Windows.Resources.CPU.Count != nil ||
-				createOptions.Spec.Windows.Resources.CPU.Shares != nil ||
-				createOptions.Spec.Windows.Resources.CPU.Maximum != nil {
+	if coi.Spec.Windows.Resources != nil {
+		if coi.Spec.Windows.Resources.CPU != nil {
+			if coi.Spec.Windows.Resources.CPU.Count != nil ||
+				coi.Spec.Windows.Resources.CPU.Shares != nil ||
+				coi.Spec.Windows.Resources.CPU.Maximum != nil {
 				v2Container.Processor = &ContainersResourcesProcessorV2{}
 			}
-			if createOptions.Spec.Windows.Resources.CPU.Count != nil {
-				cpuCount := *createOptions.Spec.Windows.Resources.CPU.Count
+			if coi.Spec.Windows.Resources.CPU.Count != nil {
+				cpuCount := *coi.Spec.Windows.Resources.CPU.Count
 				hostCPUCount := uint64(numCPU())
 				if cpuCount > hostCPUCount {
 					logrus.Warnf("Changing requested CPUCount of %d to current number of processors, %d", cpuCount, hostCPUCount)
@@ -79,103 +76,103 @@ func CreateWCOWHCSContainerDocument(createOptions *CreateOptions) (string, error
 				v1.ProcessorCount = uint32(cpuCount)
 				v2Container.Processor.Count = v1.ProcessorCount
 			}
-			if createOptions.Spec.Windows.Resources.CPU.Shares != nil {
-				v1.ProcessorWeight = uint64(*createOptions.Spec.Windows.Resources.CPU.Shares)
+			if coi.Spec.Windows.Resources.CPU.Shares != nil {
+				v1.ProcessorWeight = uint64(*coi.Spec.Windows.Resources.CPU.Shares)
 				v2Container.Processor.Weight = v1.ProcessorWeight
 			}
-			if createOptions.Spec.Windows.Resources.CPU.Maximum != nil {
-				v1.ProcessorMaximum = int64(*createOptions.Spec.Windows.Resources.CPU.Maximum)
+			if coi.Spec.Windows.Resources.CPU.Maximum != nil {
+				v1.ProcessorMaximum = int64(*coi.Spec.Windows.Resources.CPU.Maximum)
 				v2Container.Processor.Maximum = uint64(v1.ProcessorMaximum)
 			}
 		}
-		if createOptions.Spec.Windows.Resources.Memory != nil {
-			if createOptions.Spec.Windows.Resources.Memory.Limit != nil {
-				v1.MemoryMaximumInMB = int64(*createOptions.Spec.Windows.Resources.Memory.Limit) / 1024 / 1024
+		if coi.Spec.Windows.Resources.Memory != nil {
+			if coi.Spec.Windows.Resources.Memory.Limit != nil {
+				v1.MemoryMaximumInMB = int64(*coi.Spec.Windows.Resources.Memory.Limit) / 1024 / 1024
 				v2Container.Memory = &ContainersResourcesMemoryV2{Maximum: uint64(v1.MemoryMaximumInMB)}
 
 			}
 		}
-		if createOptions.Spec.Windows.Resources.Storage != nil {
-			if createOptions.Spec.Windows.Resources.Storage.Bps != nil || createOptions.Spec.Windows.Resources.Storage.Iops != nil {
+		if coi.Spec.Windows.Resources.Storage != nil {
+			if coi.Spec.Windows.Resources.Storage.Bps != nil || coi.Spec.Windows.Resources.Storage.Iops != nil {
 				v2Container.Storage.StorageQoS = &ContainersResourcesStorageQoSV2{}
 			}
-			if createOptions.Spec.Windows.Resources.Storage.Bps != nil {
-				v1.StorageBandwidthMaximum = *createOptions.Spec.Windows.Resources.Storage.Bps
-				v2Container.Storage.StorageQoS.BandwidthMaximum = *createOptions.Spec.Windows.Resources.Storage.Bps
+			if coi.Spec.Windows.Resources.Storage.Bps != nil {
+				v1.StorageBandwidthMaximum = *coi.Spec.Windows.Resources.Storage.Bps
+				v2Container.Storage.StorageQoS.BandwidthMaximum = *coi.Spec.Windows.Resources.Storage.Bps
 			}
-			if createOptions.Spec.Windows.Resources.Storage.Iops != nil {
-				v1.StorageIOPSMaximum = *createOptions.Spec.Windows.Resources.Storage.Iops
-				v2Container.Storage.StorageQoS.IOPSMaximum = *createOptions.Spec.Windows.Resources.Storage.Iops
+			if coi.Spec.Windows.Resources.Storage.Iops != nil {
+				v1.StorageIOPSMaximum = *coi.Spec.Windows.Resources.Storage.Iops
+				v2Container.Storage.StorageQoS.IOPSMaximum = *coi.Spec.Windows.Resources.Storage.Iops
 			}
 		}
 	}
 
 	// TODO V2 networking. Only partial at the moment. v2.Container.Networking.Namespace specifically
-	if createOptions.Spec.Windows.Network != nil {
+	if coi.Spec.Windows.Network != nil {
 		v2Container.Networking = &ContainersResourcesNetworkingV2{}
 
-		v1.EndpointList = createOptions.Spec.Windows.Network.EndpointList
+		v1.EndpointList = coi.Spec.Windows.Network.EndpointList
 		v2Container.Networking.NetworkAdapters = v1.EndpointList
 
-		v1.AllowUnqualifiedDNSQuery = createOptions.Spec.Windows.Network.AllowUnqualifiedDNSQuery
+		v1.AllowUnqualifiedDNSQuery = coi.Spec.Windows.Network.AllowUnqualifiedDNSQuery
 		v2Container.Networking.AllowUnqualifiedDnsQuery = v1.AllowUnqualifiedDNSQuery
 
-		if createOptions.Spec.Windows.Network.DNSSearchList != nil {
-			v1.DNSSearchList = strings.Join(createOptions.Spec.Windows.Network.DNSSearchList, ",")
+		if coi.Spec.Windows.Network.DNSSearchList != nil {
+			v1.DNSSearchList = strings.Join(coi.Spec.Windows.Network.DNSSearchList, ",")
 			v2Container.Networking.DNSSearchList = v1.DNSSearchList
 		}
 
-		v1.NetworkSharedContainerName = createOptions.Spec.Windows.Network.NetworkSharedContainerName
+		v1.NetworkSharedContainerName = coi.Spec.Windows.Network.NetworkSharedContainerName
 		v2Container.Networking.NetworkSharedContainerName = v1.NetworkSharedContainerName
 	}
 
 	//	// TODO V2 Credentials not in the schema yet.
-	if cs, ok := createOptions.Spec.Windows.CredentialSpec.(string); ok {
+	if cs, ok := coi.Spec.Windows.CredentialSpec.(string); ok {
 		v1.Credentials = cs
 	}
 
-	if createOptions.Spec.Root == nil {
+	if coi.Spec.Root == nil {
 		return "", fmt.Errorf("spec is invalid - root isn't populated")
 	}
 
-	if createOptions.Spec.Root.Readonly {
+	if coi.Spec.Root.Readonly {
 		return "", fmt.Errorf(`invalid container spec - readonly is not supported`)
 	}
 
 	// Strip off the top-most RW/Sandbox layer as that's passed in separately to HCS for v1
 	// TODO Should this be inside the check below?
-	v1.LayerFolderPath = createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
+	v1.LayerFolderPath = coi.Spec.Windows.LayerFolders[len(coi.Spec.Windows.LayerFolders)-1]
 
-	if createOptions.HostingSystem == nil ||
-		(createOptions.actualSchemaVersion.IsV10() && createOptions.Spec.Windows.HyperV == nil) {
+	if coi.HostingSystem == nil ||
+		(coi.actualSchemaVersion.IsV10() && coi.Spec.Windows.HyperV == nil) {
 		// Argon v1 or v2.
 		const volumeGUIDRegex = `^\\\\\?\\(Volume)\{{0,1}[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}(\}){0,1}\}\\$`
-		if _, err := regexp.MatchString(volumeGUIDRegex, createOptions.Spec.Root.Path); err != nil {
-			return "", fmt.Errorf(`invalid container spec - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, createOptions.Spec.Root.Path)
+		if _, err := regexp.MatchString(volumeGUIDRegex, coi.Spec.Root.Path); err != nil {
+			return "", fmt.Errorf(`invalid container spec - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, coi.Spec.Root.Path)
 		}
-		if createOptions.Spec.Root.Path[len(createOptions.Spec.Root.Path)-1] != '\\' {
-			createOptions.Spec.Root.Path = fmt.Sprintf(`%s\`, createOptions.Spec.Root.Path) // Be nice to clients and make sure well-formed for back-compat
+		if coi.Spec.Root.Path[len(coi.Spec.Root.Path)-1] != '\\' {
+			coi.Spec.Root.Path = fmt.Sprintf(`%s\`, coi.Spec.Root.Path) // Be nice to clients and make sure well-formed for back-compat
 		}
-		v1.VolumePath = createOptions.Spec.Root.Path[:len(createOptions.Spec.Root.Path)-1] // Strip the trailing backslash. Required for v1.
-		v2Container.Storage.Path = createOptions.Spec.Root.Path
+		v1.VolumePath = coi.Spec.Root.Path[:len(coi.Spec.Root.Path)-1] // Strip the trailing backslash. Required for v1.
+		v2Container.Storage.Path = coi.Spec.Root.Path
 	} else {
-		if createOptions.actualSchemaVersion.IsV10() {
+		if coi.actualSchemaVersion.IsV10() {
 			v1.HvPartition = true
 			// TODO: Do we need a check for nil pointer here? Or done previously
-			if createOptions.Spec.Windows.HyperV.UtilityVMPath != "" {
-				v1.HvRuntime = &HvRuntime{ImagePath: createOptions.Spec.Windows.HyperV.UtilityVMPath}
+			if coi.Spec.Windows.HyperV.UtilityVMPath != "" {
+				v1.HvRuntime = &HvRuntime{ImagePath: coi.Spec.Windows.HyperV.UtilityVMPath}
 			} else {
-				uvmImagePath, err := LocateWCOWUVMFolderFromLayerFolders(createOptions.Spec.Windows.LayerFolders)
+				uvmImagePath, err := LocateWCOWUVMFolderFromLayerFolders(coi.Spec.Windows.LayerFolders)
 				if err != nil {
 					return "", err
 				}
 				v1.HvRuntime = &HvRuntime{ImagePath: filepath.Join(uvmImagePath, `UtilityVM`)}
 			}
 		} else {
-			v2Container.Storage.Path = createOptions.Spec.Root.Path
+			v2Container.Storage.Path = coi.Spec.Root.Path
 			// This is a little inefficient, but makes it MUCH easier for clients. Build the combinedLayers.Layers structure.
-			for _, layerFolder := range createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1] {
-				layerFolderVSMBGUID, err := GetVSMBGUID(createOptions.HostingSystem, layerFolder)
+			for _, layerFolder := range coi.Spec.Windows.LayerFolders[:len(coi.Spec.Windows.LayerFolders)-1] {
+				layerFolderVSMBGUID, err := GetVSMBGUID(coi.HostingSystem, layerFolder)
 				if err != nil {
 					return "", err
 				}
@@ -188,8 +185,8 @@ func CreateWCOWHCSContainerDocument(createOptions *CreateOptions) (string, error
 		}
 	}
 
-	if createOptions.HostingSystem == nil { // ie Not a v2 xenon. As the mounted layers were passed in instead.
-		for _, layerPath := range createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1] {
+	if coi.HostingSystem == nil { // ie Not a v2 xenon. As the mounted layers were passed in instead.
+		for _, layerPath := range coi.Spec.Windows.LayerFolders[:len(coi.Spec.Windows.LayerFolders)-1] {
 			_, filename := filepath.Split(layerPath)
 			g, err := NameToGuid(filename)
 			if err != nil {
@@ -207,7 +204,7 @@ func CreateWCOWHCSContainerDocument(createOptions *CreateOptions) (string, error
 		mdsv2 []ContainersResourcesMappedDirectoryV2
 		mpsv2 []ContainersResourcesMappedPipeV2
 	)
-	for _, mount := range createOptions.Spec.Mounts {
+	for _, mount := range coi.Spec.Mounts {
 		const pipePrefix = `\\.\pipe\`
 		if mount.Type != "" {
 			return "", fmt.Errorf("invalid container spec - Mount.Type '%s' must not be set", mount.Type)
@@ -237,17 +234,17 @@ func CreateWCOWHCSContainerDocument(createOptions *CreateOptions) (string, error
 	v2Container.MappedPipes = mpsv2
 
 	// Put the v2Container object as a HostedSystem for a Xenon, or directly in the schema for an Argon.
-	if createOptions.HostingSystem == nil {
+	if coi.HostingSystem == nil {
 		v2.Container = v2Container
 	} else {
-		v2.HostingSystemId = createOptions.HostingSystem.(*container).id
+		v2.HostingSystemId = coi.HostingSystem.(*container).id
 		v2.HostedSystem = &HostedSystemV2{
 			SchemaVersion: SchemaV20(),
 			Container:     v2Container,
 		}
 	}
 
-	if createOptions.actualSchemaVersion.IsV10() {
+	if coi.actualSchemaVersion.IsV10() {
 		v1b, err := json.Marshal(v1)
 		if err != nil {
 			return "", err
@@ -264,9 +261,9 @@ func CreateWCOWHCSContainerDocument(createOptions *CreateOptions) (string, error
 	}
 }
 
-func createWCOWContainer(createOptions *CreateOptions) (Container, error) {
+func createWCOWContainer(coi *createOptionsInternal) (Container, error) {
 
-	sandboxFolder := createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
+	sandboxFolder := coi.Spec.Windows.LayerFolders[len(coi.Spec.Windows.LayerFolders)-1]
 	logrus.Debugf("hcsshim::createWCOWContainer Sandbox folder: %s", sandboxFolder)
 
 	// Create the directory for the RW sandbox layer if it doesn't exist
@@ -281,7 +278,7 @@ func createWCOWContainer(createOptions *CreateOptions) (Container, error) {
 	if _, err := os.Stat(filepath.Join(sandboxFolder, "sandbox.vhdx")); os.IsNotExist(err) {
 		logrus.Debugf("hcsshim::createWCOWContainer container sandbox.vhdx does not exist so creating in %s ", sandboxFolder)
 		di := DriverInfo{HomeDir: filepath.Dir(sandboxFolder)}
-		if err := CreateSandboxLayer(di, filepath.Base(sandboxFolder), createOptions.Spec.Windows.LayerFolders[0], createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1]); err != nil {
+		if err := CreateSandboxLayer(di, filepath.Base(sandboxFolder), coi.Spec.Windows.LayerFolders[0], coi.Spec.Windows.LayerFolders[:len(coi.Spec.Windows.LayerFolders)-1]); err != nil {
 			return nil, fmt.Errorf("failed to CreateSandboxLayer %s", err)
 		}
 	}
@@ -290,32 +287,32 @@ func createWCOWContainer(createOptions *CreateOptions) (Container, error) {
 
 	// Do we need to auto-mount on behalf of the end user?
 	weMountedStorage := false
-	origSpecRoot := createOptions.Spec.Root
-	if createOptions.Spec.Root == nil {
-		createOptions.Spec.Root = &specs.Root{}
+	origSpecRoot := coi.Spec.Root
+	if coi.Spec.Root == nil {
+		coi.Spec.Root = &specs.Root{}
 	}
-	if createOptions.Spec.Root.Path == "" {
+	if coi.Spec.Root.Path == "" {
 		logrus.Debugln("hcsshim::createWCOWContainer Auto-mounting storage")
-		mcl, err := MountContainerLayers(createOptions.Spec.Windows.LayerFolders, createOptions.HostingSystem)
+		mcl, err := MountContainerLayers(coi.Spec.Windows.LayerFolders, coi.HostingSystem)
 		if err != nil {
 			return nil, fmt.Errorf("failed to auto-mount container storage: %s", err)
 		}
 		weMountedStorage = true
-		if createOptions.HostingSystem == nil {
-			createOptions.Spec.Root.Path = mcl.(string) // Argon v1 or v2
+		if coi.HostingSystem == nil {
+			coi.Spec.Root.Path = mcl.(string) // Argon v1 or v2
 		} else {
-			createOptions.Spec.Root.Path = mcl.(CombinedLayersV2).ContainerRootPath // v2 Xenon WCOW
+			coi.Spec.Root.Path = mcl.(CombinedLayersV2).ContainerRootPath // v2 Xenon WCOW
 		}
 	}
 
-	hcsDocument, err := CreateWCOWHCSContainerDocument(createOptions)
+	hcsDocument, err := createWCOWHCSContainerDocument(coi)
 	if err != nil {
 		if weMountedStorage {
-			UnmountContainerLayers(createOptions.Spec.Windows.LayerFolders, createOptions.HostingSystem, UnmountOperationAll) // TODO Ignoring error for now
-			createOptions.Spec.Root = origSpecRoot
+			UnmountContainerLayers(coi.Spec.Windows.LayerFolders, coi.HostingSystem, UnmountOperationAll) // TODO Ignoring error for now
+			coi.Spec.Root = origSpecRoot
 		}
 		return nil, err
 	}
 
-	return createContainer(createOptions.actualId, hcsDocument, createOptions.actualSchemaVersion)
+	return createContainer(coi.actualId, hcsDocument, coi.actualSchemaVersion)
 }

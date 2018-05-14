@@ -43,7 +43,6 @@ type vsmbShare struct {
 	refCount uint32
 	guid     string
 }
-
 type container struct {
 	handleLock     sync.RWMutex
 	handle         hcsSystem

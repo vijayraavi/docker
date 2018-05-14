@@ -23,37 +23,22 @@ const (
 	defaultLCOWVhdxBlockSizeMB = 1
 )
 
-func getLCOWSettings(createOptions *CreateOptions) {
-	createOptions.actualKirdPath = createOptions.KirdPath
-	if createOptions.actualKirdPath == "" {
-		createOptions.actualKirdPath = filepath.Join(os.Getenv("ProgramFiles"), "Linux Containers")
-	}
-	createOptions.actualKernelFile = createOptions.KernelFile
-	if createOptions.actualKernelFile == "" {
-		createOptions.actualKernelFile = "bootx64.efi"
-	}
-	createOptions.actualInitrdFile = createOptions.InitrdFile
-	if createOptions.actualInitrdFile == "" {
-		createOptions.actualInitrdFile = "initrd.img"
-	}
-}
-
 // createLCOWv1 creates a Linux (LCOW) container using the V1 schema.
-func createLCOWv1(createOptions *CreateOptions) (Container, error) {
+func createLCOWv1(coi *createOptionsInternal) (Container, error) {
 
 	configuration := &ContainerConfig{
 		HvPartition:   true,
-		Name:          createOptions.actualId,
+		Name:          coi.actualId,
 		SystemType:    "container",
 		ContainerType: "linux",
-		Owner:         createOptions.actualOwner,
+		Owner:         coi.actualOwner,
 		TerminateOnLastHandleClosed: true,
 	}
 	configuration.HvRuntime = &HvRuntime{
-		ImagePath:           createOptions.actualKirdPath,
-		LinuxKernelFile:     createOptions.actualKernelFile,
-		LinuxInitrdFile:     createOptions.actualInitrdFile,
-		LinuxBootParameters: createOptions.KernelBootOptions,
+		ImagePath:           coi.actualKirdPath,
+		LinuxKernelFile:     coi.actualKernelFile,
+		LinuxInitrdFile:     coi.actualInitrdFile,
+		LinuxBootParameters: coi.KernelBootOptions,
 	}
 
 	// TODO These checks were elsewhere. In common with v2 too.
@@ -74,11 +59,11 @@ func createLCOWv1(createOptions *CreateOptions) (Container, error) {
 	//		}
 	//	}
 
-	if createOptions.Spec.Windows != nil {
+	if coi.Spec.Windows != nil {
 		// Strip off the top-most layer as that's passed in separately to HCS
-		if len(createOptions.Spec.Windows.LayerFolders) > 0 {
-			configuration.LayerFolderPath = createOptions.Spec.Windows.LayerFolders[len(createOptions.Spec.Windows.LayerFolders)-1]
-			layerFolders := createOptions.Spec.Windows.LayerFolders[:len(createOptions.Spec.Windows.LayerFolders)-1]
+		if len(coi.Spec.Windows.LayerFolders) > 0 {
+			configuration.LayerFolderPath = coi.Spec.Windows.LayerFolders[len(coi.Spec.Windows.LayerFolders)-1]
+			layerFolders := coi.Spec.Windows.LayerFolders[:len(coi.Spec.Windows.LayerFolders)-1]
 
 			for _, layerPath := range layerFolders {
 				_, filename := filepath.Split(layerPath)
@@ -93,13 +78,13 @@ func createLCOWv1(createOptions *CreateOptions) (Container, error) {
 			}
 		}
 
-		if createOptions.Spec.Windows.Network != nil {
-			configuration.EndpointList = createOptions.Spec.Windows.Network.EndpointList
-			configuration.AllowUnqualifiedDNSQuery = createOptions.Spec.Windows.Network.AllowUnqualifiedDNSQuery
-			if createOptions.Spec.Windows.Network.DNSSearchList != nil {
-				configuration.DNSSearchList = strings.Join(createOptions.Spec.Windows.Network.DNSSearchList, ",")
+		if coi.Spec.Windows.Network != nil {
+			configuration.EndpointList = coi.Spec.Windows.Network.EndpointList
+			configuration.AllowUnqualifiedDNSQuery = coi.Spec.Windows.Network.AllowUnqualifiedDNSQuery
+			if coi.Spec.Windows.Network.DNSSearchList != nil {
+				configuration.DNSSearchList = strings.Join(coi.Spec.Windows.Network.DNSSearchList, ",")
 			}
-			configuration.NetworkSharedContainerName = createOptions.Spec.Windows.Network.NetworkSharedContainerName
+			configuration.NetworkSharedContainerName = coi.Spec.Windows.Network.NetworkSharedContainerName
 		}
 	}
 
@@ -149,7 +134,7 @@ func createLCOWv1(createOptions *CreateOptions) (Container, error) {
 
 	mds := []MappedDir{}
 	specMounts := []specs.Mount{}
-	for _, mount := range createOptions.Spec.Mounts {
+	for _, mount := range coi.Spec.Mounts {
 		specMount := mount
 		if mount.Type == "bind" {
 			// Strip out the uvmpath from the options
@@ -191,13 +176,13 @@ func createLCOWv1(createOptions *CreateOptions) (Container, error) {
 	}
 	configuration.MappedDirectories = mds
 
-	container, err := CreateContainer(createOptions.actualId, configuration)
+	container, err := CreateContainer(coi.actualId, configuration)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO - Not sure why after CreateContainer, but that's how I coded it in libcontainerd and it worked....
-	createOptions.Spec.Mounts = specMounts
+	coi.Spec.Mounts = specMounts
 
 	logrus.Debugf("createLCOWv1() completed successfully")
 	return container, nil
