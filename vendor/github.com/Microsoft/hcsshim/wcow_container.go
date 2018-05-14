@@ -21,9 +21,7 @@ import (
 
 func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error) {
 	logrus.Debugf("hcsshim: CreateWCOWHCSContainerDocument")
-
 	// TODO: Make this safe if exported so no null pointer dereferences.
-	// TODO: Should this be a Windows function explicitly in the name
 
 	if coi.Spec == nil {
 		return "", fmt.Errorf("cannot create HCS container document - OCI spec is missing")
@@ -205,6 +203,7 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 	}
 
 	// Add the mounts as mapped directories or mapped pipes
+	// TODO: Mapped pipes to add in v2 schema.
 	var (
 		mdsv1 []MappedDir
 		mpsv1 []MappedPipe
@@ -327,7 +326,7 @@ func createWCOWContainer(coi *createOptionsExInternal) (Container, error) {
 	var vsmbMountsAddedByUs []string
 	for _, mount := range coi.Spec.Mounts {
 		if mount.Destination == "" || mount.Source == "" {
-			thisError := fmt.Errorf("invalid OCI spec - a mount must have a source and a destination")
+			thisError := fmt.Errorf("invalid OCI spec - a mount must have both source and a destination: %+v", mount)
 			thisError = undoMountOnFailure(coi, origSpecRoot, weMountedStorage, vsmbMountsAddedByUs, thisError)
 			return nil, thisError
 		}
