@@ -18,7 +18,7 @@ import (
 // a container, both hosted and process isolated. It can create both v1 and v2
 // schema. The containers storage should have been mounted already.
 
-func createWCOWHCSContainerDocument(coi *createOptionsInternal) (string, error) {
+func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error) {
 	logrus.Debugf("hcsshim: CreateWCOWHCSContainerDocument")
 
 	// TODO: Make this safe if exported so no null pointer dereferences.
@@ -261,7 +261,7 @@ func createWCOWHCSContainerDocument(coi *createOptionsInternal) (string, error) 
 	}
 }
 
-func createWCOWContainer(coi *createOptionsInternal) (Container, error) {
+func createWCOWContainer(coi *createOptionsExInternal) (Container, error) {
 
 	sandboxFolder := coi.Spec.Windows.LayerFolders[len(coi.Spec.Windows.LayerFolders)-1]
 	logrus.Debugf("hcsshim::createWCOWContainer Sandbox folder: %s", sandboxFolder)

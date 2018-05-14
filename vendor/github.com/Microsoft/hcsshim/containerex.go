@@ -45,19 +45,11 @@ type CreateOptionsEx struct {
 	KernelFile        string // Filename under KirdPath for the kernel. Defaults to bootx64.efi
 	InitrdFile        string // Filename under KirdPath for the initrd image. Defaults to initrd.img
 	KernelBootOptions string // Additional boot options for the kernel
-
-	// Internal fields
-	//	actualSchemaVersion *SchemaVersion // Calculated based on Windows build and optional caller-supplied override
-	//actualId         string // Identifier for the container
-	//actualOwner      string // Owner for the container
-	//actualKirdPath   string // LCOW kernel/initrd path
-	//actualKernelFile string // LCOW kernel file
-	//actualInitrdFile string // LCOW initrd file
 }
 
 // createOptionsInternal is the set of user-supplied create options, but includes internal
 // fields for processing the request once user-supplied stuff has been validated.
-type createOptionsInternal struct {
+type createOptionsExInternal struct {
 	*CreateOptionsEx
 
 	actualSchemaVersion *SchemaVersion // Calculated based on Windows build and optional caller-supplied override
@@ -74,7 +66,7 @@ type createOptionsInternal struct {
 func CreateContainerEx(createOptions *CreateOptionsEx) (Container, error) {
 	logrus.Debugf("hcsshim::CreateContainerEx options: %+v", createOptions)
 
-	coi := &createOptionsInternal{
+	coi := &createOptionsExInternal{
 		CreateOptionsEx:  createOptions,
 		actualId:         createOptions.Id,
 		actualOwner:      createOptions.Owner,

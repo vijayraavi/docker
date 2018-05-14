@@ -99,7 +99,7 @@ func LocateWCOWUVMFolderFromLayerFolders(layerFolders []string) (string, error) 
 	return uvmFolder, nil
 }
 
-func createWCOWv2UVM(coi *createOptionsInternal) (Container, error) {
+func createWCOWv2UVM(coi *createOptionsExInternal) (Container, error) {
 	logrus.Debugf("hcsshim::createWCOWv2UVM Creating utility VM id=%s", coi.actualId)
 
 	iocis := "invalid OCI spec:"

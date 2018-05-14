@@ -24,7 +24,7 @@ const (
 )
 
 // createLCOWv1 creates a Linux (LCOW) container using the V1 schema.
-func createLCOWv1(coi *createOptionsInternal) (Container, error) {
+func createLCOWv1(coi *createOptionsExInternal) (Container, error) {
 
 	configuration := &ContainerConfig{
 		HvPartition:   true,
