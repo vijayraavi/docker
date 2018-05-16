@@ -59,11 +59,11 @@ type container struct {
 	}
 	vpmemLocations struct {
 		sync.Mutex
-		hostPath [1][256]string // For now 1 VPmem controller. Mapped to /tmp/vpmem<controller>/<index>/ eg /tmp/vpmem0/200
+		hostPath [128]string // Limited by ACPI size.
 	}
 	scsiLocations struct {
 		sync.Mutex
-		hostPath [4][64]string // Hyper-V supports 4 controllers, 64 slots per controller
+		hostPath [4][64]string // Hyper-V supports 4 controllers, 64 slots per controller. Limited to 1 controller for now though.
 	}
 }
 

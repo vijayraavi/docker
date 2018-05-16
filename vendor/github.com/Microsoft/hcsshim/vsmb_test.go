@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/Microsoft/hcsshim/schema/v2"
 )
 
 // TestWCOWVSMB tests adding/removing VSMB from a v2 Windows utility VM
@@ -20,7 +22,7 @@ func TestWCOWVSMB(t *testing.T) {
 	dir := strings.ToUpper(createTempDir(t)) // Force upper-case
 	var iterations uint32 = 3
 	for i := 0; i < int(iterations); i++ {
-		if err := AddVSMB(v2uvm, dir, VsmbFlagReadOnly|VsmbFlagPseudoOplocks|VsmbFlagTakeBackupPrivilege|VsmbFlagCacheIO|VsmbFlagShareRead); err != nil {
+		if err := AddVSMB(v2uvm, dir, hcsschemav2.VsmbFlagReadOnly|hcsschemav2.VsmbFlagPseudoOplocks|hcsschemav2.VsmbFlagTakeBackupPrivilege|hcsschemav2.VsmbFlagCacheIO|hcsschemav2.VsmbFlagShareRead); err != nil {
 			t.Fatalf("AddVSMB failed: %s", err)
 		}
 	}

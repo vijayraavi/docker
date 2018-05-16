@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Microsoft/hcsshim/schema/v2"
 	"github.com/Microsoft/hcsshim/schemaversion"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
@@ -156,13 +157,13 @@ func createWCOWv2UVM(coi *createOptionsExInternal) (Container, error) {
 		return nil, fmt.Errorf("failed to create UVM sandbox: %s", err)
 	}
 
-	attachments := make(map[string]VirtualMachinesResourcesStorageAttachmentV2)
-	attachments["0"] = VirtualMachinesResourcesStorageAttachmentV2{
+	attachments := make(map[string]hcsschemav2.VirtualMachinesResourcesStorageAttachmentV2)
+	attachments["0"] = hcsschemav2.VirtualMachinesResourcesStorageAttachmentV2{
 		Path: filepath.Join(sandboxFolder, "sandbox.vhdx"),
 		Type: "VirtualDisk",
 	}
-	scsi := make(map[string]VirtualMachinesResourcesStorageScsiV2)
-	scsi["0"] = VirtualMachinesResourcesStorageScsiV2{Attachments: attachments}
+	scsi := make(map[string]hcsschemav2.VirtualMachinesResourcesStorageScsiV2)
+	scsi["0"] = hcsschemav2.VirtualMachinesResourcesStorageScsiV2{Attachments: attachments}
 	memory := int32(1024)
 	processors := int32(2)
 	if numCPU() == 1 {
@@ -176,39 +177,39 @@ func createWCOWv2UVM(coi *createOptionsExInternal) (Container, error) {
 			processors = int32(*coi.Spec.Windows.Resources.CPU.Count)
 		}
 	}
-	uvm := &ComputeSystemV2{
+	uvm := &hcsschemav2.ComputeSystemV2{
 		Owner:         coi.actualOwner,
 		SchemaVersion: coi.actualSchemaVersion,
-		VirtualMachine: &VirtualMachineV2{
-			Chipset: &VirtualMachinesResourcesChipsetV2{
-				UEFI: &VirtualMachinesResourcesUefiV2{
-					BootThis: &VirtualMachinesResourcesUefiBootEntryV2{
+		VirtualMachine: &hcsschemav2.VirtualMachineV2{
+			Chipset: &hcsschemav2.VirtualMachinesResourcesChipsetV2{
+				UEFI: &hcsschemav2.VirtualMachinesResourcesUefiV2{
+					BootThis: &hcsschemav2.VirtualMachinesResourcesUefiBootEntryV2{
 						DevicePath: `\EFI\Microsoft\Boot\bootmgfw.efi`,
 						DiskNumber: 0,
 						UefiDevice: "VMBFS",
 					},
 				},
 			},
-			ComputeTopology: &VirtualMachinesResourcesComputeTopologyV2{
-				Memory: &VirtualMachinesResourcesComputeMemoryV2{
+			ComputeTopology: &hcsschemav2.VirtualMachinesResourcesComputeTopologyV2{
+				Memory: &hcsschemav2.VirtualMachinesResourcesComputeMemoryV2{
 					Backing:             "Virtual",
 					Startup:             memory,
 					DirectFileMappingMB: 1024, // Sensible default, but could be a tuning parameter somewhere
 				},
-				Processor: &VirtualMachinesResourcesComputeProcessorV2{
+				Processor: &hcsschemav2.VirtualMachinesResourcesComputeProcessorV2{
 					Count: processors,
 				},
 			},
 
-			Devices: &VirtualMachinesDevicesV2{
+			Devices: &hcsschemav2.VirtualMachinesDevicesV2{
 				// Add networking here.... TODO
 				SCSI: scsi,
-				VirtualSMBShares: []VirtualMachinesResourcesStorageVSmbShareV2{VirtualMachinesResourcesStorageVSmbShareV2{
-					Flags: VsmbFlagReadOnly | VsmbFlagPseudoOplocks | VsmbFlagTakeBackupPrivilege | VsmbFlagCacheIO | VsmbFlagShareRead,
+				VirtualSMBShares: []hcsschemav2.VirtualMachinesResourcesStorageVSmbShareV2{hcsschemav2.VirtualMachinesResourcesStorageVSmbShareV2{
+					Flags: hcsschemav2.VsmbFlagReadOnly | hcsschemav2.VsmbFlagPseudoOplocks | hcsschemav2.VsmbFlagTakeBackupPrivilege | hcsschemav2.VsmbFlagCacheIO | hcsschemav2.VsmbFlagShareRead,
 					Name:  "os",
 					Path:  filepath.Join(uvmFolder, `UtilityVM\Files`),
 				}},
-				GuestInterface: &VirtualMachinesResourcesGuestInterfaceV2{ConnectToBridge: true},
+				GuestInterface: &hcsschemav2.VirtualMachinesResourcesGuestInterfaceV2{ConnectToBridge: true},
 			},
 		},
 	}

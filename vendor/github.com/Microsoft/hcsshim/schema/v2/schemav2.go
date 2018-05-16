@@ -1,6 +1,6 @@
 // +build windows
 
-package hcsshim
+package hcsschemav2
 
 import "github.com/Microsoft/hcsshim/schemaversion"
 
@@ -231,7 +231,7 @@ type VirtualMachinesResourcesStorageVpmemControllerV2 struct {
 
 // This goes in the hosted settings of a VPMem device (hand-added JJH)
 type MappedVPMemController struct {
-	MappedDevices map[uint8]string `json:"MappedDevices,omitempty"`
+	MappedDevices map[int]string `json:"MappedDevices,omitempty"`
 }
 
 type HvSocketHvSocketServiceConfigV2 struct {
@@ -336,6 +336,9 @@ type ComputeSystemV2 struct {
 	VirtualMachine                    *VirtualMachineV2            `json:"VirtualMachine,omitempty"`
 }
 
+type ResourceType string
+type RequestType string
+
 type ModifySettingsRequestV2 struct {
 	ResourceUri    string       `json:ResourceUri,omitempty"`
 	ResourceType   ResourceType `json:ResourceType,omitempty"`
@@ -343,6 +346,33 @@ type ModifySettingsRequestV2 struct {
 	Settings       interface{}  `json:Settings,omitempty"`
 	HostedSettings interface{}  `json:HostedSettings,omitempty"`
 }
+
+// ResourceType const
+const (
+	ResourceTypeMemory             ResourceType = "Memory"
+	ResourceTypeCpuGroup           ResourceType = "CpuGroup"
+	ResourceTypeMappedDirectory    ResourceType = "MappedDirectory"
+	ResourceTypeMappedPipe         ResourceType = "MappedPipe"
+	ResourceTypeMappedVirtualDisk  ResourceType = "MappedVirtualDisk"
+	ResourceTypeNetwork            ResourceType = "Network"
+	ResourceTypeVSmbShare          ResourceType = "VSmbShare"
+	ResourceTypePlan9Share         ResourceType = "Plan9Share"
+	ResourceTypeCombinedLayers     ResourceType = "CombinedLayers"
+	ResourceTypeHvSocket           ResourceType = "HvSocket"
+	ResourceTypeSharedMemoryRegion ResourceType = "SharedMemoryRegion"
+	ResourceTypeVPMemDevice        ResourceType = "VPMemDevice"
+	ResourceTypeGpu                ResourceType = "Gpu"
+	ResourceTypeCosIndex           ResourceType = "CosIndex" // v2.1
+	ResourceTypeRmid               ResourceType = "Rmid"     // v2.1
+)
+
+// RequestType const
+const (
+	RequestTypeAdd     RequestType  = "Add"
+	RequestTypeRemove  RequestType  = "Remove"
+	RequestTypeNetwork ResourceType = "Network"
+	RequestTypeUpdate  ResourceType = "Update"
+)
 
 // This class is used by a modify request to add or remove a combined layers
 // structure in the guest. For windows, the GCS applies a filter in ContainerRootPath

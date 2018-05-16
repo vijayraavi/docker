@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Microsoft/hcsshim/schema/v2"
 	"github.com/sirupsen/logrus"
 )
 
@@ -34,10 +35,10 @@ func AddVSMB(uvm Container, path string, flags int32) error {
 			return err
 		}
 
-		modification := &ModifySettingsRequestV2{
-			ResourceType: ResourceTypeVSmbShare,
-			RequestType:  RequestTypeAdd,
-			Settings: VirtualMachinesResourcesStorageVSmbShareV2{
+		modification := &hcsschemav2.ModifySettingsRequestV2{
+			ResourceType: hcsschemav2.ResourceTypeVSmbShare,
+			RequestType:  hcsschemav2.RequestTypeAdd,
+			Settings: hcsschemav2.VirtualMachinesResourcesStorageVSmbShareV2{
 				Name:  guid.ToString(),
 				Flags: flags,
 				Path:  path,
@@ -89,10 +90,10 @@ func removeVSMB(uvm Container, path string) error {
 	}
 	logrus.Debugf("hcsshim::RemoveVSMB Zero ref-count, removing. %s id:%s", path, uvmc.id)
 	delete(uvmc.vsmbShares.shares, path)
-	modification := &ModifySettingsRequestV2{
-		ResourceType: ResourceTypeVSmbShare,
-		RequestType:  RequestTypeRemove,
-		Settings:     VirtualMachinesResourcesStorageVSmbShareV2{Name: s.guid},
+	modification := &hcsschemav2.ModifySettingsRequestV2{
+		ResourceType: hcsschemav2.ResourceTypeVSmbShare,
+		RequestType:  hcsschemav2.RequestTypeRemove,
+		Settings:     hcsschemav2.VirtualMachinesResourcesStorageVSmbShareV2{Name: s.guid},
 		ResourceUri:  fmt.Sprintf("virtualmachine/devices/virtualsmbshares/%s", s.guid),
 	}
 	if err := uvm.Modify(modification); err != nil {

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Microsoft/hcsshim/schema/v2"
 	"github.com/Microsoft/hcsshim/schemaversion"
 	"github.com/Microsoft/hcsshim/version"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -45,12 +46,12 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 
 	// IgnoreFlushesDuringBoot is a property of the SCSI attachment for the sandbox. Set when it's hot-added to the utility VM
 	// ID is a property on the create call in V2 rather than part of the schema.
-	v2 := &ComputeSystemV2{
+	v2 := &hcsschemav2.ComputeSystemV2{
 		Owner:                             coi.actualOwner,
 		SchemaVersion:                     schemaversion.SchemaV20(),
 		ShouldTerminateOnLastHandleClosed: true,
 	}
-	v2Container := &ContainerV2{Storage: &ContainersResourcesStorageV2{}}
+	v2Container := &hcsschemav2.ContainerV2{Storage: &hcsschemav2.ContainersResourcesStorageV2{}}
 
 	// TODO: Still want to revisit this.
 	if coi.Spec.Windows.LayerFolders == nil || len(coi.Spec.Windows.LayerFolders) < 2 {
@@ -59,7 +60,7 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 
 	if coi.Spec.Hostname != "" {
 		v1.HostName = coi.Spec.Hostname
-		v2Container.GuestOS = &GuestOsV2{HostName: coi.Spec.Hostname}
+		v2Container.GuestOS = &hcsschemav2.GuestOsV2{HostName: coi.Spec.Hostname}
 	}
 
 	if coi.Spec.Windows.Resources != nil {
@@ -67,7 +68,7 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 			if coi.Spec.Windows.Resources.CPU.Count != nil ||
 				coi.Spec.Windows.Resources.CPU.Shares != nil ||
 				coi.Spec.Windows.Resources.CPU.Maximum != nil {
-				v2Container.Processor = &ContainersResourcesProcessorV2{}
+				v2Container.Processor = &hcsschemav2.ContainersResourcesProcessorV2{}
 			}
 			if coi.Spec.Windows.Resources.CPU.Count != nil {
 				cpuCount := *coi.Spec.Windows.Resources.CPU.Count
@@ -91,13 +92,13 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 		if coi.Spec.Windows.Resources.Memory != nil {
 			if coi.Spec.Windows.Resources.Memory.Limit != nil {
 				v1.MemoryMaximumInMB = int64(*coi.Spec.Windows.Resources.Memory.Limit) / 1024 / 1024
-				v2Container.Memory = &ContainersResourcesMemoryV2{Maximum: uint64(v1.MemoryMaximumInMB)}
+				v2Container.Memory = &hcsschemav2.ContainersResourcesMemoryV2{Maximum: uint64(v1.MemoryMaximumInMB)}
 
 			}
 		}
 		if coi.Spec.Windows.Resources.Storage != nil {
 			if coi.Spec.Windows.Resources.Storage.Bps != nil || coi.Spec.Windows.Resources.Storage.Iops != nil {
-				v2Container.Storage.StorageQoS = &ContainersResourcesStorageQoSV2{}
+				v2Container.Storage.StorageQoS = &hcsschemav2.ContainersResourcesStorageQoSV2{}
 			}
 			if coi.Spec.Windows.Resources.Storage.Bps != nil {
 				v1.StorageBandwidthMaximum = *coi.Spec.Windows.Resources.Storage.Bps
@@ -112,7 +113,7 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 
 	// TODO V2 networking. Only partial at the moment. v2.Container.Networking.Namespace specifically
 	if coi.Spec.Windows.Network != nil {
-		v2Container.Networking = &ContainersResourcesNetworkingV2{}
+		v2Container.Networking = &hcsschemav2.ContainersResourcesNetworkingV2{}
 
 		v1.EndpointList = coi.Spec.Windows.Network.EndpointList
 		v2Container.Networking.NetworkAdapters = v1.EndpointList
@@ -186,7 +187,7 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 					return "", err
 				}
 				v2Container.Storage.Layers = append(v2Container.Storage.Layers,
-					ContainersResourcesLayerV2{
+					hcsschemav2.ContainersResourcesLayerV2{
 						Id:   layerFolderVSMBGUID,
 						Path: fmt.Sprintf(`\\?\VMSMB\VSMB-{dcc079ae-60ba-4d07-847c-3493609c0870}\%s`, layerFolderVSMBGUID),
 					})
@@ -202,7 +203,7 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 				return "", err
 			}
 			v1.Layers = append(v1.Layers, Layer{ID: g.ToString(), Path: layerPath})
-			v2Container.Storage.Layers = append(v2Container.Storage.Layers, ContainersResourcesLayerV2{Id: g.ToString(), Path: layerPath})
+			v2Container.Storage.Layers = append(v2Container.Storage.Layers, hcsschemav2.ContainersResourcesLayerV2{Id: g.ToString(), Path: layerPath})
 		}
 	}
 
@@ -211,8 +212,8 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 	var (
 		mdsv1 []MappedDir
 		mpsv1 []MappedPipe
-		mdsv2 []ContainersResourcesMappedDirectoryV2
-		mpsv2 []ContainersResourcesMappedPipeV2
+		mdsv2 []hcsschemav2.ContainersResourcesMappedDirectoryV2
+		mpsv2 []hcsschemav2.ContainersResourcesMappedPipeV2
 	)
 	for _, mount := range coi.Spec.Mounts {
 		const pipePrefix = `\\.\pipe\`
@@ -221,18 +222,18 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 		}
 		if strings.HasPrefix(mount.Destination, pipePrefix) {
 			mpsv1 = append(mpsv1, MappedPipe{HostPath: mount.Source, ContainerPipeName: mount.Destination[len(pipePrefix):]})
-			mpsv2 = append(mpsv2, ContainersResourcesMappedPipeV2{HostPath: mount.Source, ContainerPipeName: mount.Destination[len(pipePrefix):]})
+			mpsv2 = append(mpsv2, hcsschemav2.ContainersResourcesMappedPipeV2{HostPath: mount.Source, ContainerPipeName: mount.Destination[len(pipePrefix):]})
 		} else {
 			mdv1 := MappedDir{HostPath: mount.Source, ContainerPath: mount.Destination, ReadOnly: false}
-			var mdv2 ContainersResourcesMappedDirectoryV2
+			var mdv2 hcsschemav2.ContainersResourcesMappedDirectoryV2
 			if coi.HostingSystem == nil {
-				mdv2 = ContainersResourcesMappedDirectoryV2{HostPath: mount.Source, ContainerPath: mount.Destination, ReadOnly: false}
+				mdv2 = hcsschemav2.ContainersResourcesMappedDirectoryV2{HostPath: mount.Source, ContainerPath: mount.Destination, ReadOnly: false}
 			} else {
 				mountSourceVSMBGUID, err := GetVSMBGUID(coi.HostingSystem, mount.Source)
 				if err != nil {
 					return "", err
 				}
-				mdv2 = ContainersResourcesMappedDirectoryV2{
+				mdv2 = hcsschemav2.ContainersResourcesMappedDirectoryV2{
 					HostPath:      fmt.Sprintf(`\\?\VMSMB\VSMB-{dcc079ae-60ba-4d07-847c-3493609c0870}\%s`, mountSourceVSMBGUID),
 					ContainerPath: mount.Destination,
 					ReadOnly:      false}
@@ -260,7 +261,7 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 		v2.Container = v2Container
 	} else {
 		v2.HostingSystemId = coi.HostingSystem.(*container).id
-		v2.HostedSystem = &HostedSystemV2{
+		v2.HostedSystem = &hcsschemav2.HostedSystemV2{
 			SchemaVersion: schemaversion.SchemaV20(),
 			Container:     v2Container,
 		}
@@ -321,7 +322,7 @@ func createWCOWContainer(coi *createOptionsExInternal) (Container, error) {
 		if coi.HostingSystem == nil {
 			coi.Spec.Root.Path = mcl.(string) // Argon v1 or v2
 		} else {
-			coi.Spec.Root.Path = mcl.(CombinedLayersV2).ContainerRootPath // v2 Xenon WCOW
+			coi.Spec.Root.Path = mcl.(hcsschemav2.CombinedLayersV2).ContainerRootPath // v2 Xenon WCOW
 		}
 	}
 
@@ -348,7 +349,7 @@ func createWCOWContainer(coi *createOptionsExInternal) (Container, error) {
 			//
 
 			// TODO: Read-only
-			err := AddVSMB(coi.HostingSystem, mount.Source, VsmbFlagReadOnly|VsmbFlagPseudoOplocks|VsmbFlagTakeBackupPrivilege|VsmbFlagCacheIO|VsmbFlagShareRead)
+			err := AddVSMB(coi.HostingSystem, mount.Source, hcsschemav2.VsmbFlagReadOnly|hcsschemav2.VsmbFlagPseudoOplocks|hcsschemav2.VsmbFlagTakeBackupPrivilege|hcsschemav2.VsmbFlagCacheIO|hcsschemav2.VsmbFlagShareRead)
 			if err != nil {
 				thisError := fmt.Errorf("failed to add VSMB share to utility VM for mount %+v: %s", mount, err)
 				thisError = undoMountOnFailure(coi, origSpecRoot, weMountedStorage, vsmbMountsAddedByUs, thisError)

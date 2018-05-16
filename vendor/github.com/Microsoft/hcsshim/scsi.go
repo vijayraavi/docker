@@ -5,6 +5,7 @@ package hcsshim
 import (
 	"fmt"
 
+	"github.com/Microsoft/hcsshim/schema/v2"
 	"github.com/sirupsen/logrus"
 )
 
@@ -141,15 +142,15 @@ func AddSCSI(uvm Container, hostPath string, containerPath string) (int, int, er
 		return -1, -1, fmt.Errorf("too many SCSI attachments")
 	}
 
-	SCSIModification := &ModifySettingsRequestV2{
-		ResourceType: ResourceTypeMappedVirtualDisk,
-		RequestType:  RequestTypeAdd,
-		Settings: VirtualMachinesResourcesStorageAttachmentV2{
+	SCSIModification := &hcsschemav2.ModifySettingsRequestV2{
+		ResourceType: hcsschemav2.ResourceTypeMappedVirtualDisk,
+		RequestType:  hcsschemav2.RequestTypeAdd,
+		Settings: hcsschemav2.VirtualMachinesResourcesStorageAttachmentV2{
 			Path: hostPath,
 			Type: "VirtualDisk",
 		},
 		ResourceUri: fmt.Sprintf("VirtualMachine/Devices/SCSI/%d/%d", controller, lun),
-		HostedSettings: ContainersResourcesMappedDirectoryV2{
+		HostedSettings: hcsschemav2.ContainersResourcesMappedDirectoryV2{
 			ContainerPath:     containerPath,
 			Lun:               uint8(lun),
 			AttachOnly:        (containerPath == ""),
@@ -204,10 +205,14 @@ func removeSCSI(uvm Container, hostPath string, controller int, lun int) error {
 			Request: "Remove",
 		}
 	} else {
-		scsiModification = &ModifySettingsRequestV2{
-			ResourceType: ResourceTypeMappedVirtualDisk,
-			RequestType:  RequestTypeRemove,
+		scsiModification = &hcsschemav2.ModifySettingsRequestV2{
+			ResourceType: hcsschemav2.ResourceTypeMappedVirtualDisk,
+			RequestType:  hcsschemav2.RequestTypeRemove,
 			ResourceUri:  fmt.Sprintf("VirtualMachine/Devices/SCSI/%d/%d", controller, lun),
+
+			// BIG BIG BIG TODO TODO TODO HERE. After talking to swernli, the Hosted Settings MUST be included
+			// or else the GCS won't be notified to unmount. Assuming it was exposed, of course.
+
 		}
 	}
 	if err := uvm.Modify(scsiModification); err != nil {

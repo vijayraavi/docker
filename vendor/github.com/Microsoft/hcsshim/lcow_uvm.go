@@ -7,10 +7,9 @@ package hcsshim
 import (
 	"encoding/json"
 	"fmt"
-	//"os"
-	//	"path/filepath"
 
 	//specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/Microsoft/hcsshim/schema/v2"
 	"github.com/Microsoft/hcsshim/schemaversion"
 	"github.com/sirupsen/logrus"
 )
@@ -19,9 +18,6 @@ func createLCOWv2UVM(coi *createOptionsExInternal) (Container, error) {
 	logrus.Debugf("hcsshim::createLCOWv2UVM Creating utility VM id=%s", coi.actualId)
 
 	iocis := "invalid OCI spec:"
-	if len(coi.Spec.Windows.LayerFolders) < 2 {
-		return nil, fmt.Errorf("%s Windows.LayerFolders must have length of at least 2 for a hosting system", iocis)
-	}
 	if len(coi.Spec.Hostname) > 0 {
 		return nil, fmt.Errorf("%s Hostname cannot be set for a hosting system", iocis)
 	}
@@ -48,35 +44,6 @@ func createLCOWv2UVM(coi *createOptionsExInternal) (Container, error) {
 	//		return nil, fmt.Errorf("%s Mounts must not be set for a hosting system", iocis)
 	//	}
 
-	//	uvmFolder, err := LocateWCOWUVMFolderFromLayerFolders(coi.Spec.Windows.LayerFolders)
-	//	if err != nil {
-	//		return nil, fmt.Errorf("failed to locate utility VM folder from layer folders: %s", err)
-	//	}
-	//	// Create the sandbox in the top-most layer folder, creating the folder if it doesn't already exist.
-	sandboxFolder := coi.Spec.Windows.LayerFolders[len(coi.Spec.Windows.LayerFolders)-1]
-	logrus.Debugf("hcsshim::createWCOWv2UVM Sandbox folder: %s", sandboxFolder)
-
-	//	// Create the directory if it doesn't exist
-	//	if _, err := os.Stat(sandboxFolder); os.IsNotExist(err) {
-	//		logrus.Debugf("hcsshim::createWCOWv2UVM Creating folder: %s ", sandboxFolder)
-	//		if err := os.MkdirAll(sandboxFolder, 0777); err != nil {
-	//			return nil, fmt.Errorf("failed to create utility VM sandbox folder: %s", err)
-	//		}
-	//	}
-
-	//	// Create sandbox.vhdx in the sandbox folder based on the template, granting the correct permissions to it
-	//	if err := CreateWCOWUVMSandbox(uvmFolder, sandboxFolder, coi.actualId); err != nil {
-	//		return nil, fmt.Errorf("failed to create UVM sandbox: %s", err)
-	//	}
-
-	//	attachments := make(map[string]VirtualMachinesResourcesStorageAttachmentV2)
-	//	attachments["0"] = VirtualMachinesResourcesStorageAttachmentV2{
-	//		Path: filepath.Join(sandboxFolder, "sandbox.vhdx"),
-	//		Type: "VirtualDisk",
-	//	}
-	scsi := make(map[string]VirtualMachinesResourcesStorageScsiV2)
-
-	//	scsi["0"] = VirtualMachinesResourcesStorageScsiV2{Attachments: attachments}
 	memory := int32(1024)
 	processors := int32(2)
 	if numCPU() == 1 {
@@ -91,49 +58,100 @@ func createLCOWv2UVM(coi *createOptionsExInternal) (Container, error) {
 		}
 	}
 
-	//baseLayerFolder := coi.Spec.Windows.LayerFolders[len(coi.Spec.Windows.LayerFolders)-2]
+	//	// See if there's a sandbox folder at the end of the layer folders. If it is, then we attach this to SCSI.
+	//	// We look for a .vhdx in that folder as the key. RO layers are .vhd.
+	//	possibleSandboxFolder := coi.Spec.Windows.LayerFolders[len(coi.Spec.Windows.LayerFolders)-1]
+	//	sandboxFile := ""
 
-	uvm := &ComputeSystemV2{
+	//	err := filepath.Walk(possibleSandboxFolder, func(path string, info os.FileInfo, err error) error {
+	//		if info.IsDir() {
+	//			return nil
+	//		}
+	//		if filepath.Ext(path) == ".vhdx" {
+	//			sandboxFile = path
+	//			return io.EOF // Trick to break out early.
+	//		}
+	//		return nil
+	//	})
+	//	if err == io.EOF {
+	//		err = nil
+	//	}
+
+	scsi := make(map[string]hcsschemav2.VirtualMachinesResourcesStorageScsiV2)
+	scsi["0"] = hcsschemav2.VirtualMachinesResourcesStorageScsiV2{Attachments: make(map[string]hcsschemav2.VirtualMachinesResourcesStorageAttachmentV2)}
+	//	if sandboxFile != "" {
+	//		if err := GrantVmAccess(coi.actualId, sandboxFile); err != nil {
+	//			return nil, err
+	//		}
+	//	}
+
+	c := container{}
+	uvm := &hcsschemav2.ComputeSystemV2{
 		Owner:         coi.actualOwner,
 		SchemaVersion: coi.actualSchemaVersion,
-		VirtualMachine: &VirtualMachineV2{
-			Chipset: &VirtualMachinesResourcesChipsetV2{
-				UEFI: &VirtualMachinesResourcesUefiV2{
-					BootThis: &VirtualMachinesResourcesUefiBootEntryV2{
+		VirtualMachine: &hcsschemav2.VirtualMachineV2{
+			Chipset: &hcsschemav2.VirtualMachinesResourcesChipsetV2{
+				UEFI: &hcsschemav2.VirtualMachinesResourcesUefiV2{
+					BootThis: &hcsschemav2.VirtualMachinesResourcesUefiBootEntryV2{
 						DevicePath:   `\` + coi.actualKernelFile,
 						DiskNumber:   0,
 						UefiDevice:   "VMBFS",
-						OptionalData: `\` + coi.actualInitrdFile,
+						OptionalData: `initrd=\` + coi.actualInitrdFile,
 					},
 				},
 			},
-			ComputeTopology: &VirtualMachinesResourcesComputeTopologyV2{
-				Memory: &VirtualMachinesResourcesComputeMemoryV2{
+			ComputeTopology: &hcsschemav2.VirtualMachinesResourcesComputeTopologyV2{
+				Memory: &hcsschemav2.VirtualMachinesResourcesComputeMemoryV2{
 					Backing: "Virtual",
 					Startup: memory,
 				},
-				Processor: &VirtualMachinesResourcesComputeProcessorV2{
+				Processor: &hcsschemav2.VirtualMachinesResourcesComputeProcessorV2{
 					Count: processors,
 				},
 			},
 
-			Devices: &VirtualMachinesDevicesV2{
+			Devices: &hcsschemav2.VirtualMachinesDevicesV2{
 				// Add networking here.... TODO
-				VPMem: &VirtualMachinesResourcesStorageVpmemControllerV2{
-					MaximumCount: 16, // TODO Why? From R's example
+				VPMem: &hcsschemav2.VirtualMachinesResourcesStorageVpmemControllerV2{
+					MaximumCount: int32(len(c.vpmemLocations.hostPath)), //16, // TODO Why? From R's example
 				},
 				SCSI: scsi,
-				VirtualSMBShares: []VirtualMachinesResourcesStorageVSmbShareV2{VirtualMachinesResourcesStorageVSmbShareV2{
-					Flags: VsmbFlagReadOnly | VsmbFlagShareRead | VsmbFlagCacheIO | VsmbFlagTakeBackupPrivilege, // 0x17 (23 dec)
+				VirtualSMBShares: []hcsschemav2.VirtualMachinesResourcesStorageVSmbShareV2{hcsschemav2.VirtualMachinesResourcesStorageVSmbShareV2{
+					Flags: hcsschemav2.VsmbFlagReadOnly | hcsschemav2.VsmbFlagShareRead | hcsschemav2.VsmbFlagCacheIO | hcsschemav2.VsmbFlagTakeBackupPrivilege, // 0x17 (23 dec)
 					Name:  "os",
 					Path:  coi.actualKirdPath,
 				}},
-				GuestInterface: &VirtualMachinesResourcesGuestInterfaceV2{
+				GuestInterface: &hcsschemav2.VirtualMachinesResourcesGuestInterfaceV2{
 					ConnectToBridge: true,
 					BridgeFlags:     3, // TODO What are these??
 				},
 			},
 		},
+	}
+
+	// Additional JSON for debugging
+	//{
+	//    "VirtualMachine": {
+	//        "Chipset": {
+	//            "UEFI": {
+	//                "BootThis": {
+	//                    "optional_data": "initrd=\\initrd.img console=ttyS0,115200",
+	//                }
+	//            }
+	//        },
+	//        "Devices": {
+	//            "COMPorts": {
+	//                "Port1": "\\\\.\\pipe\\vmpipe"
+	//            },
+	//            "Keyboard": {},
+	//            "Rdp": {},
+	//            "VideoMonitor": {},
+	//        }
+	//    }
+	//}
+
+	if coi.KernelBootOptions != "" {
+		uvm.VirtualMachine.Chipset.UEFI.BootThis.OptionalData = uvm.VirtualMachine.Chipset.UEFI.BootThis.OptionalData + fmt.Sprintf(" %s", coi.KernelBootOptions)
 	}
 
 	uvmb, err := json.Marshal(uvm)
@@ -145,6 +163,13 @@ func createLCOWv2UVM(coi *createOptionsExInternal) (Container, error) {
 		logrus.Debugln("failed to create UVM: ", err)
 		return nil, err
 	}
-	//uvmContainer.(*container).scsiLocations.hostPath[0][0] = attachments["0"].Path
+	//	if sandboxFile != "" {
+	//		_, _, err := AddSCSI(uvmContainer, sandboxFile, "/tmp/scratch")
+	//		if err != nil {
+	//			uvmContainer.Terminate()
+	//			return nil, err
+	//		}
+
+	//	}
 	return uvmContainer, nil
 }

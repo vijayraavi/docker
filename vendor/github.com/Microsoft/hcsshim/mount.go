@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/Microsoft/hcsshim/schema/v2"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -66,7 +67,7 @@ func MountContainerLayers(layerFolders []string, hostingSystem Container) (inter
 	//  Each VSMB share is ref-counted so that multiple containers in the same utility VM can share them.
 	var vsmbAdded []string
 	for _, layerPath := range layerFolders[:len(layerFolders)-1] {
-		err := AddVSMB(hostingSystem, layerPath, VsmbFlagReadOnly|VsmbFlagPseudoOplocks|VsmbFlagTakeBackupPrivilege|VsmbFlagCacheIO|VsmbFlagShareRead)
+		err := AddVSMB(hostingSystem, layerPath, hcsschemav2.VsmbFlagReadOnly|hcsschemav2.VsmbFlagPseudoOplocks|hcsschemav2.VsmbFlagTakeBackupPrivilege|hcsschemav2.VsmbFlagCacheIO|hcsschemav2.VsmbFlagShareRead)
 		if err != nil {
 			removeVSMBOnMountFailure(hostingSystem, vsmbAdded)
 		}
@@ -92,7 +93,7 @@ func MountContainerLayers(layerFolders []string, hostingSystem Container) (inter
 
 	// 	Load the filter at the C:\<GUID> location calculated above. We pass into this request each of the
 	// 	read-only layer folders.
-	layers := []ContainersResourcesLayerV2{}
+	layers := []hcsschemav2.ContainersResourcesLayerV2{}
 	for _, vsmb := range vsmbAdded {
 		vsmbGUID, err := GetVSMBGUID(hostingSystem, vsmb)
 		if err != nil {
@@ -100,18 +101,18 @@ func MountContainerLayers(layerFolders []string, hostingSystem Container) (inter
 			removeSCSIOnMountFailure(hostingSystem, hostPath, controller, lun)
 			return nil, err
 		}
-		layers = append(layers, ContainersResourcesLayerV2{
+		layers = append(layers, hcsschemav2.ContainersResourcesLayerV2{
 			Id:   vsmbGUID,
 			Path: fmt.Sprintf(`\\?\VMSMB\VSMB-{dcc079ae-60ba-4d07-847c-3493609c0870}\%s`, vsmbGUID),
 		})
 	}
-	combinedLayers := CombinedLayersV2{
+	combinedLayers := hcsschemav2.CombinedLayersV2{
 		ContainerRootPath: fmt.Sprintf(`C:\%s`, containerPathGUID.ToString()),
 		Layers:            layers,
 	}
-	combinedLayersModification := &ModifySettingsRequestV2{
-		ResourceType:   ResourceTypeCombinedLayers,
-		RequestType:    RequestTypeAdd,
+	combinedLayersModification := &hcsschemav2.ModifySettingsRequestV2{
+		ResourceType:   hcsschemav2.ResourceTypeCombinedLayers,
+		RequestType:    hcsschemav2.RequestTypeAdd,
 		HostedSettings: combinedLayers,
 	}
 	if err := hostingSystem.Modify(combinedLayersModification); err != nil {
@@ -184,10 +185,10 @@ func UnmountContainerLayers(layerFolders []string, hostingSystem Container, op U
 		} else {
 			containerRootPath := fmt.Sprintf(`C:\%s`, containerPathGUID.ToString())
 			logrus.Debugf("hcsshim::UnmountContainerLayers CombinedLayers %s", containerRootPath)
-			combinedLayersModification := &ModifySettingsRequestV2{
-				ResourceType:   ResourceTypeCombinedLayers,
-				RequestType:    RequestTypeRemove,
-				HostedSettings: CombinedLayersV2{ContainerRootPath: containerRootPath},
+			combinedLayersModification := &hcsschemav2.ModifySettingsRequestV2{
+				ResourceType:   hcsschemav2.ResourceTypeCombinedLayers,
+				RequestType:    hcsschemav2.RequestTypeRemove,
+				HostedSettings: hcsschemav2.CombinedLayersV2{ContainerRootPath: containerRootPath},
 			}
 			if err := hostingSystem.Modify(combinedLayersModification); err != nil {
 				logrus.Errorf(err.Error())

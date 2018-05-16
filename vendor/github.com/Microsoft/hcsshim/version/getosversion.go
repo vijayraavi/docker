@@ -30,7 +30,6 @@ type osVersionInfoEx struct {
 	Reserve           byte
 }
 
-// TODO Move docker to call this rather than duplicate
 // GetOSVersion gets the operating system version on Windows.
 // The calling application must be manifested to get the correct version information.
 func GetOSVersion() OSVersion {
