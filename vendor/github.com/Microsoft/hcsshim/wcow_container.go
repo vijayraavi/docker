@@ -1,3 +1,5 @@
+// +build windows
+
 package hcsshim
 
 // Contains functions relating to a WCOW container, as opposed to a utility VM

@@ -1,3 +1,5 @@
+// +build windows
+
 package hcsshim
 
 // This file contains the structures necessary to call the HCS in v2 schema format.

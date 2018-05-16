@@ -1,3 +1,5 @@
+// +build windows
+
 package hcsshim
 
 // Containers functions relating to an LCOW utility VM (implying v2)

@@ -1,4 +1,4 @@
-// +build go1.9
+// +build go1.9,windows
 
 // Note - the above build tag means 1.9 and later.
 
