@@ -118,8 +118,11 @@ func CreateContainerEx(createOptions *CreateOptionsEx) (Container, error) {
 			logrus.Debugln("hcsshim::CreateContainerEx Calling createLCOWv1")
 			return createLCOWv1(coi)
 		} else {
+			if coi.AsHostingSystem {
+				return createLCOWv2UVM(coi)
+			}
 			// TODO v2 LCOW
-			panic("LCOW v2 not implemented")
+			panic("LCOW v2 not implemented for container yet")
 		}
 	}
 

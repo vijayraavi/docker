@@ -335,6 +335,14 @@ func createWCOWContainer(coi *createOptionsExInternal) (Container, error) {
 			logrus.Debugf("hcsshim::createWCOWContainer Hot-adding VSMB share for OCI mount %+v", mount)
 			// Hot-add the VSMB shares to the utility VM
 			// TODO: What are the right flags. Asked swernli
+			//
+			// Answer: If readonly set, the following. If read-write, no flags.
+			//			::Schema::VirtualMachines::Resources::Storage::VSmbShareFlags::ReadOnly |
+			//::Schema::VirtualMachines::Resources::Storage::VSmbShareFlags::CacheIO |
+			//::Schema::VirtualMachines::Resources::Storage::VSmbShareFlags::ShareRead |
+			//::Schema::VirtualMachines::Resources::Storage::VSmbShareFlags::ForceLevelIIOplocks;
+			//
+
 			// TODO: Read-only
 			err := AddVSMB(coi.HostingSystem, mount.Source, VsmbFlagReadOnly|VsmbFlagPseudoOplocks|VsmbFlagTakeBackupPrivilege|VsmbFlagCacheIO|VsmbFlagShareRead)
 			if err != nil {

@@ -43,6 +43,7 @@ type vsmbShare struct {
 	refCount uint32
 	guid     string
 }
+
 type container struct {
 	handleLock     sync.RWMutex
 	handle         hcsSystem
@@ -52,6 +53,10 @@ type container struct {
 	vsmbShares     struct {
 		sync.Mutex
 		shares map[string]vsmbShare
+	}
+	vpmemLocations struct {
+		sync.Mutex
+		hostPath [1][256]string // For now 1 VPmem controller. Mapped to /tmp/vpmem<controller>/<index>/ eg /tmp/vpmem0/200
 	}
 	scsiLocations struct {
 		sync.Mutex

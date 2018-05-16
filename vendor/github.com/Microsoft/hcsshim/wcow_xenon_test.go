@@ -464,7 +464,7 @@ func TestV2XenonWCOWMultiLayer(t *testing.T) {
 
 // TestV2XenonWCOWSingleMappedDirectory tests a V2 Xenon WCOW with a single mapped directory
 func TestV2XenonWCOWSingleMappedDirectory(t *testing.T) {
-	//t.Skip("Skipping for now")
+	t.Skip("Skipping for now")
 	uvm, uvmScratchDir := createv2WCOWUVM(t, layersNanoserver, "", nil)
 	defer os.RemoveAll(uvmScratchDir)
 	defer uvm.Terminate()

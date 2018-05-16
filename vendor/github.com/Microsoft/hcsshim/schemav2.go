@@ -212,6 +212,24 @@ type VirtualMachinesResourcesStorageScsiV2 struct {
 	ChannelInstanceGuid string                                                 `json:"ChannelInstanceGuid,omitempty"`
 }
 
+//
+type VirtualMachinesResourcesStorageVpmemDeviceV2 struct {
+	HostPath    string `json:"HostPath,omitempty"`
+	ReadOnly    bool   `json:"ReadOnly,omitempty"`
+	ImageFormat string `json:"ImageFormat,omitempty"`
+}
+
+type VirtualMachinesResourcesStorageVpmemControllerV2 struct {
+	Devices          map[string]VirtualMachinesResourcesStorageVpmemDeviceV2 `json:"Devices,omitempty"`
+	MaximumCount     int32                                                   `json:"MaximumCount,omitempty"`
+	MaximumSizeBytes int32                                                   `json:"MaximumSizeBytes,omitempty"`
+}
+
+// This goes in the hosted settings of a VPMem device (hand-added JJH)
+type MappedVPMemController struct {
+	MappedDevices map[uint8]string `json:"MappedDevices,omitempty"`
+}
+
 type HvSocketHvSocketServiceConfigV2 struct {
 	//  SDDL string that HvSocket will check before allowing a host process to bind  to this specific service.  If not specified, defaults to the system DefaultBindSecurityDescriptor, defined in  HvSocketSystemWpConfig in V1.
 	BindSecurityDescriptor string `json:"BindSecurityDescriptor,omitempty"`
@@ -233,7 +251,7 @@ type HvSocketHvSocketSystemConfigV2 struct {
 
 type VirtualMachinesResourcesGuestInterfaceV2 struct {
 	ConnectToBridge bool                            `json:"ConnectToBridge,omitempty"`
-	BridgeFlags     string                          `json:"BridgeFlags,omitempty"`
+	BridgeFlags     int                             `json:"BridgeFlags,omitempty"` // TODO JJH Hmm. This was string from swernli, but int in Rafaels example
 	HvSocketConfig  *HvSocketHvSocketSystemConfigV2 `json:"HvSocketConfig,omitempty"`
 }
 
@@ -277,8 +295,8 @@ type VirtualMachinesResourcesStorageVSmbShareV2 struct {
 // TODO - Remaining schema objects
 type VirtualMachinesDevicesV2 struct {
 	//	COMPorts            *SchemaVirtualMachinesResourcesComPorts               `json:"COMPorts,omitempty"`
-	SCSI map[string]VirtualMachinesResourcesStorageScsiV2 `json:"SCSI,omitempty"`
-	//	VPMem               *SchemaVirtualMachinesResourcesStorageVpmemController `json:"VPMem,omitempty"`
+	SCSI  map[string]VirtualMachinesResourcesStorageScsiV2  `json:"SCSI,omitempty"`
+	VPMem *VirtualMachinesResourcesStorageVpmemControllerV2 `json:"VPMem,omitempty"`
 	//	NIC                 map[string]SchemaVirtualMachinesResourcesNetworkNic   `json:"NIC,omitempty"`
 	//	VideoMonitor        *SchemaVirtualMachinesResourcesVideoMonitor           `json:"VideoMonitor,omitempty"`
 	//	Keyboard            *SchemaVirtualMachinesResourcesKeyboard               `json:"Keyboard,omitempty"`

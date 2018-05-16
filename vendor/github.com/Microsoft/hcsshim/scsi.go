@@ -148,9 +148,10 @@ func AddSCSI(uvm Container, hostPath string, containerPath string) (int, int, er
 		},
 		ResourceUri: fmt.Sprintf("VirtualMachine/Devices/SCSI/%d/%d", controller, lun),
 		HostedSettings: ContainersResourcesMappedDirectoryV2{
-			ContainerPath: containerPath,
-			Lun:           uint8(lun),
-			AttachOnly:    (containerPath == ""),
+			ContainerPath:     containerPath,
+			Lun:               uint8(lun),
+			AttachOnly:        (containerPath == ""),
+			OverwriteIfExists: true,
 			// TODO: Controller: uint8(controller), // TODO NOT IN HCS API CURRENTLY
 		},
 	}

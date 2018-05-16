@@ -125,6 +125,30 @@ func TestV1XenonLCOW(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
 	}
+
+	startContainer(t, c)
+	time.Sleep(5 * time.Second)
+	runCommand(t, c, "echo Hello", `/bin`, "Hello")
+	stopContainer(t, c)
+	c.Terminate()
+}
+
+// A v2 LCOW
+func TestV2XenonLCOW(t *testing.T) {
+	t.Skip("for now")
+	tempDir, _ := createLCOWTempDirWithSandbox(t)
+	defer os.RemoveAll(tempDir)
+
+	spec := getDefaultLinuxSpec(t)
+	spec.Windows.LayerFolders = append(layersAlpine, tempDir)
+	c, err := CreateContainerEx(&CreateOptionsEx{
+		AsHostingSystem: true,
+		SchemaVersion:   SchemaV20(),
+		Spec:            spec,
+	})
+	if err != nil {
+		t.Fatalf("Failed create: %s", err)
+	}
 	startContainer(t, c)
 	time.Sleep(5 * time.Second)
 	runCommand(t, c, "echo Hello", `/bin`, "Hello")
