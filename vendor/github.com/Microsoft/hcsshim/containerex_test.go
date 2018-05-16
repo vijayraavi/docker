@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	_ "github.com/Microsoft/hcsshim/testassets"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
 )
