@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Microsoft/hcsshim/schemaversion"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
@@ -121,7 +122,7 @@ func TestV1XenonLCOW(t *testing.T) {
 	spec.Windows.LayerFolders = append(layersAlpine, tempDir)
 	c, err := CreateContainerEx(&CreateOptionsEx{
 		Id:            "TextV1XenonLCOW",
-		SchemaVersion: SchemaV10(),
+		SchemaVersion: schemaversion.SchemaV10(),
 		Spec:          spec,
 	})
 	if err != nil {
@@ -145,7 +146,7 @@ func TestV2XenonLCOW(t *testing.T) {
 	spec.Windows.LayerFolders = append(layersAlpine, tempDir)
 	c, err := CreateContainerEx(&CreateOptionsEx{
 		AsHostingSystem: true,
-		SchemaVersion:   SchemaV20(),
+		SchemaVersion:   schemaversion.SchemaV20(),
 		Spec:            spec,
 	})
 	if err != nil {

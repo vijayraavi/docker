@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Microsoft/hcsshim/schemaversion"
 	"github.com/sirupsen/logrus"
 )
 
@@ -51,7 +52,7 @@ type container struct {
 	handle         hcsSystem
 	id             string
 	callbackNumber uintptr
-	schemaVersion  SchemaVersion
+	schemaVersion  schemaversion.SchemaVersion
 	vsmbShares     struct {
 		sync.Mutex
 		shares map[string]vsmbShare
@@ -147,10 +148,10 @@ func CreateContainer(id string, c *ContainerConfig) (Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	return createContainer(id, string(configurationb), SchemaV10())
+	return createContainer(id, string(configurationb), schemaversion.SchemaV10())
 }
 
-func createContainer(id string, configurationJSON string, schemaVersion *SchemaVersion) (Container, error) {
+func createContainer(id string, configurationJSON string, schemaVersion *schemaversion.SchemaVersion) (Container, error) {
 	operation := "CreateContainer"
 	title := "hcsshim::" + operation
 
@@ -789,6 +790,6 @@ func (container *container) ID() string {
 }
 
 // SchemaVersion returns the schema version for a container
-func (container *container) SchemaVersion() *SchemaVersion {
+func (container *container) SchemaVersion() *schemaversion.SchemaVersion {
 	return &container.schemaVersion
 }

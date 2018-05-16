@@ -2,6 +2,8 @@
 
 package hcsshim
 
+import "github.com/Microsoft/hcsshim/schemaversion"
+
 // This file contains the structures necessary to call the HCS in v2 schema format.
 // NOTE: The v2 schema is in flux and under development as at March 2018.
 // Requires RS5+
@@ -138,8 +140,8 @@ type ContainerV2 struct {
 }
 
 type HostedSystemV2 struct {
-	SchemaVersion *SchemaVersion `json:"SchemaVersion,omitempty"`
-	Container     *ContainerV2   `json:"Container,omitempty"`
+	SchemaVersion *schemaversion.SchemaVersion `json:"SchemaVersion,omitempty"`
+	Container     *ContainerV2                 `json:"Container,omitempty"`
 }
 
 type VirtualMachinesResourcesUefiBootEntryV2 struct {
@@ -313,7 +315,7 @@ type VirtualMachinesDevicesV2 struct {
 }
 
 type VirtualMachineV2 struct {
-	VmVersion       *SchemaVersion                             `json:"VmVersion,omitempty"`
+	VmVersion       *schemaversion.SchemaVersion               `json:"VmVersion,omitempty"`
 	StopOnReset     bool                                       `json:"StopOnReset,omitempty"`
 	Chipset         *VirtualMachinesResourcesChipsetV2         `json:"Chipset,omitempty"`
 	ComputeTopology *VirtualMachinesResourcesComputeTopologyV2 `json:"ComputeTopology,omitempty"`
@@ -325,13 +327,13 @@ type VirtualMachineV2 struct {
 }
 
 type ComputeSystemV2 struct {
-	Owner                             string            `json:"Owner,omitempty"`
-	SchemaVersion                     *SchemaVersion    `json:"SchemaVersion,omitempty"`
-	HostingSystemId                   string            `json:"HostingSystemId,omitempty"`
-	HostedSystem                      *HostedSystemV2   `json:"HostedSystem,omitempty"`
-	Container                         *ContainerV2      `json:"Container,omitempty"`
-	ShouldTerminateOnLastHandleClosed bool              `json:"ShouldTerminateOnLastHandleClosed,omitempty"`
-	VirtualMachine                    *VirtualMachineV2 `json:"VirtualMachine,omitempty"`
+	Owner                             string                       `json:"Owner,omitempty"`
+	SchemaVersion                     *schemaversion.SchemaVersion `json:"SchemaVersion,omitempty"`
+	HostingSystemId                   string                       `json:"HostingSystemId,omitempty"`
+	HostedSystem                      *HostedSystemV2              `json:"HostedSystem,omitempty"`
+	Container                         *ContainerV2                 `json:"Container,omitempty"`
+	ShouldTerminateOnLastHandleClosed bool                         `json:"ShouldTerminateOnLastHandleClosed,omitempty"`
+	VirtualMachine                    *VirtualMachineV2            `json:"VirtualMachine,omitempty"`
 }
 
 type ModifySettingsRequestV2 struct {

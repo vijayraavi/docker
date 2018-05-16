@@ -1,6 +1,6 @@
 // +build windows
 
-package hcsshim
+package schemaversion
 
 import "testing"
 

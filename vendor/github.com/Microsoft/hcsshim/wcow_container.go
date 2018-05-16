@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Microsoft/hcsshim/schemaversion"
+	"github.com/Microsoft/hcsshim/version"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -45,7 +47,7 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 	// ID is a property on the create call in V2 rather than part of the schema.
 	v2 := &ComputeSystemV2{
 		Owner:                             coi.actualOwner,
-		SchemaVersion:                     SchemaV20(),
+		SchemaVersion:                     schemaversion.SchemaV20(),
 		ShouldTerminateOnLastHandleClosed: true,
 	}
 	v2Container := &ContainerV2{Storage: &ContainersResourcesStorageV2{}}
@@ -247,7 +249,7 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 	}
 	v1.MappedDirectories = mdsv1
 	v2Container.MappedDirectories = mdsv2
-	if len(mpsv1) > 0 && GetOSVersion().Build < WINDOWS_BUILD_RS3 {
+	if len(mpsv1) > 0 && version.GetOSVersion().Build < version.WINDOWS_BUILD_RS3 {
 		return "", fmt.Errorf("named pipe mounts are not supported on this version of Windows")
 	}
 	v1.MappedPipes = mpsv1
@@ -259,7 +261,7 @@ func createWCOWHCSContainerDocument(coi *createOptionsExInternal) (string, error
 	} else {
 		v2.HostingSystemId = coi.HostingSystem.(*container).id
 		v2.HostedSystem = &HostedSystemV2{
-			SchemaVersion: SchemaV20(),
+			SchemaVersion: schemaversion.SchemaV20(),
 			Container:     v2Container,
 		}
 	}

@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Microsoft/hcsshim/schemaversion"
 	_ "github.com/Microsoft/hcsshim/testassets"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
@@ -192,7 +193,7 @@ func TestID(t *testing.T) {
 
 	c, err := CreateContainerEx(&CreateOptionsEx{
 		Id:            "gruntbuggly",
-		SchemaVersion: SchemaV20(),
+		SchemaVersion: schemaversion.SchemaV20(),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: layers},
 			Root:    &specs.Root{Path: mountPath.(string)},

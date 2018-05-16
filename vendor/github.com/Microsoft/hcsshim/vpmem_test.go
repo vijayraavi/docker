@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Microsoft/hcsshim/schemaversion"
 	"github.com/sirupsen/logrus"
 )
 
@@ -33,7 +34,7 @@ func TestAllocateVPMEM(t *testing.T) {
 	spec.Windows.LayerFolders = append(layersAlpine, tempDir)
 	v2uvm, err := CreateContainerEx(&CreateOptionsEx{
 		AsHostingSystem: true,
-		SchemaVersion:   SchemaV20(),
+		SchemaVersion:   schemaversion.SchemaV20(),
 		Spec:            spec,
 	})
 	if err != nil {
@@ -92,7 +93,7 @@ func TestAddRemoveVPMEMv2LCOW(t *testing.T) {
 	spec.Windows.LayerFolders = append(layersAlpine, tempDir)
 	v2uvm, err := CreateContainerEx(&CreateOptionsEx{
 		AsHostingSystem: true,
-		SchemaVersion:   SchemaV20(),
+		SchemaVersion:   schemaversion.SchemaV20(),
 		Spec:            spec,
 	})
 	if err != nil {

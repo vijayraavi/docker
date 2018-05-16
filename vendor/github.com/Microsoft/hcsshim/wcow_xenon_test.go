@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Microsoft/hcsshim/schemaversion"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
@@ -28,7 +29,7 @@ func TestV1XenonWCOW(t *testing.T) {
 	}
 	c, err := CreateContainerEx(&CreateOptionsEx{
 		Id:            "TestV1XenonWCOW",
-		SchemaVersion: SchemaV10(),
+		SchemaVersion: schemaversion.SchemaV10(),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: append(layers, tempDir),
@@ -53,7 +54,7 @@ func TestV1XenonWCOWNoUVMPath(t *testing.T) {
 	c, err := CreateContainerEx(&CreateOptionsEx{
 		Id:            "TestV1XenonWCOWNoUVMPath",
 		Owner:         "unit-test",
-		SchemaVersion: SchemaV10(),
+		SchemaVersion: schemaversion.SchemaV10(),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: append(layersNanoserver, tempDir),
@@ -78,7 +79,7 @@ func TestV1XenonMultipleBaseLayersNoUVMPath(t *testing.T) {
 	layers := layersBusybox
 	c, err := CreateContainerEx(&CreateOptionsEx{
 		Id:            "TestV1XenonWCOW",
-		SchemaVersion: SchemaV10(),
+		SchemaVersion: schemaversion.SchemaV10(),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{
 				LayerFolders: append(layers, tempDir),
@@ -117,7 +118,7 @@ func TestV1XenonWCOWSingleMappedDirectory(t *testing.T) {
 
 	hostedContainer, err := CreateContainerEx(&CreateOptionsEx{
 		Id:            "TestV1XenonWCOWSingleMappedDirectory",
-		SchemaVersion: SchemaV10(),
+		SchemaVersion: schemaversion.SchemaV10(),
 		Spec: &specs.Spec{
 			Mounts: []specs.Mount{mount},
 			Windows: &specs.Windows{
@@ -227,7 +228,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	firstHostedContainer, err := CreateContainerEx(&CreateOptionsEx{
 		Id:            "FirstContainer",
 		HostingSystem: uvm,
-		SchemaVersion: SchemaV20(),
+		SchemaVersion: schemaversion.SchemaV20(),
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: firstLayerFolders}},
 	})
 	if err != nil {
@@ -242,7 +243,7 @@ func TestV2XenonWCOWTwoContainers(t *testing.T) {
 	secondHostedContainer, err := CreateContainerEx(&CreateOptionsEx{
 		Id:            "SecondContainer",
 		HostingSystem: uvm,
-		SchemaVersion: SchemaV20(),
+		SchemaVersion: schemaversion.SchemaV20(),
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: secondLayerFolders}},
 	})
 	if err != nil {
@@ -376,7 +377,7 @@ func TestV2XenonWCOWCreateLots(t *testing.T) {
 		hostedContainer, err := CreateContainerEx(&CreateOptionsEx{
 			Id:            fmt.Sprintf("container%d", i),
 			HostingSystem: uvm,
-			SchemaVersion: SchemaV20(),
+			SchemaVersion: schemaversion.SchemaV20(),
 			Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layerFolders}},
 		})
 		if err != nil {
@@ -402,7 +403,7 @@ func createv2WCOWUVM(t *testing.T, uvmLayers []string, uvmId string, resources *
 
 	createOptions := &CreateOptionsEx{
 		AsHostingSystem: true,
-		SchemaVersion:   SchemaV20(),
+		SchemaVersion:   schemaversion.SchemaV20(),
 		Spec:            spec,
 	}
 	if uvmId != "" {

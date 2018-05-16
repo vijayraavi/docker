@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"io"
 	"time"
+
+	"github.com/Microsoft/hcsshim/schemaversion"
 )
 
 // ProcessConfig is used as both the input of Container.CreateProcess
@@ -81,7 +83,7 @@ type Container interface {
 	Modify(config interface{}) error
 
 	// SchemaVersion returns the schema version
-	SchemaVersion() *SchemaVersion
+	SchemaVersion() *schemaversion.SchemaVersion
 
 	// CreateProcessEx is a wrapper for CreateProcess that creates an
 	// arbirary process (most usefully inside a utility VM) and performs IO copies with

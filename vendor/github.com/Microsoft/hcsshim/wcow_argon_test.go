@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Microsoft/hcsshim/schemaversion"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
@@ -28,7 +29,7 @@ func TestV1Argon(t *testing.T) {
 	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 
 	c, err := CreateContainerEx(&CreateOptionsEx{
-		SchemaVersion: SchemaV10(),
+		SchemaVersion: schemaversion.SchemaV10(),
 		Id:            "TestV1Argon",
 		Owner:         "unit-test",
 		Spec: &specs.Spec{
@@ -56,7 +57,7 @@ func TestV1ArgonAutoMount(t *testing.T) {
 	layers := append(layersBusybox, tempDir)
 	c, err := CreateContainerEx(&CreateOptionsEx{
 		Id:            "TestV1ArgonAutoMount",
-		SchemaVersion: SchemaV10(),
+		SchemaVersion: schemaversion.SchemaV10(),
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
 	})
 	if err != nil {
@@ -81,7 +82,7 @@ func TestV1ArgonMultipleBaseLayersAutoMount(t *testing.T) {
 	layers := append(layersBusybox, containerScratchDir)
 	c, err := CreateContainerEx(&CreateOptionsEx{
 		Id:            "TestV1ArgonMultipleBaseLayersAutoMount",
-		SchemaVersion: SchemaV10(),
+		SchemaVersion: schemaversion.SchemaV10(),
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
 	})
 	if err != nil {
@@ -113,7 +114,7 @@ func TestV1ArgonSingleMappedDirectory(t *testing.T) {
 	f.Close()
 
 	c, err := CreateContainerEx(&CreateOptionsEx{
-		SchemaVersion: SchemaV10(),
+		SchemaVersion: schemaversion.SchemaV10(),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: layers},
 			Mounts:  []specs.Mount{mount},
@@ -149,7 +150,7 @@ func TestV2Argon(t *testing.T) {
 	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 
 	c, err := CreateContainerEx(&CreateOptionsEx{
-		SchemaVersion: SchemaV20(),
+		SchemaVersion: schemaversion.SchemaV20(),
 		Spec: &specs.Spec{
 			Hostname: "mickey",
 			Windows:  &specs.Windows{LayerFolders: layers},
@@ -180,7 +181,7 @@ func TestV2ArgonMultipleBaseLayers(t *testing.T) {
 	defer UnmountContainerLayers(layers, nil, UnmountOperationAll)
 
 	c, err := CreateContainerEx(&CreateOptionsEx{
-		SchemaVersion: SchemaV20(),
+		SchemaVersion: schemaversion.SchemaV20(),
 		Id:            "TestV2ArgonMultipleBaseLayers",
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: layers},
@@ -208,7 +209,7 @@ func TestV2ArgonAutoMountMultipleBaseLayers(t *testing.T) {
 	layers := append(layersBusybox, containerScratchDir)
 
 	c, err := CreateContainerEx(&CreateOptionsEx{
-		SchemaVersion: SchemaV20(),
+		SchemaVersion: schemaversion.SchemaV20(),
 		Id:            "TestV2ArgonAutoMountMultipleBaseLayers",
 		Spec:          &specs.Spec{Windows: &specs.Windows{LayerFolders: layers}},
 	})
@@ -241,7 +242,7 @@ func TestV2ArgonSingleMappedDirectory(t *testing.T) {
 	f.Close()
 
 	c, err := CreateContainerEx(&CreateOptionsEx{
-		SchemaVersion: SchemaV20(),
+		SchemaVersion: schemaversion.SchemaV20(),
 		Spec: &specs.Spec{
 			Windows: &specs.Windows{LayerFolders: layers},
 			Mounts:  []specs.Mount{mount},

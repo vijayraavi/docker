@@ -1,11 +1,12 @@
 // +build windows
 
-package hcsshim
+package schemaversion
 
 import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/Microsoft/hcsshim/version"
 	"github.com/sirupsen/logrus"
 )
 
@@ -30,7 +31,7 @@ func (sv *SchemaVersion) isSupported() error {
 		return nil
 	}
 	if sv.IsV20() {
-		if GetOSVersion().Build < WINDOWS_BUILD_RS5 {
+		if version.GetOSVersion().Build < version.WINDOWS_BUILD_RS5 {
 			return fmt.Errorf("unsupported on this Windows build")
 		}
 		return nil
@@ -66,11 +67,11 @@ func (sv *SchemaVersion) String() string {
 	return string(b[:])
 }
 
-// determineSchemaVersion works out what schema version to use based on build and
+// DetermineSchemaVersion works out what schema version to use based on build and
 // requested option.
-func determineSchemaVersion(requestedSV *SchemaVersion) *SchemaVersion {
+func DetermineSchemaVersion(requestedSV *SchemaVersion) *SchemaVersion {
 	sv := SchemaV10()
-	if GetOSVersion().Build >= WINDOWS_BUILD_RS5 {
+	if version.GetOSVersion().Build >= version.WINDOWS_BUILD_RS5 {
 		sv = SchemaV10() // TODO: When do we flip this to V2 for RS5? Answer - when functionally complete. Templating. CredSpecs. Networking. LCOW...
 	}
 	if requestedSV != nil {

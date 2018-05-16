@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Microsoft/hcsshim/schemaversion"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
 )
@@ -216,7 +217,7 @@ func createWCOWv2UVM(coi *createOptionsExInternal) (Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	uvmContainer, err := createContainer(coi.actualId, string(uvmb), SchemaV20())
+	uvmContainer, err := createContainer(coi.actualId, string(uvmb), schemaversion.SchemaV20())
 	if err != nil {
 		logrus.Debugln("failed to create UVM: ", err)
 		return nil, err
