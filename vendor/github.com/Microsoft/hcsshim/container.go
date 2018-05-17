@@ -65,6 +65,7 @@ type container struct {
 		sync.Mutex
 		hostPath [4][64]string // Hyper-V supports 4 controllers, 64 slots per controller. Limited to 1 controller for now though.
 	}
+	operatingSystem string
 }
 
 func init() {

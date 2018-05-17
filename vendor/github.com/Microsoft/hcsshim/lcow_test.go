@@ -4,7 +4,6 @@ package hcsshim
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -137,45 +136,78 @@ func TestV1XenonLCOW(t *testing.T) {
 	c.Terminate()
 }
 
-// A v2 LCOW
-func TestV2XenonLCOW(t *testing.T) {
-	//t.Skip("for now")
+// Returns
+// - Container object
+// - Containers scratch file host-path (added on SCSI - use RemoveSCSI to remove)
+func createV2LCOWUvm(t *testing.T, addScratch bool) (Container, string) {
 	uvmScratchDir, _ := createLCOWTempDirWithSandbox(t)
+	scratchFile := ""
 	defer os.RemoveAll(uvmScratchDir)
 
 	spec := getDefaultLinuxSpec(t)
 	v2uvm, err := CreateContainerEx(&CreateOptionsEx{
 		AsHostingSystem: true,
-		Id:              "uvm",
 		SchemaVersion:   schemaversion.SchemaV20(),
+		Id:              "uvm",
 		Spec:            spec,
 	})
 	if err != nil {
 		t.Fatalf("Failed create: %s", err)
 	}
 	startContainer(t, v2uvm)
-	defer v2uvm.Terminate()
 
-	if err := GrantVmAccess("uvm", filepath.Join(uvmScratchDir, "sandbox.vhdx")); err != nil {
-		t.Fatalf("Failed grantvmaccess: %s", err)
+	if addScratch {
+		scratchFile = filepath.Join(uvmScratchDir, "sandbox.vhdx")
+		if err := GrantVmAccess("uvm", scratchFile); err != nil {
+			t.Fatalf("Failed grantvmaccess: %s", err)
+		}
+		controller, lun, err := AddSCSI(v2uvm, scratchFile, "/tmp/scratch")
+		if err != nil {
+			t.Fatalf("Failed to add UVM scratch: %s", err)
+		}
+		if controller != 0 || lun != 0 {
+			t.Fatalf("expected 0:0")
+		}
+	}
+	return v2uvm, scratchFile
+}
+
+// A v2 LCOW
+func TestV2XenonLCOW(t *testing.T) {
+	//t.Skip("for now")
+	v2uvm, v2uvmScratchFile := createV2LCOWUvm(t, false)
+	if v2uvmScratchFile != "" {
+		defer RemoveSCSI(v2uvm, v2uvmScratchFile)
+		defer os.RemoveAll(filepath.Dir(v2uvmScratchFile))
+		defer v2uvm.Terminate()
 	}
 
-	controller, lun, err := AddSCSI(v2uvm, filepath.Join(uvmScratchDir, "sandbox.vhdx"), "/tmp/scratch")
+	containerScratchDir, _ := createLCOWTempDirWithSandbox(t)
+	defer os.RemoveAll(containerScratchDir)
+	if err := GrantVmAccess(v2uvm.ID(), filepath.Join(containerScratchDir, "sandbox.vhdx")); err != nil {
+		t.Fatalf("Failed GrantVmAccess on sandbox.vhdx: %s", err)
+	}
+
+	spec := getDefaultLinuxSpec(t)
+	spec.Windows.LayerFolders = append(layersAlpine, containerScratchDir)
+	hostedContainer, err := CreateContainerEx(&CreateOptionsEx{
+		Id:            "TextV2XenonLCOW",
+		SchemaVersion: schemaversion.SchemaV20(),
+		Spec:          spec,
+		HostingSystem: v2uvm,
+	})
 	if err != nil {
-		t.Fatalf("Failed to add UVM scratch: %s", err)
-	}
-	if controller != 0 || lun != 0 {
-		t.Fatalf("expected 0:0")
+		t.Fatalf("Failed create: %s", err)
 	}
 
-	pmid, uvmpath, err := AddVPMEM(v2uvm, filepath.Join(layersAlpine[0], "layer.vhd"), true)
-	fmt.Println(pmid, uvmpath, err)
-	if err != nil {
-		time.Sleep(5 * time.Minute)
-	}
+	startContainer(t, hostedContainer)
+	stopContainer(t, hostedContainer)
 
-	time.Sleep(5 * time.Minute)
-	runCommand(t, v2uvm, "echo Hello", `/bin`, "Hello")
+	//	pmid, uvmpath, err := AddVPMEM(v2uvm, filepath.Join(layersAlpine[0], "layer.vhd"), "", true)
+	//	fmt.Println(pmid, uvmpath, err)
+	//	RemoveVPMEM(v2uvm, filepath.Join(layersAlpine[0], "layer.vhd"))
+
+	//	runCommand(t, v2uvm, "echo Hello", `/bin`, "Hello")
 	stopContainer(t, v2uvm)
 	v2uvm.Terminate()
 }

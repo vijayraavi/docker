@@ -62,16 +62,19 @@ func MountContainerLayers(layerFolders []string, hostingSystem Container) (inter
 	if !c.schemaVersion.IsV20() {
 		return nil, fmt.Errorf("hosting system for mount must be schema v2")
 	}
+	os := c.operatingSystem
 
 	// 	Add each read-only layers as a VSMB share. In each case, the ResourceUri will end in a GUID based on the folder path.
 	//  Each VSMB share is ref-counted so that multiple containers in the same utility VM can share them.
 	var vsmbAdded []string
-	for _, layerPath := range layerFolders[:len(layerFolders)-1] {
-		err := AddVSMB(hostingSystem, layerPath, hcsschemav2.VsmbFlagReadOnly|hcsschemav2.VsmbFlagPseudoOplocks|hcsschemav2.VsmbFlagTakeBackupPrivilege|hcsschemav2.VsmbFlagCacheIO|hcsschemav2.VsmbFlagShareRead)
-		if err != nil {
-			removeVSMBOnMountFailure(hostingSystem, vsmbAdded)
+	if os == "windows" {
+		for _, layerPath := range layerFolders[:len(layerFolders)-1] {
+			err := AddVSMB(hostingSystem, layerPath, hcsschemav2.VsmbFlagReadOnly|hcsschemav2.VsmbFlagPseudoOplocks|hcsschemav2.VsmbFlagTakeBackupPrivilege|hcsschemav2.VsmbFlagCacheIO|hcsschemav2.VsmbFlagShareRead)
+			if err != nil {
+				removeVSMBOnMountFailure(hostingSystem, vsmbAdded)
+			}
+			vsmbAdded = append(vsmbAdded, layerPath)
 		}
-		vsmbAdded = append(vsmbAdded, layerPath)
 	}
 
 	// 	Add the sandbox at an unused SCSI location. The container path inside the utility VM will be C:\<GUID> where
@@ -93,34 +96,36 @@ func MountContainerLayers(layerFolders []string, hostingSystem Container) (inter
 
 	// 	Load the filter at the C:\<GUID> location calculated above. We pass into this request each of the
 	// 	read-only layer folders.
-	layers := []hcsschemav2.ContainersResourcesLayerV2{}
-	for _, vsmb := range vsmbAdded {
-		vsmbGUID, err := GetVSMBGUID(hostingSystem, vsmb)
-		if err != nil {
+	combinedLayers := hcsschemav2.CombinedLayersV2{}
+	if os == "windows" {
+		layers := []hcsschemav2.ContainersResourcesLayerV2{}
+		for _, vsmb := range vsmbAdded {
+			vsmbGUID, err := GetVSMBGUID(hostingSystem, vsmb)
+			if err != nil {
+				removeVSMBOnMountFailure(hostingSystem, vsmbAdded)
+				removeSCSIOnMountFailure(hostingSystem, hostPath, controller, lun)
+				return nil, err
+			}
+			layers = append(layers, hcsschemav2.ContainersResourcesLayerV2{
+				Id:   vsmbGUID,
+				Path: fmt.Sprintf(`\\?\VMSMB\VSMB-{dcc079ae-60ba-4d07-847c-3493609c0870}\%s`, vsmbGUID),
+			})
+		}
+		combinedLayers = hcsschemav2.CombinedLayersV2{
+			ContainerRootPath: fmt.Sprintf(`C:\%s`, containerPathGUID.ToString()),
+			Layers:            layers,
+		}
+		combinedLayersModification := &hcsschemav2.ModifySettingsRequestV2{
+			ResourceType:   hcsschemav2.ResourceTypeCombinedLayers,
+			RequestType:    hcsschemav2.RequestTypeAdd,
+			HostedSettings: combinedLayers,
+		}
+		if err := hostingSystem.Modify(combinedLayersModification); err != nil {
 			removeVSMBOnMountFailure(hostingSystem, vsmbAdded)
 			removeSCSIOnMountFailure(hostingSystem, hostPath, controller, lun)
 			return nil, err
 		}
-		layers = append(layers, hcsschemav2.ContainersResourcesLayerV2{
-			Id:   vsmbGUID,
-			Path: fmt.Sprintf(`\\?\VMSMB\VSMB-{dcc079ae-60ba-4d07-847c-3493609c0870}\%s`, vsmbGUID),
-		})
 	}
-	combinedLayers := hcsschemav2.CombinedLayersV2{
-		ContainerRootPath: fmt.Sprintf(`C:\%s`, containerPathGUID.ToString()),
-		Layers:            layers,
-	}
-	combinedLayersModification := &hcsschemav2.ModifySettingsRequestV2{
-		ResourceType:   hcsschemav2.ResourceTypeCombinedLayers,
-		RequestType:    hcsschemav2.RequestTypeAdd,
-		HostedSettings: combinedLayers,
-	}
-	if err := hostingSystem.Modify(combinedLayersModification); err != nil {
-		removeVSMBOnMountFailure(hostingSystem, vsmbAdded)
-		removeSCSIOnMountFailure(hostingSystem, hostPath, controller, lun)
-		return nil, err
-	}
-
 	logrus.Debugln("hcsshim::MountContainerLayers Succeeded")
 	return combinedLayers, nil
 }

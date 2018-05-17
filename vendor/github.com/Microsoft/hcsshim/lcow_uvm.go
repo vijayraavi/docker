@@ -79,11 +79,6 @@ func createLCOWv2UVM(coi *createOptionsExInternal) (Container, error) {
 
 	scsi := make(map[string]hcsschemav2.VirtualMachinesResourcesStorageScsiV2)
 	scsi["0"] = hcsschemav2.VirtualMachinesResourcesStorageScsiV2{Attachments: make(map[string]hcsschemav2.VirtualMachinesResourcesStorageAttachmentV2)}
-	//	if sandboxFile != "" {
-	//		if err := GrantVmAccess(coi.actualId, sandboxFile); err != nil {
-	//			return nil, err
-	//		}
-	//	}
 
 	c := container{}
 	uvm := &hcsschemav2.ComputeSystemV2{
@@ -163,13 +158,7 @@ func createLCOWv2UVM(coi *createOptionsExInternal) (Container, error) {
 		logrus.Debugln("failed to create UVM: ", err)
 		return nil, err
 	}
-	//	if sandboxFile != "" {
-	//		_, _, err := AddSCSI(uvmContainer, sandboxFile, "/tmp/scratch")
-	//		if err != nil {
-	//			uvmContainer.Terminate()
-	//			return nil, err
-	//		}
+	uvmContainer.(*container).operatingSystem = "linux"
 
-	//	}
 	return uvmContainer, nil
 }

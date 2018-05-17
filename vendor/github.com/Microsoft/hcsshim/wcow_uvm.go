@@ -224,5 +224,6 @@ func createWCOWv2UVM(coi *createOptionsExInternal) (Container, error) {
 		return nil, err
 	}
 	uvmContainer.(*container).scsiLocations.hostPath[0][0] = attachments["0"].Path
+	uvmContainer.(*container).operatingSystem = "windows"
 	return uvmContainer, nil
 }
