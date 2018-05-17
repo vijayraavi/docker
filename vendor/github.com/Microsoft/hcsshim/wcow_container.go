@@ -80,7 +80,7 @@ func createWCOWContainer(coi *createOptionsExInternal) (Container, error) {
 			//
 
 			// TODO: Read-only
-			err := AddVSMB(coi.HostingSystem, mount.Source, hcsschemav2.VsmbFlagReadOnly|hcsschemav2.VsmbFlagPseudoOplocks|hcsschemav2.VsmbFlagTakeBackupPrivilege|hcsschemav2.VsmbFlagCacheIO|hcsschemav2.VsmbFlagShareRead)
+			err := coi.HostingSystem.AddVSMB(mount.Source, hcsschemav2.VsmbFlagReadOnly|hcsschemav2.VsmbFlagPseudoOplocks|hcsschemav2.VsmbFlagTakeBackupPrivilege|hcsschemav2.VsmbFlagCacheIO|hcsschemav2.VsmbFlagShareRead)
 			if err != nil {
 				thisError := fmt.Errorf("failed to add VSMB share to utility VM for mount %+v: %s", mount, err)
 				thisError = undoMountOnFailure(coi, origSpecRoot, weMountedStorage, vsmbMountsAddedByUs, thisError)
@@ -119,7 +119,7 @@ func undoMountOnFailure(coi *createOptionsExInternal, origSpecRoot *specs.Root, 
 	// Unwind vsmb bind-mounts
 	for _, vsmbMountAddedByUs := range vsmbMountsAddedByUs {
 		logrus.Debugf("hcsshim::undoMountOnFailure Unwinding VSMB Mount %s", vsmbMountAddedByUs)
-		if unmountError := RemoveVSMB(coi.HostingSystem, vsmbMountAddedByUs); unmountError != nil {
+		if unmountError := coi.HostingSystem.RemoveVSMB(vsmbMountAddedByUs); unmountError != nil {
 			logrus.Warnf("may have leaked vsmb for bind-mount on unwind: %s: %s", vsmbMountAddedByUs, unmountError)
 			retError = errors.Wrapf(currentError, fmt.Sprintf("may have leaked some storage - hcsshim auto-mounted vsmb bind-mount, but was unable to complete the unmount: %s", unmountError))
 		}

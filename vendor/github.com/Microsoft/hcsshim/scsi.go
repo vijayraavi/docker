@@ -11,17 +11,14 @@ import (
 
 // allocateSCSI finds the next available slot on the
 // SCSI controllers associated with a utility VM to use.
-func allocateSCSI(container *container, hostPath string) (int, int, error) {
-	if container == nil {
-		return -1, -1, fmt.Errorf("allocateSCSI was not passed a container object")
-	}
-	container.scsiLocations.Lock()
-	defer container.scsiLocations.Unlock()
-	for controller, luns := range container.scsiLocations.hostPath {
+func (uvm *UtilityVM) allocateSCSI(hostPath string) (int, int, error) {
+	uvm.scsiLocations.Lock()
+	defer uvm.scsiLocations.Unlock()
+	for controller, luns := range uvm.scsiLocations.hostPath {
 		for lun, hp := range luns {
 			if hp == "" {
-				container.scsiLocations.hostPath[controller][lun] = hostPath
-				logrus.Debugf("hcsshim::allocateSCSI %d:%d %q", controller, lun, hostPath)
+				uvm.scsiLocations.hostPath[controller][lun] = hostPath
+				logrus.Debugf("uvm::allocateSCSI %d:%d %q", controller, lun, hostPath)
 				return controller, lun, nil
 
 			}
@@ -30,25 +27,19 @@ func allocateSCSI(container *container, hostPath string) (int, int, error) {
 	return -1, -1, fmt.Errorf("no free SCSI locations")
 }
 
-func deallocateSCSI(container *container, controller int, lun int) error {
-	if container == nil {
-		return fmt.Errorf("allocateSCSI was not passed a container object")
-	}
-	container.scsiLocations.Lock()
-	defer container.scsiLocations.Unlock()
-	container.scsiLocations.hostPath[controller][lun] = ""
+func (uvm *UtilityVM) deallocateSCSI(controller int, lun int) error {
+	uvm.scsiLocations.Lock()
+	defer uvm.scsiLocations.Unlock()
+	uvm.scsiLocations.hostPath[controller][lun] = ""
 	return nil
 }
 
 // Lock must be held when calling this function
-func findSCSIAttachment(container *container, findThisHostPath string) (int, int, error) {
-	if container == nil {
-		return -1, -1, fmt.Errorf("findSCSIAttachment was not passed a container object")
-	}
-	for controller, slots := range container.scsiLocations.hostPath {
+func (uvm *UtilityVM) findSCSIAttachment(findThisHostPath string) (int, int, error) {
+	for controller, slots := range uvm.scsiLocations.hostPath {
 		for slot, hostPath := range slots {
 			if hostPath == findThisHostPath {
-				logrus.Debugf("hcsshim::findSCSIAttachment %d:%d %s", controller, slot, hostPath)
+				logrus.Debugf("uvm::findSCSIAttachment %d:%d %s", controller, slot, hostPath)
 				return controller, slot, nil
 			}
 		}
@@ -71,16 +62,15 @@ func findSCSIAttachment(container *container, findThisHostPath string) (int, int
 //
 // TODO: Consider a structure here so that we can extend for future functionality without
 //       breaking the API surface.
-func AddSCSI(uvm Container, hostPath string, containerPath string) (int, int, error) {
+func (uvm *UtilityVM) AddSCSI(hostPath string, containerPath string) (int, int, error) {
 	controller := -1
 	lun := -1
 	if uvm == nil {
 		return -1, -1, fmt.Errorf("no utility VM passed to AddSCSI")
 	}
-	uvmc := uvm.(*container)
-	logrus.Debugf("hcsshim::AddSCSI id:%s hostPath:%s containerPath:%s sv:%s", uvmc.id, hostPath, containerPath, uvmc.schemaVersion.String())
+	logrus.Debugf("uvm::AddSCSI id:%s hostPath:%s containerPath:%s", uvm.Id, hostPath, containerPath)
 
-	if uvmc.schemaVersion.IsV10() {
+	if uvm.OperatingSystem == "linux" && uvm.SchemaVersion.IsV10() {
 		modification := &ResourceModificationRequestResponse{
 			Resource: "MappedVirtualDisk",
 			Data: MappedVirtualDisk{
@@ -91,13 +81,13 @@ func AddSCSI(uvm Container, hostPath string, containerPath string) (int, int, er
 			},
 			Request: "Add",
 		}
-		if err := uvmc.Modify(modification); err != nil {
-			return -1, -1, fmt.Errorf("hcsshim::AddSCSI: failed to modify utility VM configuration: %s", err)
+		if err := uvm.Modify(modification); err != nil {
+			return -1, -1, fmt.Errorf("uvm::AddSCSI: failed to modify utility VM configuration: %s", err)
 		}
 
 		// Get the list of mapped virtual disks to find the controller and LUN IDs
-		logrus.Debugf("hcsshim::AddSCSI: %s querying mapped virtual disks", hostPath)
-		mvdControllers, err := uvmc.MappedVirtualDisks()
+		logrus.Debugf("uvm::AddSCSI: %s querying mapped virtual disks", hostPath)
+		mvdControllers, err := uvm.mappedVirtualDisks()
 		if err != nil {
 			return -1, -1, fmt.Errorf("failed to get mapped virtual disks: %s", err)
 		}
@@ -117,21 +107,21 @@ func AddSCSI(uvm Container, hostPath string, containerPath string) (int, int, er
 			return -1, -1, fmt.Errorf("failed to find %s in mapped virtual disks after hot-adding", hostPath)
 		}
 
-		uvmc.scsiLocations.Lock()
-		defer uvmc.scsiLocations.Unlock()
-		if uvmc.scsiLocations.hostPath[controller][lun] != "" {
-			removeSCSI(uvm, hostPath, controller, lun)
+		uvm.scsiLocations.Lock()
+		defer uvm.scsiLocations.Unlock()
+		if uvm.scsiLocations.hostPath[controller][lun] != "" {
+			uvm.removeSCSI(hostPath, controller, lun)
 			return -1, -1, fmt.Errorf("internal consistency error - %d:%d is in use by %s", controller, lun, hostPath)
 		}
-		uvmc.scsiLocations.hostPath[controller][lun] = hostPath
+		uvm.scsiLocations.hostPath[controller][lun] = hostPath
 
-		logrus.Debugf("hcsshim::AddSCSI success id:%s hostPath:%s added at %d:%d sv:%s", uvmc.id, hostPath, controller, lun, uvmc.schemaVersion.String())
+		logrus.Debugf("uvm::AddSCSI success id:%s hostPath:%s added at %d:%d sv:%s", uvm.Id, hostPath, controller, lun, uvm.SchemaVersion.String())
 		return controller, lun, nil
 	}
 
 	// V2 Schema
 	var err error
-	controller, lun, err = allocateSCSI(uvmc, hostPath)
+	controller, lun, err = uvm.allocateSCSI(hostPath)
 	if err != nil {
 		return -1, -1, err
 	}
@@ -159,32 +149,28 @@ func AddSCSI(uvm Container, hostPath string, containerPath string) (int, int, er
 		},
 	}
 	if err := uvm.Modify(SCSIModification); err != nil {
-		deallocateSCSI(uvmc, controller, lun)
-		return -1, -1, fmt.Errorf("hcsshim::AddSCSI: failed to modify utility VM configuration: %s", err)
+		uvm.deallocateSCSI(controller, lun)
+		return -1, -1, fmt.Errorf("uvm::AddSCSI: failed to modify utility VM configuration: %s", err)
 	}
-	logrus.Debugf("hcsshim::AddSCSI id:%s hostPath:%s added at %d:%d sv:%s", uvmc.id, hostPath, controller, lun, uvmc.schemaVersion.String())
+	logrus.Debugf("uvm::AddSCSI id:%s hostPath:%s added at %d:%d", uvm.Id, hostPath, controller, lun)
 	return controller, lun, nil
 
 }
 
 // RemoveSCSI removes a SCSI disk from a utility VM. As an external API, it
 // is "safe". Internal use can call removeSCSI.
-func RemoveSCSI(uvm Container, hostPath string) error {
-	if uvm == nil {
-		return fmt.Errorf("no utility VM passed to RemoveSCSI")
-	}
-	uvmc := uvm.(*container)
-	uvmc.scsiLocations.Lock()
-	defer uvmc.scsiLocations.Unlock()
+func (uvm *UtilityVM) RemoveSCSI(hostPath string) error {
+	uvm.scsiLocations.Lock()
+	defer uvm.scsiLocations.Unlock()
 
 	// Make sure is actually attached
-	controller, lun, err := findSCSIAttachment(uvmc, hostPath)
+	controller, lun, err := uvm.findSCSIAttachment(hostPath)
 	if err != nil {
-		return fmt.Errorf("cannot remove SCSI disk %s as it is not attached to container %s: %s", hostPath, uvmc.id, err)
+		return fmt.Errorf("cannot remove SCSI disk %s as it is not attached to container %s: %s", hostPath, uvm.Id, err)
 	}
 
-	if err := removeSCSI(uvm, hostPath, controller, lun); err != nil {
-		return fmt.Errorf("failed to remove SCSI disk %s from container %s: %s", hostPath, uvmc.id, err)
+	if err := uvm.removeSCSI(hostPath, controller, lun); err != nil {
+		return fmt.Errorf("failed to remove SCSI disk %s from container %s: %s", hostPath, uvm.Id, err)
 
 	}
 	return nil
@@ -192,10 +178,10 @@ func RemoveSCSI(uvm Container, hostPath string) error {
 
 // removeSCSI is the internally callable "unsafe" version of RemoveSCSI. The mutex
 // MUST be held when calling this function.
-func removeSCSI(uvm Container, hostPath string, controller int, lun int) error {
+func (uvm *UtilityVM) removeSCSI(hostPath string, controller int, lun int) error {
 	var scsiModification interface{}
-	logrus.Debugf("hcsshim::RemoveSCSI id:%s hostPath:%s sv:%s", uvm.(*container).id, hostPath, uvm.(*container).schemaVersion.String())
-	if uvm.(*container).schemaVersion.IsV10() {
+	logrus.Debugf("uvm::RemoveSCSI id:%s hostPath:%s", uvm.Id, hostPath)
+	if uvm.OperatingSystem == "linux" && uvm.SchemaVersion.IsV10() {
 		scsiModification = &ResourceModificationRequestResponse{
 			Resource: "MappedVirtualDisk",
 			Data: MappedVirtualDisk{
@@ -218,7 +204,7 @@ func removeSCSI(uvm Container, hostPath string, controller int, lun int) error {
 	if err := uvm.Modify(scsiModification); err != nil {
 		return err
 	}
-	uvm.(*container).scsiLocations.hostPath[controller][lun] = ""
-	logrus.Debugf("hcsshim::RemoveSCSI: Success %s removed from %s %d:%d", hostPath, uvm.(*container).id, controller, lun)
+	uvm.scsiLocations.hostPath[controller][lun] = ""
+	logrus.Debugf("uvm::RemoveSCSI: Success %s removed from %s %d:%d", hostPath, uvm.Id, controller, lun)
 	return nil
 }

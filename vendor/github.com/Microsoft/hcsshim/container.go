@@ -42,29 +42,12 @@ const (
 	mappedVirtualDiskQuery = `{ "PropertyTypes" : ["MappedVirtualDisk"]}`
 )
 
-type vsmbShare struct {
-	refCount uint32
-	guid     string
-}
-
 type container struct {
-	handleLock     sync.RWMutex
-	handle         hcsSystem
-	id             string
-	callbackNumber uintptr
-	schemaVersion  schemaversion.SchemaVersion
-	vsmbShares     struct {
-		sync.Mutex
-		shares map[string]vsmbShare
-	}
-	vpmemLocations struct {
-		sync.Mutex
-		hostPath [128]string // Limited by ACPI size.
-	}
-	scsiLocations struct {
-		sync.Mutex
-		hostPath [4][64]string // Hyper-V supports 4 controllers, 64 slots per controller. Limited to 1 controller for now though.
-	}
+	handleLock      sync.RWMutex
+	handle          hcsSystem
+	id              string
+	callbackNumber  uintptr
+	schemaVersion   schemaversion.SchemaVersion
 	operatingSystem string
 }
 

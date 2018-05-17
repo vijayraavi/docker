@@ -19,8 +19,6 @@ import (
 
 const (
 // HCSOPTION_ constants are string values which can be added in the RuntimeOptions of a call to CreateContainerEx.
-//HCSOPTION_ADDITIONAL_JSON_V1 = "hcs.additional.v1.json" // HCS:  Additional JSON to merge into Create calls in HCS for V1 schema. Default is none
-//HCSOPTION_ADDITIONAL_JSON_V2 = "hcs.additional.v2.json" // HCS:  Additional JSON to merge into Create calls in HCS for V2.x schema. Default is none
 //HCSOPTION_WCOW_V2_UVM_MEMORY_OVERHEAD = "hcs.wcow.v2.uvm.additional.memory" // WCOW: v2 schema MB of memory to add to WCOW UVM when calculating resources. Defaults to 256MB
 //HCSOPTION_LCOW_GLOBALMODE     = "lcow.globalmode"     // LCOW: Utility VM lifetime. Presence of this causes global mode which is insecure, but more efficient. Default is non-global
 //HCSOPTION_LCOW_SANDBOXSIZE_GB = "lcow.sandboxsize.gb" // LCOW: Size of sandbox in GB
@@ -36,14 +34,13 @@ const (
 type CreateOptionsEx struct {
 
 	// Common parameters
-	Id              string                       // Identifier for the container
-	Owner           string                       // Specifies the owner. Defaults to executable name.
-	Spec            *specs.Spec                  // Definition of the container or utility VM being created
-	SchemaVersion   *schemaversion.SchemaVersion // Requested Schema Version. Defaults to v2 for RS5, v1 for RS1..RS4
-	HostingSystem   Container                    // Container object representing a utility or service VM in which the container is to be created.
-	AsHostingSystem bool                         // This is a utility VM for hosting containers, or for use as a service VM
+	Id            string                       // Identifier for the container
+	Owner         string                       // Specifies the owner. Defaults to executable name.
+	Spec          *specs.Spec                  // Definition of the container or utility VM being created
+	SchemaVersion *schemaversion.SchemaVersion // Requested Schema Version. Defaults to v2 for RS5, v1 for RS1..RS4
+	HostingSystem *UtilityVM                   // Utility or service VM in which the container is to be created.
 
-	// LCOW specific parameters
+	// These are v1 LCOW backwards-compatibility only.
 	KirdPath          string // Folder in which kernel and initrd reside. Defaults to \Program Files\Linux Containers
 	KernelFile        string // Filename under KirdPath for the kernel. Defaults to bootx64.efi
 	InitrdFile        string // Filename under KirdPath for the initrd image. Defaults to initrd.img
@@ -58,9 +55,11 @@ type createOptionsExInternal struct {
 	actualSchemaVersion *schemaversion.SchemaVersion // Calculated based on Windows build and optional caller-supplied override
 	actualId            string                       // Identifier for the container
 	actualOwner         string                       // Owner for the container
-	actualKirdPath      string                       // LCOW kernel/initrd path
-	actualKernelFile    string                       // LCOW kernel file
-	actualInitrdFile    string                       // LCOW initrd file
+
+	// These are v1 LCOW backwards-compatibility only
+	actualKirdPath   string // LCOW kernel/initrd path
+	actualKernelFile string // LCOW kernel file
+	actualInitrdFile string // LCOW initrd file
 }
 
 // CreateContainerEx creates a container. It can cope with a  wide variety of
@@ -105,10 +104,10 @@ func CreateContainerEx(createOptions *CreateOptionsEx) (Container, error) {
 
 	if coi.HostingSystem != nil {
 		// By definition, a hosting system can only be supplied for a v2 Xenon.
-		if !coi.HostingSystem.SchemaVersion().IsV20() {
+		if !coi.HostingSystem.SchemaVersion.IsV20() {
 			return nil, fmt.Errorf("supplied hosting system must be a v2 schema container")
 		}
-		coi.actualSchemaVersion = coi.HostingSystem.SchemaVersion()
+		coi.actualSchemaVersion = schemaversion.SchemaV20() //coi.HostingSystem.SchemaVersion()
 	} else {
 		coi.actualSchemaVersion = schemaversion.DetermineSchemaVersion(coi.SchemaVersion)
 		logrus.Debugf("hcsshim::CreateContainerEx using schema %s", coi.actualSchemaVersion.String())
@@ -119,24 +118,13 @@ func CreateContainerEx(createOptions *CreateOptionsEx) (Container, error) {
 			return nil, fmt.Errorf("containerSpec 'Windows' field must container layer folders for a Linux container")
 		}
 		if coi.actualSchemaVersion.IsV10() {
+			logrus.Debugf("hcsshim::CreateContainerEx createLCOWv1")
 			return createLCOWv1(coi)
 		} else {
-			if coi.AsHostingSystem {
-				panic("JJH. Remove this capability")
-				//return createLCOWv2UVM(coi)
-			}
+			logrus.Debugf("hcsshim::CreateContainerEx createLCOWContainer")
 			return createLCOWContainer(coi)
 		}
 	}
-
-	//
-	// Is a WCOW request.
-	//
-
-	//	// Is it a Utility VM?
-	//	if coi.AsHostingSystem {
-	//		return createWCOWv2UVM(coi)
-	//	}
 
 	// So it's a container.
 	return createWCOWContainer(coi)
@@ -310,7 +298,7 @@ func createHCSContainerDocument(coi *createOptionsExInternal, operatingSystem st
 			v2Container.Storage.Path = coi.Spec.Root.Path
 			// This is a little inefficient, but makes it MUCH easier for clients. Build the combinedLayers.Layers structure.
 			for _, layerFolder := range coi.Spec.Windows.LayerFolders[:len(coi.Spec.Windows.LayerFolders)-1] {
-				layerFolderVSMBGUID, err := GetVSMBGUID(coi.HostingSystem, layerFolder)
+				layerFolderVSMBGUID, err := coi.HostingSystem.GetVSMBGUID(layerFolder)
 				if err != nil {
 					return "", err
 				}
@@ -358,7 +346,7 @@ func createHCSContainerDocument(coi *createOptionsExInternal, operatingSystem st
 				if coi.HostingSystem == nil {
 					mdv2 = hcsschemav2.ContainersResourcesMappedDirectoryV2{HostPath: mount.Source, ContainerPath: mount.Destination, ReadOnly: false}
 				} else {
-					mountSourceVSMBGUID, err := GetVSMBGUID(coi.HostingSystem, mount.Source)
+					mountSourceVSMBGUID, err := coi.HostingSystem.GetVSMBGUID(mount.Source)
 					if err != nil {
 						return "", err
 					}
@@ -391,7 +379,7 @@ func createHCSContainerDocument(coi *createOptionsExInternal, operatingSystem st
 	if coi.HostingSystem == nil {
 		v2.Container = v2Container
 	} else {
-		v2.HostingSystemId = coi.HostingSystem.(*container).id
+		v2.HostingSystemId = coi.HostingSystem.Id
 		v2.HostedSystem = &hcsschemav2.HostedSystemV2{
 			SchemaVersion: schemaversion.SchemaV20(),
 			Container:     v2Container,
@@ -413,4 +401,30 @@ func createHCSContainerDocument(coi *createOptionsExInternal, operatingSystem st
 		logrus.Debugln("hcsshim: HCS Document:", string(v2b))
 		return string(v2b), nil
 	}
+}
+
+// LocateWCOWUVMFolderFromLayerFolders searches a set of layer folders to determine the "uppermost"
+// layer which has a utility VM image. The order of the layers is (for historical) reasons
+// Read-only-layers followed by an optional read-write layer. The RO layers are in reverse
+// order so that the upper-most RO layer is at the start, and the base OS layer is the
+// end.
+func LocateWCOWUVMFolderFromLayerFolders(layerFolders []string) (string, error) {
+	var uvmFolder string
+	index := 0
+	for _, layerFolder := range layerFolders {
+		_, err := os.Stat(filepath.Join(layerFolder, `UtilityVM`))
+		if err == nil {
+			uvmFolder = layerFolder
+			break
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		index++
+	}
+	if uvmFolder == "" {
+		return "", fmt.Errorf("utility VM folder could not be found in layers")
+	}
+	logrus.Debugf("uvm::LocateWCOWUVMFolderFromLayerFolders Index %d of %d possibles (%s)", index, len(layerFolders), uvmFolder)
+	return uvmFolder, nil
 }

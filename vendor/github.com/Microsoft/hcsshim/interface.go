@@ -95,7 +95,7 @@ type Container interface {
 	// TODO Remove This from here.
 	DebugLCOWGCS()
 
-	// ID gets the ID of the Container object
+	// ID gets the ID of the Container object. Think I can remove this now.
 	ID() string
 
 	// DEPRECATED METHODS

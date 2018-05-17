@@ -35,10 +35,10 @@ var (
 	layersWSC1709    []string // WSC 1709. Note this has both a base and a servicing layer
 	layersBusybox    []string // github.com/jhowardmsft/busybox. Just an arbitrary multi-layer iamge  // TODO We could build a simple image in here.
 
-	lcowServiceContainer Container // For generating LCOW ext4 sandbox
-	layersAlpine         []string
-	cacheSandboxFile     = "" // LCOW ext4 sandbox file
-	cacheSandboxDir      = "" // LCOW ext4 sandbox directory
+	lcowServiceContainerV1 Container // For generating LCOW ext4 sandbox
+	layersAlpine           []string
+	cacheSandboxFile       = "" // LCOW ext4 sandbox file
+	cacheSandboxDir        = "" // LCOW ext4 sandbox directory
 )
 
 func init() {
@@ -116,6 +116,12 @@ func startContainer(t *testing.T, c Container) {
 	}
 }
 
+func startUVM(t *testing.T, uvm *UtilityVM) {
+	if err := uvm.Start(); err != nil {
+		t.Fatalf("UVM %s Failed start: %s", uvm.Id, err)
+	}
+}
+
 // Helper to launch a process in it. At the
 // point of calling, the container must have been successfully created.
 // TODO Convert to CreateProcessEx using full OCI spec.
@@ -171,6 +177,13 @@ func stopContainer(t *testing.T, c Container) {
 		}
 	}
 	//c.Terminate()
+}
+
+// Helper to shoot a utility VM
+func terminateUtilityVM(t *testing.T, uvm *UtilityVM) {
+	if err := uvm.Terminate(); err != nil {
+		t.Fatalf("Failed terminate utility VM %s", err)
+	}
 }
 
 // TODO: Test UVMResourcesFromContainerSpec

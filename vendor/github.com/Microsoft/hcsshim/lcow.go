@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	winio "github.com/Microsoft/go-winio/vhd"
+	//	winio "github.com/Microsoft/go-winio/vhd"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
 )
@@ -222,24 +222,6 @@ func createLCOWv1(coi *createOptionsExInternal) (Container, error) {
 		LinuxBootParameters: coi.KernelBootOptions,
 	}
 
-	// TODO These checks were elsewhere. In common with v2 too.
-	//	if _, err := os.Stat(filepath.Join(config.KirdPath, config.KernelFile)); os.IsNotExist(err) {
-	//		return fmt.Errorf("kernel '%s' not found", filepath.Join(config.KirdPath, config.KernelFile))
-	//	}
-	//	if _, err := os.Stat(filepath.Join(config.KirdPath, config.InitrdFile)); os.IsNotExist(err) {
-	//		return fmt.Errorf("initrd '%s' not found", filepath.Join(config.KirdPath, config.InitrdFile))
-	//	}
-
-	//	// Ensure all the MappedVirtualDisks exist on the host
-	//	for _, mvd := range config.MappedVirtualDisks {
-	//		if _, err := os.Stat(mvd.HostPath); err != nil {
-	//			return fmt.Errorf("mapped virtual disk '%s' not found", mvd.HostPath)
-	//		}
-	//		if mvd.ContainerPath == "" {
-	//			return fmt.Errorf("mapped virtual disk '%s' requested without a container path", mvd.HostPath)
-	//		}
-	//	}
-
 	if coi.Spec.Windows != nil {
 		// Strip off the top-most layer as that's passed in separately to HCS
 		if len(coi.Spec.Windows.LayerFolders) > 0 {
@@ -423,13 +405,13 @@ func (container *container) DebugLCOWGCS() {
 	logrus.Debugf("GCS Debugging:\n%s\n\nEnd GCS Debugging", strings.TrimSpace(out.String()))
 }
 
-// CreateLCOWScratch uses a utility VM to create an empty scratch disk of a requested size.
+// CreateLCOWScratchv1 uses a v1 utility VM to create an empty scratch disk of a requested size.
 // It has a caching capability. If the cacheFile exists, and the request is for a default
 // size, a copy of that is made to the target. If the size is non-default, or the cache file
 // does not exist, it uses a utility VM to create target. It is the responsibility of the
 // caller to synchronise simultaneous attempts to create the cache file.
 
-func CreateLCOWScratch(uvm Container, destFile string, sizeGB uint32, cacheFile string) error {
+func CreateLCOWScratchv1(uvm Container, destFile string, sizeGB uint32, cacheFile string) error {
 	// Smallest we can accept is the default sandbox size as we can't size down, only expand.
 	if sizeGB < DefaultLCOWScratchSizeGB {
 		sizeGB = DefaultLCOWScratchSizeGB

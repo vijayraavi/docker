@@ -211,6 +211,12 @@ type VirtualMachinesResourcesStorageAttachmentV2 struct {
 	ReadOnly                     bool   `json:"ReadOnly,omitempty"`
 }
 
+type VirtualMachinesResourcesComPortsV2 struct {
+	Port1        string `json:"Port1,omitempty"`
+	Port2        string `json:"Port2,omitempty"`
+	DebuggerMode bool   `json:"DebuggerMode,omitempty"`
+}
+
 type VirtualMachinesResourcesStorageScsiV2 struct {
 	Attachments         map[string]VirtualMachinesResourcesStorageAttachmentV2 `json:"Attachments,omitempty"`
 	ChannelInstanceGuid string                                                 `json:"ChannelInstanceGuid,omitempty"`
@@ -232,6 +238,21 @@ type VirtualMachinesResourcesStorageVpmemControllerV2 struct {
 // This goes in the hosted settings of a VPMem device (hand-added JJH)
 type MappedVPMemController struct {
 	MappedDevices map[int]string `json:"MappedDevices,omitempty"`
+}
+
+type VirtualMachinesResourcesVideoMonitorV2 struct {
+	HorizontalResolution int32 `json:"HorizontalResolution,omitempty"`
+	VerticalResolution   int32 `json:"VerticalResolution,omitempty"`
+}
+
+type VirtualMachinesResourcesKeyboardV2 struct {
+}
+
+type VirtualMachinesResourcesMouseV2 struct {
+}
+
+type VirtualMachinesResourcesRdpV2 struct {
+	AccessSids []string `json:"AccessSids,omitempty"`
 }
 
 type HvSocketHvSocketServiceConfigV2 struct {
@@ -298,15 +319,15 @@ type VirtualMachinesResourcesStorageVSmbShareV2 struct {
 
 // TODO - Remaining schema objects
 type VirtualMachinesDevicesV2 struct {
-	//	COMPorts            *SchemaVirtualMachinesResourcesComPorts               `json:"COMPorts,omitempty"`
-	SCSI  map[string]VirtualMachinesResourcesStorageScsiV2  `json:"SCSI,omitempty"`
-	VPMem *VirtualMachinesResourcesStorageVpmemControllerV2 `json:"VPMem,omitempty"`
+	COMPorts *VirtualMachinesResourcesComPortsV2               `json:"COMPorts,omitempty"`
+	SCSI     map[string]VirtualMachinesResourcesStorageScsiV2  `json:"SCSI,omitempty"`
+	VPMem    *VirtualMachinesResourcesStorageVpmemControllerV2 `json:"VPMem,omitempty"`
 	//	NIC                 map[string]SchemaVirtualMachinesResourcesNetworkNic   `json:"NIC,omitempty"`
-	//	VideoMonitor        *SchemaVirtualMachinesResourcesVideoMonitor           `json:"VideoMonitor,omitempty"`
-	//	Keyboard            *SchemaVirtualMachinesResourcesKeyboard               `json:"Keyboard,omitempty"`
-	//	Mouse               *SchemaVirtualMachinesResourcesMouse                  `json:"Mouse,omitempty"`
+	VideoMonitor   *VirtualMachinesResourcesVideoMonitorV2   `json:"VideoMonitor,omitempty"`
+	Keyboard       *VirtualMachinesResourcesKeyboardV2       `json:"Keyboard,omitempty"`
+	Mouse          *VirtualMachinesResourcesMouseV2          `json:"Mouse,omitempty"`
 	GuestInterface *VirtualMachinesResourcesGuestInterfaceV2 `json:"GuestInterface,omitempty"`
-	//	Rdp                 *SchemaVirtualMachinesResourcesRdp                    `json:"Rdp,omitempty"`
+	Rdp            *VirtualMachinesResourcesRdpV2            `json:"Rdp,omitempty"`
 	//	GuestCrashReporting *SchemaVirtualMachinesResourcesGuestCrashReporting    `json:"GuestCrashReporting,omitempty"`
 	VirtualSMBShares []VirtualMachinesResourcesStorageVSmbShareV2 `json:"VirtualSMBShares,omitempty"`
 	//	Plan9Shares         []SchemaVirtualMachinesResourcesStoragePlan9Share     `json:"Plan9Shares,omitempty"`

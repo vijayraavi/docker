@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 
 	"github.com/Microsoft/hcsshim/schema/v2"
@@ -17,8 +18,13 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type vsmbShare struct {
+	refCount uint32
+	guid     string
+}
+
 type UtilityVM struct {
-	Id                      string                  // Identifier for the container. Defaults to generated GUID.
+	Id                      string                  // Identifier for the uvm. Defaults to generated GUID.
 	Owner                   string                  // Specifies the owner. Defaults to executable name.
 	OperatingSystem         string                  // "windows" or "linux"
 	Resources               *specs.WindowsResources // Optional resources for the utility VM. Supports Memory.limit and CPU.Count only currently. // TODO possibly?
@@ -28,24 +34,39 @@ type UtilityVM struct {
 	LayerFolders []string // Set of folders for base layers and sandbox. Ordered from top most read-only through base read-only layer, followed by sandbox
 
 	// LCOW specific parameters
-	KirdPath          string // Folder in which kernel and initrd reside. Defaults to \Program Files\Linux Containers
-	KernelFile        string // Filename under KirdPath for the kernel. Defaults to bootx64.efi
-	InitrdFile        string // Filename under KirdPath for the initrd image. Defaults to initrd.img
-	KernelBootOptions string // Additional boot options for the kernel
-	KernelDebugMode   bool   // Configures the kernel in debug mode using sane defaults
+	KirdPath               string                       // Folder in which kernel and initrd reside. Defaults to \Program Files\Linux Containers
+	KernelFile             string                       // Filename under KirdPath for the kernel. Defaults to bootx64.efi
+	InitrdFile             string                       // Filename under KirdPath for the initrd image. Defaults to initrd.img
+	KernelBootOptions      string                       // Additional boot options for the kernel
+	KernelDebugMode        bool                         // Configures the kernel in debug mode using sane defaults
+	KernelDebugComPortPipe string                       // If kernel is in debug mode, can override the pipe here.
+	SchemaVersion          *schemaversion.SchemaVersion // For a v1 service VM (back-compatibility)
 
 	// Internal fields
 	hcsHandle      hcsSystem // TODO: This should really just be a syscall.Handle
+	handleLock     sync.RWMutex
 	callbackNumber uintptr
+	vsmbShares     struct {
+		sync.Mutex
+		shares map[string]vsmbShare
+	}
+	vpmemLocations struct {
+		sync.Mutex
+		hostPath [128]string // Limited by ACPI size.
+	}
+	scsiLocations struct {
+		sync.Mutex
+		hostPath [4][64]string // Hyper-V supports 4 controllers, 64 slots per controller. Limited to 1 controller for now though.
+	}
 }
 
 // TODO: Extend for the "serviceVM" concept for LCOW v1 schema (back-compat)
 // Create() creates a utility VM.
 //
-// LCOW Notes:
 // WCOW Notes:
 //   - If the sandbox folder does not exist, it will be created
 //   - If the sandbox folder does not contain `sandbox.vhdx` it will be created based on the system template located in the layer folders.
+//   - The sandbox is always attached to SCSI 0:0
 func (uvm *UtilityVM) Create() error {
 	logrus.Debugf("uvm::Create option: %+v", uvm)
 
@@ -64,14 +85,37 @@ func (uvm *UtilityVM) Create() error {
 	if uvm.Owner == "" {
 		uvm.Owner = filepath.Base(os.Args[0])
 	}
-	if uvm.KirdPath == "" {
-		uvm.KirdPath = filepath.Join(os.Getenv("ProgramFiles"), "Linux Containers")
-	}
-	if uvm.KernelFile == "" {
-		uvm.KernelFile = "bootx64.efi"
-	}
-	if uvm.InitrdFile == "" {
-		uvm.InitrdFile = "initrd.img"
+	if uvm.OperatingSystem == "linux" {
+		if uvm.KirdPath == "" {
+			uvm.KirdPath = filepath.Join(os.Getenv("ProgramFiles"), "Linux Containers")
+		}
+		if uvm.KernelFile == "" {
+			uvm.KernelFile = "bootx64.efi"
+		}
+		if uvm.InitrdFile == "" {
+			uvm.InitrdFile = "initrd.img"
+		}
+		if uvm.KernelDebugComPortPipe == "" {
+			uvm.KernelDebugComPortPipe = `\\.\pipe\vmpipe`
+		}
+		if _, err := os.Stat(filepath.Join(uvm.KirdPath, uvm.KernelFile)); os.IsNotExist(err) {
+			return fmt.Errorf("kernel '%s' not found", filepath.Join(uvm.KirdPath, uvm.KernelFile))
+		}
+		if _, err := os.Stat(filepath.Join(uvm.KirdPath, uvm.InitrdFile)); os.IsNotExist(err) {
+			return fmt.Errorf("initrd '%s' not found", filepath.Join(uvm.KirdPath, uvm.InitrdFile))
+		}
+
+		// MOVE THIS TO THE CONTAINER SIZE NOW TODO TODO TODO
+		//		// Ensure all the MappedVirtualDisks exist on the host
+		//		for _, mvd := range config.MappedVirtualDisks {
+		//			if _, err := os.Stat(mvd.HostPath); err != nil {
+		//				return fmt.Errorf("mapped virtual disk '%s' not found", mvd.HostPath)
+		//			}
+		//			if mvd.ContainerPath == "" {
+		//				return fmt.Errorf("mapped virtual disk '%s' requested without a container path", mvd.HostPath)
+		//			}
+		//		}
+
 	}
 
 	if uvm.OperatingSystem == "windows" {
@@ -162,26 +206,14 @@ func (uvm *UtilityVM) createLCOW() error {
 		},
 	}
 
-	// Additional JSON for debugging
-	//{
-	//    "VirtualMachine": {
-	//        "Chipset": {
-	//            "UEFI": {
-	//                "BootThis": {
-	//                    "optional_data": "initrd=\\initrd.img console=ttyS0,115200",
-	//                }
-	//            }
-	//        },
-	//        "Devices": {
-	//            "COMPorts": {
-	//                "Port1": "\\\\.\\pipe\\vmpipe"
-	//            },
-	//            "Keyboard": {},
-	//            "Rdp": {},
-	//            "VideoMonitor": {},
-	//        }
-	//    }
-	//}
+	if uvm.KernelDebugMode {
+		hcsDocument.VirtualMachine.Chipset.UEFI.BootThis.OptionalData += " console=ttyS0,115200"
+		hcsDocument.VirtualMachine.Devices.COMPorts = &hcsschemav2.VirtualMachinesResourcesComPortsV2{Port1: uvm.KernelDebugComPortPipe}
+		hcsDocument.VirtualMachine.Devices.Keyboard = &hcsschemav2.VirtualMachinesResourcesKeyboardV2{}
+		hcsDocument.VirtualMachine.Devices.Mouse = &hcsschemav2.VirtualMachinesResourcesMouseV2{}
+		hcsDocument.VirtualMachine.Devices.Rdp = &hcsschemav2.VirtualMachinesResourcesRdpV2{}
+		hcsDocument.VirtualMachine.Devices.VideoMonitor = &hcsschemav2.VirtualMachinesResourcesVideoMonitorV2{}
+	}
 
 	if uvm.KernelBootOptions != "" {
 		hcsDocument.VirtualMachine.Chipset.UEFI.BootThis.OptionalData = hcsDocument.VirtualMachine.Chipset.UEFI.BootThis.OptionalData + fmt.Sprintf(" %s", uvm.KernelBootOptions)
@@ -300,36 +332,10 @@ func (uvm *UtilityVM) createWCOW() error {
 		return err
 	}
 
-	//uvmContainer.(*container).scsiLocations.hostPath[0][0] = attachments["0"].Path
+	//uvmuvm.(*container).scsiLocations.hostPath[0][0] = attachments["0"].Path
 
 	return nil
 
-}
-
-// LocateWCOWUVMFolderFromLayerFolders searches a set of layer folders to determine the "uppermost"
-// layer which has a utility VM image. The order of the layers is (for historical) reasons
-// Read-only-layers followed by an optional read-write layer. The RO layers are in reverse
-// order so that the upper-most RO layer is at the start, and the base OS layer is the
-// end.
-func LocateWCOWUVMFolderFromLayerFolders(layerFolders []string) (string, error) {
-	var uvmFolder string
-	index := 0
-	for _, layerFolder := range layerFolders {
-		_, err := os.Stat(filepath.Join(layerFolder, `UtilityVM`))
-		if err == nil {
-			uvmFolder = layerFolder
-			break
-		}
-		if !os.IsNotExist(err) {
-			return "", err
-		}
-		index++
-	}
-	if uvmFolder == "" {
-		return "", fmt.Errorf("utility VM folder could not be found in layers")
-	}
-	logrus.Debugf("uvm::LocateWCOWUVMFolderFromLayerFolders Index %d of %d possibles (%s)", index, len(layerFolders), uvmFolder)
-	return uvmFolder, nil
 }
 
 // CreateWCOWUVMSandbox is a helper to create a sandbox for a Windows utility VM
@@ -345,57 +351,6 @@ func CreateWCOWUVMSandbox(imagePath, destDirectory, vmID string) error {
 		// TODO: Delete the file?
 		return err
 	}
-	return nil
-}
-
-func (uvm *UtilityVM) registerCallback() error {
-	context := &notifcationWatcherContext{
-		channels: newChannels(),
-	}
-	callbackMapLock.Lock()
-	callbackNumber := nextCallback
-	nextCallback++
-	callbackMap[callbackNumber] = context
-	callbackMapLock.Unlock()
-
-	var callbackHandle hcsCallback
-	err := hcsRegisterComputeSystemCallback(uvm.hcsHandle, notificationWatcherCallback, callbackNumber, &callbackHandle)
-	if err != nil {
-		return err
-	}
-	context.handle = callbackHandle
-	uvm.callbackNumber = callbackNumber
-
-	return nil
-}
-
-func (uvm *UtilityVM) unregisterCallback() error {
-	callbackNumber := uvm.callbackNumber
-	callbackMapLock.RLock()
-	context := callbackMap[callbackNumber]
-	callbackMapLock.RUnlock()
-
-	if context == nil {
-		return nil
-	}
-	handle := context.handle
-	if handle == 0 {
-		return nil
-	}
-
-	// hcsUnregisterComputeSystemCallback has its own syncronization
-	// to wait for all callbacks to complete. We must NOT hold the callbackMapLock.
-	err := hcsUnregisterComputeSystemCallback(handle)
-	if err != nil {
-		return err
-	}
-
-	closeChannels(context.channels)
-	callbackMapLock.Lock()
-	callbackMap[callbackNumber] = nil
-	callbackMapLock.Unlock()
-	handle = 0
-
 	return nil
 }
 
@@ -431,7 +386,7 @@ func (uvm *UtilityVM) createHCSComputeSystem(hcsDocument string) error {
 	if createError == nil || IsPending(createError) {
 		if err := uvm.registerCallback(); err != nil {
 			// Terminate the container if it still exists. We're okay to ignore a failure here.
-			// TODO TODO TODO container.Terminate()
+			// TODO TODO TODO uvm.Terminate()
 			return uvm.makeError("registerCallBack after CreateComputeSystem", nil, hcsDocument, err)
 		}
 	}
@@ -440,12 +395,42 @@ func (uvm *UtilityVM) createHCSComputeSystem(hcsDocument string) error {
 	if err != nil {
 		if err == ErrTimeout {
 			// Terminate the container if it still exists. We're okay to ignore a failure here.
-			// TODO TODO TODO: container.Terminate()
+			// TODO TODO TODO: uvm.Terminate()
 		}
 		return uvm.makeError("processAsyncHcsResult after CreateComputeSystem", nil, hcsDocument, err)
 	}
 
 	logrus.Debugf(title+" succeeded handle=%d", uvm.hcsHandle)
+	return nil
+}
+
+// Modifies the System by sending a request to HCS
+func (uvm *UtilityVM) Modify(config interface{}) error {
+	uvm.handleLock.RLock()
+	defer uvm.handleLock.RUnlock()
+	operation := "Modify"
+	title := "uvm::" + operation
+
+	if uvm.hcsHandle == 0 {
+		return uvm.makeError(operation, nil, "", ErrAlreadyClosed)
+	}
+
+	requestJSON, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+
+	requestString := string(requestJSON)
+	logrus.Debugf(title+" id=%s request=%s", uvm.Id, requestString)
+
+	var resultp *uint16
+	err = hcsModifyComputeSystem(uvm.hcsHandle, requestString, &resultp)
+	re := processHcsResult(resultp)
+	if err != nil {
+		err = uvm.makeError(operation, re, requestString, err)
+		return err
+	}
+	logrus.Debugf(title+" succeeded id=%s", uvm.Id)
 	return nil
 }
 
@@ -516,7 +501,7 @@ func (uvm *UtilityVM) makeError(operation string, resultError *ResultError, extr
 }
 
 // UVMResourcesFromContainerSpec takes a container spec and generates a
-// resources structure suitable for creating a utility VM to host the container.
+// resources structure suitable for creating a utility VM to host the uvm.
 // This is really only relevant for a client that is running a single container
 // in a utility VM using the v2 schema. It implements logic which for the v1 schema
 // was implemented internally in HCS.
@@ -559,4 +544,151 @@ func UVMResourcesFromContainerSpec(spec *specs.Spec) (*specs.WindowsResources, e
 	logrus.Debugf("hcsshim: uvmResources: Memory %d MB CPUs %d", uvmMemoryMB, *uvmResources.CPU.Count)
 
 	return uvmResources, nil
+}
+
+func (uvm *UtilityVM) registerCallback() error {
+	context := &notifcationWatcherContext{
+		channels: newChannels(),
+	}
+	callbackMapLock.Lock()
+	callbackNumber := nextCallback
+	nextCallback++
+	callbackMap[callbackNumber] = context
+	callbackMapLock.Unlock()
+
+	var callbackHandle hcsCallback
+	err := hcsRegisterComputeSystemCallback(uvm.hcsHandle, notificationWatcherCallback, callbackNumber, &callbackHandle)
+	if err != nil {
+		return err
+	}
+	context.handle = callbackHandle
+	uvm.callbackNumber = callbackNumber
+
+	return nil
+}
+
+func (uvm *UtilityVM) unregisterCallback() error {
+	callbackNumber := uvm.callbackNumber
+	callbackMapLock.RLock()
+	context := callbackMap[callbackNumber]
+	callbackMapLock.RUnlock()
+
+	if context == nil {
+		return nil
+	}
+	handle := context.handle
+	if handle == 0 {
+		return nil
+	}
+
+	// hcsUnregisterComputeSystemCallback has its own syncronization
+	// to wait for all callbacks to complete. We must NOT hold the callbackMapLock.
+	err := hcsUnregisterComputeSystemCallback(handle)
+	if err != nil {
+		return err
+	}
+
+	closeChannels(context.channels)
+	callbackMapLock.Lock()
+	callbackMap[callbackNumber] = nil
+	callbackMapLock.Unlock()
+	handle = 0
+
+	return nil
+}
+
+// Not sure if need to export. Regardless, it is only present for v1 LCOW utility VMs.
+func (uvm *UtilityVM) mappedVirtualDisks() (map[int]MappedVirtualDiskController, error) {
+	if !uvm.SchemaVersion.IsV10() {
+		return nil, fmt.Errorf("MappedVirtualDisks is only supported for schema v1 containers")
+	}
+	uvm.handleLock.RLock()
+	defer uvm.handleLock.RUnlock()
+	operation := "MappedVirtualDiskList"
+	title := "hcsshim::Container::" + operation
+	logrus.Debugf(title+" id=%s", uvm.Id)
+
+	if uvm.hcsHandle == 0 {
+		return nil, uvm.makeError(operation, nil, "", ErrAlreadyClosed)
+	}
+
+	properties, err := uvm.properties(mappedVirtualDiskQuery)
+	if err != nil {
+		return nil, uvm.makeError(operation, nil, "", err)
+	}
+
+	logrus.Debugf(title+" succeeded id=%s", uvm.Id)
+	logrus.Debugf("%+v", properties.MappedVirtualDiskControllers)
+	return properties.MappedVirtualDiskControllers, nil
+}
+
+// Currently only used by mappedVirtualDisks which in turn is only used by v1 LCOW utility VMs
+func (uvm *UtilityVM) properties(query string) (*ContainerProperties, error) {
+	var (
+		resultp     *uint16
+		propertiesp *uint16
+	)
+	err := hcsGetComputeSystemProperties(uvm.hcsHandle, query, &propertiesp, &resultp)
+	//re := processHcsResult(resultp)
+	if err != nil {
+		// TODO: Do something with the extended result
+		return nil, err
+	}
+
+	if propertiesp == nil {
+		return nil, ErrUnexpectedValue
+	}
+	propertiesRaw := convertAndFreeCoTaskMemBytes(propertiesp)
+	properties := &ContainerProperties{}
+	if err := json.Unmarshal(propertiesRaw, properties); err != nil {
+		return nil, err
+	}
+	return properties, nil
+}
+
+// Terminate requests a utility VM terminate, if IsPending() on the error returned is true,
+// it may not actually be shut down until Wait() succeeds.
+func (uvm *UtilityVM) Terminate() error {
+	uvm.handleLock.RLock()
+	defer uvm.handleLock.RUnlock()
+	operation := "Terminate"
+	title := "uvm::" + operation
+	logrus.Debugf(title+" id=%s", uvm.Id)
+
+	if uvm.hcsHandle == 0 {
+		return uvm.makeError(operation, nil, "", ErrAlreadyClosed)
+	}
+
+	var resultp *uint16
+	err := hcsTerminateComputeSystem(uvm.hcsHandle, "", &resultp)
+	re := processHcsResult(resultp)
+	if err != nil {
+		return uvm.makeError(operation, re, "", err)
+	}
+
+	logrus.Debugf(title+" succeeded id=%s", uvm.Id)
+	return nil
+}
+
+// Start synchronously starts the uvm.
+func (uvm *UtilityVM) Start() error {
+	uvm.handleLock.RLock()
+	defer uvm.handleLock.RUnlock()
+	operation := "Start"
+	title := "uvm::" + operation
+	logrus.Debugf(title+" id=%s", uvm.Id)
+
+	if uvm.hcsHandle == 0 {
+		return uvm.makeError(operation, nil, "", ErrAlreadyClosed)
+	}
+
+	var resultp *uint16
+	err := hcsStartComputeSystem(uvm.hcsHandle, "", &resultp)
+	err = processAsyncHcsResult(err, resultp, uvm.callbackNumber, hcsNotificationSystemStartCompleted, &defaultTimeoutSeconds)
+	if err != nil {
+		return uvm.makeError(operation, nil, "", err)
+	}
+
+	logrus.Debugf(title+" succeeded id=%s", uvm.Id)
+	return nil
 }

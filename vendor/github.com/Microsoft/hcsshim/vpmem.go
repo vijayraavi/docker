@@ -11,16 +11,13 @@ import (
 )
 
 // allocateVPMEM finds the next available VPMem slot
-func allocateVPMEM(container *container, hostPath string) (int, error) {
-	if container == nil {
-		return -1, fmt.Errorf("allocateVPMEM was not passed a container object")
-	}
-	container.vpmemLocations.Lock()
-	defer container.vpmemLocations.Unlock()
-	for index, currentValue := range container.vpmemLocations.hostPath {
+func (uvm *UtilityVM) allocateVPMEM(hostPath string) (int, error) {
+	uvm.vpmemLocations.Lock()
+	defer uvm.vpmemLocations.Unlock()
+	for index, currentValue := range uvm.vpmemLocations.hostPath {
 		if currentValue == "" {
-			container.vpmemLocations.hostPath[index] = hostPath
-			logrus.Debugf("hcsshim::allocateVPMEM %d %q", index, hostPath)
+			uvm.vpmemLocations.hostPath[index] = hostPath
+			logrus.Debugf("uvm::allocateVPMEM %d %q", index, hostPath)
 			return index, nil
 
 		}
@@ -28,24 +25,18 @@ func allocateVPMEM(container *container, hostPath string) (int, error) {
 	return -1, fmt.Errorf("no free VPMEM locations")
 }
 
-func deallocateVPMEM(container *container, location int) error {
-	if container == nil {
-		return fmt.Errorf("allocateVPMEM was not passed a container object")
-	}
-	container.vpmemLocations.Lock()
-	defer container.vpmemLocations.Unlock()
-	container.vpmemLocations.hostPath[location] = ""
+func (uvm *UtilityVM) deallocateVPMEM(location int) error {
+	uvm.vpmemLocations.Lock()
+	defer uvm.vpmemLocations.Unlock()
+	uvm.vpmemLocations.hostPath[location] = ""
 	return nil
 }
 
 // Lock must be held when calling this function
-func findVPMEMAttachment(container *container, findThisHostPath string) (int, error) {
-	if container == nil {
-		return -1, fmt.Errorf("findVPMEMAttachment was not passed a container object")
-	}
-	for index, currentValue := range container.vpmemLocations.hostPath {
+func (uvm *UtilityVM) findVPMEMAttachment(findThisHostPath string) (int, error) {
+	for index, currentValue := range uvm.vpmemLocations.hostPath {
 		if currentValue == findThisHostPath {
-			logrus.Debugf("hcsshim::findVPMEMAttachment %d %s", index, findThisHostPath)
+			logrus.Debugf("uvm::findVPMEMAttachment %d %s", index, findThisHostPath)
 			return index, nil
 		}
 
@@ -63,22 +54,14 @@ func findVPMEMAttachment(container *container, findThisHostPath string) (int, er
 //
 // TODO: Consider a structure here so that we can extend for future functionality without
 //       breaking the API surface.
-func AddVPMEM(uvm Container, hostPath string, containerPath string, expose bool) (int, string, error) {
+func (uvm *UtilityVM) AddVPMEM(hostPath string, containerPath string, expose bool) (int, string, error) {
 	location := -1
-	if uvm == nil {
-		return -1, "", fmt.Errorf("no utility VM passed to AddVPMEM")
-	}
-	uvmc := uvm.(*container)
-	logrus.Debugf("hcsshim::AddVPMEM id:%s hostPath:%s containerPath:%s expose:%t sv:%s", uvmc.id, hostPath, containerPath, expose, uvmc.schemaVersion.String())
-
-	if uvmc.schemaVersion.IsV10() {
-		return -1, "", fmt.Errorf("AddVPMEM not supported on v1 schema utility VMs")
-	}
+	logrus.Debugf("uvm::AddVPMEM id:%s hostPath:%s containerPath:%s expose:%t", uvm.Id, hostPath, containerPath, expose)
 
 	// BIG TODO: We need to store the hosted settings to so that on release we can tell GCS to flush.
 
 	var err error
-	location, err = allocateVPMEM(uvmc, hostPath)
+	location, err = uvm.allocateVPMEM(hostPath)
 	if err != nil {
 		return -1, "", err
 	}
@@ -107,42 +90,35 @@ func AddVPMEM(uvm Container, hostPath string, containerPath string, expose bool)
 	}
 
 	if err := uvm.Modify(modification); err != nil {
-		deallocateVPMEM(uvmc, location)
-		return -1, "", fmt.Errorf("hcsshim::AddVPMEM: failed to modify utility VM configuration: %s", err)
+		uvm.deallocateVPMEM(location)
+		return -1, "", fmt.Errorf("uvm::AddVPMEM: failed to modify utility VM configuration: %s", err)
 	}
-	logrus.Debugf("hcsshim::AddVPMEM id:%s hostPath:%s added at %d", uvmc.id, hostPath, location)
+	logrus.Debugf("uvm::AddVPMEM id:%s hostPath:%s added at %d", uvm.Id, hostPath, location)
 	return location, containerPath, nil
 }
 
 // RemoveVPMEM removes a VPMEM disk from a utility VM. As an external API, it
 // is "safe". Internal use can call removeVPMEM.
-func RemoveVPMEM(uvm Container, hostPath string) error {
-	if uvm == nil {
-		return fmt.Errorf("no utility VM passed to RemoveVPMEM")
-	}
-	uvmc := uvm.(*container)
-	uvmc.vpmemLocations.Lock()
-	defer uvmc.vpmemLocations.Unlock()
+func (uvm *UtilityVM) RemoveVPMEM(hostPath string) error {
+	uvm.vpmemLocations.Lock()
+	defer uvm.vpmemLocations.Unlock()
 
 	// Make sure is actually attached
-	location, err := findVPMEMAttachment(uvmc, hostPath)
+	location, err := uvm.findVPMEMAttachment(hostPath)
 	if err != nil {
-		return fmt.Errorf("cannot remove VPMEM %s as it is not attached to container %s: %s", hostPath, uvmc.id, err)
+		return fmt.Errorf("cannot remove VPMEM %s as it is not attached to container %s: %s", hostPath, uvm.Id, err)
 	}
 
-	if err := removeVPMEM(uvm, hostPath, location); err != nil {
-		return fmt.Errorf("failed to remove VPMEM %s from container %s: %s", hostPath, uvmc.id, err)
+	if err := uvm.removeVPMEM(hostPath, location); err != nil {
+		return fmt.Errorf("failed to remove VPMEM %s from container %s: %s", hostPath, uvm.Id, err)
 	}
 	return nil
 }
 
 // removeVPMEM is the internally callable "unsafe" version of RemoveVPMEM. The mutex
 // MUST be held when calling this function.
-func removeVPMEM(uvm Container, hostPath string, location int) error {
-	logrus.Debugf("hcsshim::RemoveVPMEM id:%s hostPath:%s", uvm.(*container).id, hostPath)
-	if uvm.(*container).schemaVersion.IsV10() {
-		return fmt.Errorf("RemoveVPMEM not supported on v1 schema utility VMs")
-	}
+func (uvm *UtilityVM) removeVPMEM(hostPath string, location int) error {
+	logrus.Debugf("uvm::RemoveVPMEM id:%s hostPath:%s", uvm.Id, hostPath)
 
 	vpmemModification := &hcsschemav2.ModifySettingsRequestV2{
 	//			ResourceType: hcsschemav2.ResourceTypeMappedVirtualDisk,
@@ -155,7 +131,7 @@ func removeVPMEM(uvm Container, hostPath string, location int) error {
 	if err := uvm.Modify(vpmemModification); err != nil {
 		return err
 	}
-	uvm.(*container).vpmemLocations.hostPath[location] = ""
-	logrus.Debugf("hcsshim::RemoveVPMEM: Success %s removed from %s %d", hostPath, uvm.(*container).id, location)
+	uvm.vpmemLocations.hostPath[location] = ""
+	logrus.Debugf("uvm::RemoveVPMEM: Success %s removed from %s %d", hostPath, uvm.Id, location)
 	return nil
 }
