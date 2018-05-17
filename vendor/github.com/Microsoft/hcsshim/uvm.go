@@ -1,0 +1,562 @@
+// +build windows
+
+package hcsshim
+
+// Containers functions relating to utility VMs. Currently v2 schema only.
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"syscall"
+
+	"github.com/Microsoft/hcsshim/schema/v2"
+	"github.com/Microsoft/hcsshim/schemaversion"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/sirupsen/logrus"
+)
+
+type UtilityVM struct {
+	Id                      string                  // Identifier for the container. Defaults to generated GUID.
+	Owner                   string                  // Specifies the owner. Defaults to executable name.
+	OperatingSystem         string                  // "windows" or "linux"
+	Resources               *specs.WindowsResources // Optional resources for the utility VM. Supports Memory.limit and CPU.Count only currently. // TODO possibly?
+	AdditionHCSDocumentJSON string                  // Optional additional JSON to merge into the HCS document prior to a Utility VMs creation call
+
+	// WCOW specific parameters
+	LayerFolders []string // Set of folders for base layers and sandbox. Ordered from top most read-only through base read-only layer, followed by sandbox
+
+	// LCOW specific parameters
+	KirdPath          string // Folder in which kernel and initrd reside. Defaults to \Program Files\Linux Containers
+	KernelFile        string // Filename under KirdPath for the kernel. Defaults to bootx64.efi
+	InitrdFile        string // Filename under KirdPath for the initrd image. Defaults to initrd.img
+	KernelBootOptions string // Additional boot options for the kernel
+	KernelDebugMode   bool   // Configures the kernel in debug mode using sane defaults
+
+	// Internal fields
+	hcsHandle      hcsSystem // TODO: This should really just be a syscall.Handle
+	callbackNumber uintptr
+}
+
+// TODO: Extend for the "serviceVM" concept for LCOW v1 schema (back-compat)
+// Create() creates a utility VM.
+//
+// LCOW Notes:
+// WCOW Notes:
+//   - If the sandbox folder does not exist, it will be created
+//   - If the sandbox folder does not contain `sandbox.vhdx` it will be created based on the system template located in the layer folders.
+func (uvm *UtilityVM) Create() error {
+	logrus.Debugf("uvm::Create option: %+v", uvm)
+
+	if uvm.OperatingSystem != "linux" && uvm.OperatingSystem != "windows" {
+		return fmt.Errorf("unsupported operating system %q", uvm.OperatingSystem)
+	}
+
+	// Defaults if omitted by caller.
+	if uvm.Id == "" {
+		g, err := GenerateGUID()
+		if err != nil {
+			return fmt.Errorf("failed to generate GUID for Id: %s", err)
+		}
+		uvm.Id = g.ToString()
+	}
+	if uvm.Owner == "" {
+		uvm.Owner = filepath.Base(os.Args[0])
+	}
+	if uvm.KirdPath == "" {
+		uvm.KirdPath = filepath.Join(os.Getenv("ProgramFiles"), "Linux Containers")
+	}
+	if uvm.KernelFile == "" {
+		uvm.KernelFile = "bootx64.efi"
+	}
+	if uvm.InitrdFile == "" {
+		uvm.InitrdFile = "initrd.img"
+	}
+
+	if uvm.OperatingSystem == "windows" {
+		return uvm.createWCOW()
+	}
+	return uvm.createLCOW()
+}
+
+func (uvm *UtilityVM) createLCOW() error {
+	logrus.Debugf("uvm::createLCOW id=%s", uvm.Id)
+
+	memory := int32(1024)
+	processors := int32(2)
+	if numCPU() == 1 {
+		processors = 1
+	}
+	if uvm.Resources != nil {
+		if uvm.Resources.Memory != nil && uvm.Resources.Memory.Limit != nil {
+			memory = int32(*uvm.Resources.Memory.Limit / 1024 / 1024) // OCI spec is in bytes. HCS takes MB
+		}
+		if uvm.Resources.CPU != nil && uvm.Resources.CPU.Count != nil {
+			processors = int32(*uvm.Resources.CPU.Count)
+		}
+	}
+
+	//	// See if there's a sandbox folder at the end of the layer folders. If it is, then we attach this to SCSI.
+	//	// We look for a .vhdx in that folder as the key. RO layers are .vhd.
+	//	possibleSandboxFolder := coi.Spec.Windows.LayerFolders[len(coi.Spec.Windows.LayerFolders)-1]
+	//	sandboxFile := ""
+
+	//	err := filepath.Walk(possibleSandboxFolder, func(path string, info os.FileInfo, err error) error {
+	//		if info.IsDir() {
+	//			return nil
+	//		}
+	//		if filepath.Ext(path) == ".vhdx" {
+	//			sandboxFile = path
+	//			return io.EOF // Trick to break out early.
+	//		}
+	//		return nil
+	//	})
+	//	if err == io.EOF {
+	//		err = nil
+	//	}
+
+	scsi := make(map[string]hcsschemav2.VirtualMachinesResourcesStorageScsiV2)
+	scsi["0"] = hcsschemav2.VirtualMachinesResourcesStorageScsiV2{Attachments: make(map[string]hcsschemav2.VirtualMachinesResourcesStorageAttachmentV2)}
+
+	hcsDocument := &hcsschemav2.ComputeSystemV2{
+		Owner:         uvm.Owner,
+		SchemaVersion: schemaversion.SchemaV20(),
+		VirtualMachine: &hcsschemav2.VirtualMachineV2{
+			Chipset: &hcsschemav2.VirtualMachinesResourcesChipsetV2{
+				UEFI: &hcsschemav2.VirtualMachinesResourcesUefiV2{
+					BootThis: &hcsschemav2.VirtualMachinesResourcesUefiBootEntryV2{
+						DevicePath:   `\` + uvm.KernelFile,
+						DiskNumber:   0,
+						UefiDevice:   "VMBFS",
+						OptionalData: `initrd=\` + uvm.InitrdFile,
+					},
+				},
+			},
+			ComputeTopology: &hcsschemav2.VirtualMachinesResourcesComputeTopologyV2{
+				Memory: &hcsschemav2.VirtualMachinesResourcesComputeMemoryV2{
+					Backing: "Virtual",
+					Startup: memory,
+				},
+				Processor: &hcsschemav2.VirtualMachinesResourcesComputeProcessorV2{
+					Count: processors,
+				},
+			},
+
+			Devices: &hcsschemav2.VirtualMachinesDevicesV2{
+				// Add networking here.... TODO
+				VPMem: &hcsschemav2.VirtualMachinesResourcesStorageVpmemControllerV2{
+					MaximumCount: 128, // TODO: Consider making this flexible. Effectively the number of unique read-only layers available in the UVM. LCOW max is 128 in the platform.
+				},
+				SCSI: scsi,
+				VirtualSMBShares: []hcsschemav2.VirtualMachinesResourcesStorageVSmbShareV2{hcsschemav2.VirtualMachinesResourcesStorageVSmbShareV2{
+					Flags: hcsschemav2.VsmbFlagReadOnly | hcsschemav2.VsmbFlagShareRead | hcsschemav2.VsmbFlagCacheIO | hcsschemav2.VsmbFlagTakeBackupPrivilege, // 0x17 (23 dec)
+					Name:  "os",
+					Path:  uvm.KirdPath,
+				}},
+				GuestInterface: &hcsschemav2.VirtualMachinesResourcesGuestInterfaceV2{
+					ConnectToBridge: true,
+					BridgeFlags:     3, // TODO What are these??
+				},
+			},
+		},
+	}
+
+	// Additional JSON for debugging
+	//{
+	//    "VirtualMachine": {
+	//        "Chipset": {
+	//            "UEFI": {
+	//                "BootThis": {
+	//                    "optional_data": "initrd=\\initrd.img console=ttyS0,115200",
+	//                }
+	//            }
+	//        },
+	//        "Devices": {
+	//            "COMPorts": {
+	//                "Port1": "\\\\.\\pipe\\vmpipe"
+	//            },
+	//            "Keyboard": {},
+	//            "Rdp": {},
+	//            "VideoMonitor": {},
+	//        }
+	//    }
+	//}
+
+	if uvm.KernelBootOptions != "" {
+		hcsDocument.VirtualMachine.Chipset.UEFI.BootThis.OptionalData = hcsDocument.VirtualMachine.Chipset.UEFI.BootThis.OptionalData + fmt.Sprintf(" %s", uvm.KernelBootOptions)
+	}
+
+	hcsDocumentB, err := json.Marshal(hcsDocument)
+	if err != nil {
+		return err
+	}
+	if err := uvm.createHCSComputeSystem(string(hcsDocumentB)); err != nil {
+		logrus.Debugln("failed to create UVM: ", err)
+		return err
+	}
+
+	return nil
+}
+
+func (uvm *UtilityVM) createWCOW() error {
+	logrus.Debugf("uvm::createWCOW Creating utility VM id=%s", uvm.Id)
+
+	if len(uvm.LayerFolders) < 2 {
+		return fmt.Errorf("at least 2 LayerFolders must be supplied")
+	}
+
+	uvmFolder, err := LocateWCOWUVMFolderFromLayerFolders(uvm.LayerFolders)
+	if err != nil {
+		return fmt.Errorf("failed to locate utility VM folder from layer folders: %s", err)
+	}
+
+	// Create the sandbox in the top-most layer folder, creating the folder if it doesn't already exist.
+	sandboxFolder := uvm.LayerFolders[len(uvm.LayerFolders)-1]
+	logrus.Debugf("uvm::createWCOW Sandbox folder: %s", sandboxFolder)
+
+	// Create the directory if it doesn't exist
+	if _, err := os.Stat(sandboxFolder); os.IsNotExist(err) {
+		logrus.Debugf("uvm::createWCOW Creating folder: %s ", sandboxFolder)
+		if err := os.MkdirAll(sandboxFolder, 0777); err != nil {
+			return fmt.Errorf("failed to create utility VM sandbox folder: %s", err)
+		}
+	}
+
+	// Create sandbox.vhdx in the sandbox folder based on the template, granting the correct permissions to it
+	if _, err := os.Stat(filepath.Join(sandboxFolder, `sandbox.vhdx`)); os.IsNotExist(err) {
+		if err := CreateWCOWUVMSandbox(uvmFolder, sandboxFolder, uvm.Id); err != nil {
+			return fmt.Errorf("failed to create sandbox: %s", err)
+		}
+	}
+
+	// We attach the sandbox to SCSI 0:0
+	attachments := make(map[string]hcsschemav2.VirtualMachinesResourcesStorageAttachmentV2)
+	attachments["0"] = hcsschemav2.VirtualMachinesResourcesStorageAttachmentV2{
+		Path: filepath.Join(sandboxFolder, "sandbox.vhdx"),
+		Type: "VirtualDisk",
+	}
+	scsi := make(map[string]hcsschemav2.VirtualMachinesResourcesStorageScsiV2)
+	scsi["0"] = hcsschemav2.VirtualMachinesResourcesStorageScsiV2{Attachments: attachments}
+
+	// Resources
+	memory := int32(1024)
+	processors := int32(2)
+	if numCPU() == 1 {
+		processors = 1
+	}
+	if uvm.Resources != nil {
+		if uvm.Resources.Memory != nil && uvm.Resources.Memory.Limit != nil {
+			memory = int32(*uvm.Resources.Memory.Limit / 1024 / 1024) // OCI spec is in bytes. HCS takes MB
+		}
+		if uvm.Resources.CPU != nil && uvm.Resources.CPU.Count != nil {
+			processors = int32(*uvm.Resources.CPU.Count)
+		}
+	}
+
+	hcsDocument := &hcsschemav2.ComputeSystemV2{
+		Owner:         uvm.Owner,
+		SchemaVersion: schemaversion.SchemaV20(),
+		VirtualMachine: &hcsschemav2.VirtualMachineV2{
+			Chipset: &hcsschemav2.VirtualMachinesResourcesChipsetV2{
+				UEFI: &hcsschemav2.VirtualMachinesResourcesUefiV2{
+					BootThis: &hcsschemav2.VirtualMachinesResourcesUefiBootEntryV2{
+						DevicePath: `\EFI\Microsoft\Boot\bootmgfw.efi`,
+						DiskNumber: 0,
+						UefiDevice: "VMBFS",
+					},
+				},
+			},
+			ComputeTopology: &hcsschemav2.VirtualMachinesResourcesComputeTopologyV2{
+				Memory: &hcsschemav2.VirtualMachinesResourcesComputeMemoryV2{
+					Backing:             "Virtual",
+					Startup:             memory,
+					DirectFileMappingMB: 1024, // Sensible default, but could be a tuning parameter somewhere
+				},
+				Processor: &hcsschemav2.VirtualMachinesResourcesComputeProcessorV2{
+					Count: processors,
+				},
+			},
+
+			Devices: &hcsschemav2.VirtualMachinesDevicesV2{
+				// Add networking here.... TODO
+				SCSI: scsi,
+				VirtualSMBShares: []hcsschemav2.VirtualMachinesResourcesStorageVSmbShareV2{hcsschemav2.VirtualMachinesResourcesStorageVSmbShareV2{
+					Flags: hcsschemav2.VsmbFlagReadOnly | hcsschemav2.VsmbFlagPseudoOplocks | hcsschemav2.VsmbFlagTakeBackupPrivilege | hcsschemav2.VsmbFlagCacheIO | hcsschemav2.VsmbFlagShareRead,
+					Name:  "os",
+					Path:  filepath.Join(uvmFolder, `UtilityVM\Files`),
+				}},
+				GuestInterface: &hcsschemav2.VirtualMachinesResourcesGuestInterfaceV2{ConnectToBridge: true},
+			},
+		},
+	}
+
+	hcsDocumentB, err := json.Marshal(hcsDocument)
+	if err != nil {
+		return err
+	}
+	if err := uvm.createHCSComputeSystem(string(hcsDocumentB)); err != nil {
+		logrus.Debugln("failed to create UVM: ", err)
+		return err
+	}
+
+	//uvmContainer.(*container).scsiLocations.hostPath[0][0] = attachments["0"].Path
+
+	return nil
+
+}
+
+// LocateWCOWUVMFolderFromLayerFolders searches a set of layer folders to determine the "uppermost"
+// layer which has a utility VM image. The order of the layers is (for historical) reasons
+// Read-only-layers followed by an optional read-write layer. The RO layers are in reverse
+// order so that the upper-most RO layer is at the start, and the base OS layer is the
+// end.
+func LocateWCOWUVMFolderFromLayerFolders(layerFolders []string) (string, error) {
+	var uvmFolder string
+	index := 0
+	for _, layerFolder := range layerFolders {
+		_, err := os.Stat(filepath.Join(layerFolder, `UtilityVM`))
+		if err == nil {
+			uvmFolder = layerFolder
+			break
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		index++
+	}
+	if uvmFolder == "" {
+		return "", fmt.Errorf("utility VM folder could not be found in layers")
+	}
+	logrus.Debugf("uvm::LocateWCOWUVMFolderFromLayerFolders Index %d of %d possibles (%s)", index, len(layerFolders), uvmFolder)
+	return uvmFolder, nil
+}
+
+// CreateWCOWUVMSandbox is a helper to create a sandbox for a Windows utility VM
+// with permissions to the specified VM ID in a specified directory
+func CreateWCOWUVMSandbox(imagePath, destDirectory, vmID string) error {
+	sourceSandbox := filepath.Join(imagePath, `UtilityVM\SystemTemplate.vhdx`)
+	targetSandbox := filepath.Join(destDirectory, "sandbox.vhdx")
+	logrus.Debugf("uvm::CreateWCOWUVMSandbox %s from %s", targetSandbox, sourceSandbox)
+	if err := CopyFile(sourceSandbox, targetSandbox, true); err != nil {
+		return err
+	}
+	if err := GrantVmAccess(vmID, targetSandbox); err != nil {
+		// TODO: Delete the file?
+		return err
+	}
+	return nil
+}
+
+func (uvm *UtilityVM) registerCallback() error {
+	context := &notifcationWatcherContext{
+		channels: newChannels(),
+	}
+	callbackMapLock.Lock()
+	callbackNumber := nextCallback
+	nextCallback++
+	callbackMap[callbackNumber] = context
+	callbackMapLock.Unlock()
+
+	var callbackHandle hcsCallback
+	err := hcsRegisterComputeSystemCallback(uvm.hcsHandle, notificationWatcherCallback, callbackNumber, &callbackHandle)
+	if err != nil {
+		return err
+	}
+	context.handle = callbackHandle
+	uvm.callbackNumber = callbackNumber
+
+	return nil
+}
+
+func (uvm *UtilityVM) unregisterCallback() error {
+	callbackNumber := uvm.callbackNumber
+	callbackMapLock.RLock()
+	context := callbackMap[callbackNumber]
+	callbackMapLock.RUnlock()
+
+	if context == nil {
+		return nil
+	}
+	handle := context.handle
+	if handle == 0 {
+		return nil
+	}
+
+	// hcsUnregisterComputeSystemCallback has its own syncronization
+	// to wait for all callbacks to complete. We must NOT hold the callbackMapLock.
+	err := hcsUnregisterComputeSystemCallback(handle)
+	if err != nil {
+		return err
+	}
+
+	closeChannels(context.channels)
+	callbackMapLock.Lock()
+	callbackMap[callbackNumber] = nil
+	callbackMapLock.Unlock()
+	handle = 0
+
+	return nil
+}
+
+func (uvm *UtilityVM) createHCSComputeSystem(hcsDocument string) error {
+	title := fmt.Sprintf("uvm::createHCSComputeSystem id:%s ", uvm.Id)
+	logrus.Debugf(title+"document:%s", hcsDocument)
+
+	// Merge any additional JSON.
+	if uvm.AdditionHCSDocumentJSON != "" {
+		hcsDocumentMap := map[string]interface{}{}
+		if err := json.Unmarshal([]byte(hcsDocument), &hcsDocumentMap); err != nil {
+			return fmt.Errorf("failed to unmarshal %s: %s", hcsDocument, err)
+		}
+		additionalMap := map[string]interface{}{}
+		if err := json.Unmarshal([]byte(uvm.AdditionHCSDocumentJSON), &additionalMap); err != nil {
+			return fmt.Errorf("failed to unmarshal %s: %s", uvm.AdditionHCSDocumentJSON, err)
+		}
+		mergedMap := mergeMaps(additionalMap, hcsDocumentMap)
+		mergedJSON, err := json.Marshal(mergedMap)
+		if err != nil {
+			return fmt.Errorf("failed to marshal merged configuration map %+v: %s", mergedMap, err)
+		}
+		hcsDocument = string(mergedJSON)
+		logrus.Debugf(title+"updated document:%s", hcsDocument)
+	}
+
+	var (
+		resultp  *uint16
+		identity syscall.Handle
+	)
+	createError := hcsCreateComputeSystem(uvm.Id, hcsDocument, identity, &uvm.hcsHandle, &resultp)
+
+	if createError == nil || IsPending(createError) {
+		if err := uvm.registerCallback(); err != nil {
+			// Terminate the container if it still exists. We're okay to ignore a failure here.
+			// TODO TODO TODO container.Terminate()
+			return uvm.makeError("registerCallBack after CreateComputeSystem", nil, hcsDocument, err)
+		}
+	}
+
+	err := processAsyncHcsResult(createError, resultp, uvm.callbackNumber, hcsNotificationSystemCreateCompleted, &defaultTimeoutSeconds)
+	if err != nil {
+		if err == ErrTimeout {
+			// Terminate the container if it still exists. We're okay to ignore a failure here.
+			// TODO TODO TODO: container.Terminate()
+		}
+		return uvm.makeError("processAsyncHcsResult after CreateComputeSystem", nil, hcsDocument, err)
+	}
+
+	logrus.Debugf(title+" succeeded handle=%d", uvm.hcsHandle)
+	return nil
+}
+
+// UtilityVMError is an error encountered in HCS
+type UtilityVMError struct {
+	Id          string
+	Operation   string
+	ExtraInfo   string
+	Err         error
+	ResultError *ResultError
+}
+
+func (e *UtilityVMError) Error() string {
+	if e == nil {
+		return "<nil>"
+	}
+
+	s := "id " + e.Id
+
+	if e.Operation != "" {
+		s += " encountered an error during " + e.Operation
+	}
+
+	switch e.Err.(type) {
+	case nil:
+		break
+	case syscall.Errno:
+		s += fmt.Sprintf(": failure in a Windows system call: %s (0x%x)", e.Err, win32FromError(e.Err))
+	default:
+		s += fmt.Sprintf(": %s", e.Err.Error())
+	}
+
+	if e.ExtraInfo != "" {
+		s += " extra info: " + e.ExtraInfo
+	}
+
+	if e.ResultError != nil {
+		for _, ev := range e.ResultError.ErrorEvents {
+			evs := " [Event Detail: " + ev.Message
+			if ev.StackTrace != "" {
+				evs += " Stack Trace: " + ev.StackTrace
+			}
+			if ev.Provider != "" {
+				evs += " Provider: " + ev.Provider
+			}
+			if ev.EventId != 0 {
+				evs = fmt.Sprintf("%s EventID: %d", evs, ev.EventId)
+			}
+			if ev.Flags != 0 {
+				evs = fmt.Sprintf("%s EventID: %d", evs, ev.Flags)
+			}
+			if ev.Source != "" {
+				evs += " Source: " + ev.Source
+			}
+			s += evs + "]"
+		}
+	}
+
+	return s
+}
+
+func (uvm *UtilityVM) makeError(operation string, resultError *ResultError, extraInfo string, err error) error {
+	// Don't double wrap errors
+	if _, ok := err.(*UtilityVMError); ok {
+		return err
+	}
+	return &UtilityVMError{Operation: operation, ExtraInfo: extraInfo, Err: err, ResultError: resultError}
+}
+
+// UVMResourcesFromContainerSpec takes a container spec and generates a
+// resources structure suitable for creating a utility VM to host the container.
+// This is really only relevant for a client that is running a single container
+// in a utility VM using the v2 schema. It implements logic which for the v1 schema
+// was implemented internally in HCS.
+func UVMResourcesFromContainerSpec(spec *specs.Spec) (*specs.WindowsResources, error) {
+	// TODO: Processors. File bug. V2 schema for VM doesn't allow weight/limit, just on compute system.
+
+	if spec == nil && spec.Linux != nil { // TODO
+		return nil, fmt.Errorf("UVMResourcesFromContainerSpec not supported for LCOW yet")
+	}
+
+	if spec == nil || spec.Windows == nil {
+		return nil, fmt.Errorf("invalid spec")
+	}
+	var uvmCPUCount uint64 = 2
+	var uvmMemoryMB uint64 = 512
+	uvmResources := &specs.WindowsResources{
+		Memory: &specs.WindowsMemoryResources{},
+		CPU:    &specs.WindowsCPUResources{Count: &uvmCPUCount},
+	}
+	if numCPU() == 1 {
+		uvmCPUCount = 1
+	}
+	if spec.Windows.Resources != nil {
+		if spec.Windows.Resources.CPU != nil && spec.Windows.Resources.CPU.Count != nil {
+			uvmCPUCount = *spec.Windows.Resources.CPU.Count
+		}
+		if spec.Windows.Resources.Memory.Limit != nil {
+			uvmMemoryMB = (*spec.Windows.Resources.Memory.Limit) / 1024 / 1024
+		}
+	}
+
+	// Add 256MB and round up to nearest 512MB
+	uvmMemoryMB += 256
+	if uvmMemoryMB%512 > 0 {
+		uvmMemoryMB += (512 - (uvmMemoryMB % 512))
+	}
+	uvmMemoryBytes := uvmMemoryMB * 1024 * 1024
+	uvmResources.Memory.Limit = &uvmMemoryBytes
+
+	logrus.Debugf("hcsshim: uvmResources: Memory %d MB CPUs %d", uvmMemoryMB, *uvmResources.CPU.Count)
+
+	return uvmResources, nil
+}

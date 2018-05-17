@@ -78,6 +78,7 @@ func CreateContainerEx(createOptions *CreateOptionsEx) (Container, error) {
 		actualInitrdFile: createOptions.InitrdFile,
 	}
 
+	// Defaults if omitted by caller.
 	if coi.actualId == "" {
 		g, err := GenerateGUID()
 		if err != nil {
@@ -87,6 +88,15 @@ func CreateContainerEx(createOptions *CreateOptionsEx) (Container, error) {
 	}
 	if coi.actualOwner == "" {
 		coi.actualOwner = filepath.Base(os.Args[0])
+	}
+	if coi.actualKirdPath == "" {
+		coi.actualKirdPath = filepath.Join(os.Getenv("ProgramFiles"), "Linux Containers")
+	}
+	if coi.actualKernelFile == "" {
+		coi.actualKernelFile = "bootx64.efi"
+	}
+	if coi.actualInitrdFile == "" {
+		coi.actualInitrdFile = "initrd.img"
 	}
 
 	if coi.Spec == nil {
@@ -108,21 +118,12 @@ func CreateContainerEx(createOptions *CreateOptionsEx) (Container, error) {
 		if coi.Spec.Windows == nil {
 			return nil, fmt.Errorf("containerSpec 'Windows' field must container layer folders for a Linux container")
 		}
-		if coi.actualKirdPath == "" {
-			coi.actualKirdPath = filepath.Join(os.Getenv("ProgramFiles"), "Linux Containers")
-		}
-		if coi.actualKernelFile == "" {
-			coi.actualKernelFile = "bootx64.efi"
-		}
-		if coi.actualInitrdFile == "" {
-			coi.actualInitrdFile = "initrd.img"
-		}
 		if coi.actualSchemaVersion.IsV10() {
-			logrus.Debugln("hcsshim::CreateContainerEx Calling createLCOWv1")
 			return createLCOWv1(coi)
 		} else {
 			if coi.AsHostingSystem {
-				return createLCOWv2UVM(coi)
+				panic("JJH. Remove this capability")
+				//return createLCOWv2UVM(coi)
 			}
 			return createLCOWContainer(coi)
 		}
@@ -132,10 +133,10 @@ func CreateContainerEx(createOptions *CreateOptionsEx) (Container, error) {
 	// Is a WCOW request.
 	//
 
-	// Is it a Utility VM?
-	if coi.AsHostingSystem {
-		return createWCOWv2UVM(coi)
-	}
+	//	// Is it a Utility VM?
+	//	if coi.AsHostingSystem {
+	//		return createWCOWv2UVM(coi)
+	//	}
 
 	// So it's a container.
 	return createWCOWContainer(coi)

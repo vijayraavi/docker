@@ -152,6 +152,7 @@ func CreateContainer(id string, c *ContainerConfig) (Container, error) {
 	return createContainer(id, string(configurationb), schemaversion.SchemaV10())
 }
 
+// TODO: schemaVersion is no longer used in this function. Can be removed.
 func createContainer(id string, configurationJSON string, schemaVersion *schemaversion.SchemaVersion) (Container, error) {
 	operation := "CreateContainer"
 	title := "hcsshim::" + operation
@@ -209,33 +210,6 @@ func createContainer(id string, configurationJSON string, schemaVersion *schemav
 
 	logrus.Debugf(title+" succeeded id=%s handle=%d", id, container.handle)
 	return container, nil
-}
-
-// mergeMaps recursively merges map `fromMap` into map `ToMap`. Any pre-existing values
-// in ToMap are overwritten. Values in fromMap are added to ToMap.
-// From http://stackoverflow.com/questions/40491438/merging-two-json-strings-in-golang
-func mergeMaps(fromMap, ToMap interface{}) interface{} {
-	switch fromMap := fromMap.(type) {
-	case map[string]interface{}:
-		ToMap, ok := ToMap.(map[string]interface{})
-		if !ok {
-			return fromMap
-		}
-		for keyToMap, valueToMap := range ToMap {
-			if valueFromMap, ok := fromMap[keyToMap]; ok {
-				fromMap[keyToMap] = mergeMaps(valueFromMap, valueToMap)
-			} else {
-				fromMap[keyToMap] = valueToMap
-			}
-		}
-	case nil:
-		// merge(nil, map[string]interface{...}) -> map[string]interface{...}
-		ToMap, ok := ToMap.(map[string]interface{})
-		if ok {
-			return ToMap
-		}
-	}
-	return fromMap
 }
 
 // OpenContainer opens an existing container by ID.
