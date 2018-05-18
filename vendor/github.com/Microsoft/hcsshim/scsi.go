@@ -30,7 +30,9 @@ func (uvm *UtilityVM) allocateSCSI(hostPath string) (int, int, error) {
 func (uvm *UtilityVM) deallocateSCSI(controller int, lun int) error {
 	uvm.scsiLocations.Lock()
 	defer uvm.scsiLocations.Unlock()
+	logrus.Debugf("uvm::deallocateSCSI %d:%d %q", controller, lun, uvm.scsiLocations.hostPath[controller][lun])
 	uvm.scsiLocations.hostPath[controller][lun] = ""
+
 	return nil
 }
 
