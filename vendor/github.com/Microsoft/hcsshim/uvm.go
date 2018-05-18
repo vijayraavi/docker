@@ -343,8 +343,7 @@ func (uvm *UtilityVM) createWCOW() error {
 		return err
 	}
 
-	//uvmuvm.(*container).scsiLocations.hostPath[0][0] = attachments["0"].Path
-
+	uvm.scsiLocations.hostPath[0][0] = attachments["0"].Path
 	return nil
 
 }

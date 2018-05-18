@@ -174,7 +174,7 @@ func createV2LCOWUvm(t *testing.T, addScratch bool) (*UtilityVM, string) {
 
 // A v2 LCOW
 func TestV2XenonLCOW(t *testing.T) {
-	//t.Skip("for now")
+	t.Skip("for now")
 	v2uvm, v2uvmScratchFile := createV2LCOWUvm(t, false)
 	if v2uvmScratchFile != "" {
 		defer v2uvm.RemoveSCSI(v2uvmScratchFile)
