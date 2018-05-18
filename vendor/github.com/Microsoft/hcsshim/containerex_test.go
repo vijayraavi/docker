@@ -35,7 +35,7 @@ var (
 	layersWSC1709    []string // WSC 1709. Note this has both a base and a servicing layer
 	layersBusybox    []string // github.com/jhowardmsft/busybox. Just an arbitrary multi-layer iamge  // TODO We could build a simple image in here.
 
-	lcowServiceContainerV1 Container // For generating LCOW ext4 sandbox
+	lcowServiceContainerV2 *UtilityVM // For generating LCOW ext4 sandbox
 	layersAlpine           []string
 	cacheSandboxFile       = "" // LCOW ext4 sandbox file
 	cacheSandboxDir        = "" // LCOW ext4 sandbox directory

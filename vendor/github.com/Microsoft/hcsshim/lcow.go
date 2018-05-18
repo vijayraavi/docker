@@ -5,14 +5,12 @@ package hcsshim
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
-	"time"
 
-	//	winio "github.com/Microsoft/go-winio/vhd"
+	winio "github.com/Microsoft/go-winio/vhd"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
 )
@@ -358,60 +356,65 @@ func debugCommand(s string) string {
 // DebugLCOWGCS extracts logs from the GCS in LCOW. It's a useful hack for debugging,
 // but not necessarily optimal, but all that is available to us in RS3.
 func (container *container) DebugLCOWGCS() {
-	if logrus.GetLevel() < logrus.DebugLevel || len(os.Getenv("HCSSHIM_LCOW_DEBUG_ENABLE")) == 0 {
-		return
-	}
+	//	if logrus.GetLevel() < logrus.DebugLevel || len(os.Getenv("HCSSHIM_LCOW_DEBUG_ENABLE")) == 0 {
+	//		return
+	//	}
 
-	var out bytes.Buffer
-	cmd := os.Getenv("HCSSHIM_LCOW_DEBUG_COMMAND")
-	if cmd == "" {
-		cmd = `sh -c "`
-		cmd += debugCommand("kill -10 `pidof gcs`") // SIGUSR1 for stackdump
-		cmd += debugCommand("ls -l /tmp")
-		cmd += debugCommand("cat /tmp/gcs.log")
-		cmd += debugCommand("cat /tmp/gcs/gcs-stacks*")
-		cmd += debugCommand("cat /tmp/gcs/paniclog*")
-		cmd += debugCommand("ls -l /tmp/gcs")
-		cmd += debugCommand("ls -l /tmp/gcs/*")
-		cmd += debugCommand("cat /tmp/gcs/*/config.json")
-		cmd += debugCommand("ls -lR /var/run/gcsrunc")
-		cmd += debugCommand("cat /tmp/gcs/global-runc.log")
-		cmd += debugCommand("cat /tmp/gcs/*/runc.log")
-		cmd += debugCommand("ps -ef")
-		cmd += `"`
-	}
+	//	var out bytes.Buffer
+	//	cmd := os.Getenv("HCSSHIM_LCOW_DEBUG_COMMAND")
+	//	if cmd == "" {
+	//		cmd = `sh -c "`
+	//		cmd += debugCommand("kill -10 `pidof gcs`") // SIGUSR1 for stackdump
+	//		cmd += debugCommand("ls -l /tmp")
+	//		cmd += debugCommand("cat /tmp/gcs.log")
+	//		cmd += debugCommand("cat /tmp/gcs/gcs-stacks*")
+	//		cmd += debugCommand("cat /tmp/gcs/paniclog*")
+	//		cmd += debugCommand("ls -l /tmp/gcs")
+	//		cmd += debugCommand("ls -l /tmp/gcs/*")
+	//		cmd += debugCommand("cat /tmp/gcs/*/config.json")
+	//		cmd += debugCommand("ls -lR /var/run/gcsrunc")
+	//		cmd += debugCommand("cat /tmp/gcs/global-runc.log")
+	//		cmd += debugCommand("cat /tmp/gcs/*/runc.log")
+	//		cmd += debugCommand("ps -ef")
+	//		cmd += `"`
+	//	}
 
-	proc, _, err := container.CreateProcessEx(
-		&CreateProcessEx{
-			OCISpecification: &specs.Spec{
-				Process: &specs.Process{Args: []string{cmd}},
-				Linux:   &specs.Linux{},
-			},
-			CreateInUtilityVm: true,
-			Stdout:            &out,
-		})
-	defer func() {
-		if proc != nil {
-			proc.Kill()
-			proc.Close()
-		}
-	}()
-	if err != nil {
-		logrus.Debugln("benign failure getting gcs logs: ", err)
-	}
-	if proc != nil {
-		proc.WaitTimeout(time.Duration(int(time.Second) * 30))
-	}
-	logrus.Debugf("GCS Debugging:\n%s\n\nEnd GCS Debugging", strings.TrimSpace(out.String()))
+	//	proc, _, err := container.CreateProcessEx(
+	//		&CreateProcessEx{
+	//			OCISpecification: &specs.Spec{
+	//				Process: &specs.Process{Args: []string{cmd}},
+	//				Linux:   &specs.Linux{},
+	//			},
+	//			CreateInUtilityVm: true,
+	//			Stdout:            &out,
+	//		})
+	//	defer func() {
+	//		if proc != nil {
+	//			proc.Kill()
+	//			proc.Close()
+	//		}
+	//	}()
+	//	if err != nil {
+	//		logrus.Debugln("benign failure getting gcs logs: ", err)
+	//	}
+	//	if proc != nil {
+	//		proc.WaitTimeout(time.Duration(int(time.Second) * 30))
+	//	}
+	//	logrus.Debugf("GCS Debugging:\n%s\n\nEnd GCS Debugging", strings.TrimSpace(out.String()))
 }
 
-// CreateLCOWScratchv1 uses a v1 utility VM to create an empty scratch disk of a requested size.
+// CreateLCOWScratch uses a utility VM to create an empty scratch disk of a requested size.
 // It has a caching capability. If the cacheFile exists, and the request is for a default
 // size, a copy of that is made to the target. If the size is non-default, or the cache file
 // does not exist, it uses a utility VM to create target. It is the responsibility of the
 // caller to synchronise simultaneous attempts to create the cache file.
 
-func CreateLCOWScratchv1(uvm Container, destFile string, sizeGB uint32, cacheFile string) error {
+func (uvm *UtilityVM) CreateLCOWScratch(destFile string, sizeGB uint32, cacheFile string) error {
+
+	if uvm.OperatingSystem != "linux" {
+		return fmt.Errorf("CreateLCOWScratch requires a linux utility VM to operate!")
+	}
+
 	// Smallest we can accept is the default sandbox size as we can't size down, only expand.
 	if sizeGB < DefaultLCOWScratchSizeGB {
 		sizeGB = DefaultLCOWScratchSizeGB
@@ -433,33 +436,30 @@ func CreateLCOWScratchv1(uvm Container, destFile string, sizeGB uint32, cacheFil
 	if uvm == nil {
 		return fmt.Errorf("cannot create scratch disk as cache is not present and no utility VM supplied")
 	}
-	uvmc := uvm.(*container)
 
 	// Create the VHDX
 	if err := winio.CreateVhdx(destFile, sizeGB, defaultLCOWVhdxBlockSizeMB); err != nil {
 		return fmt.Errorf("failed to create VHDx %s: %s", destFile, err)
 	}
 
-	uvmc.DebugLCOWGCS()
+	//	uvmc.DebugLCOWGCS()
+	// Grant access
+	if err := GrantVmAccess(uvm.Id, destFile); err != nil {
+		return err
+	}
 
-	controller, lun, err := AddSCSI(uvm, destFile, "")
+	controller, lun, err := uvm.AddSCSI(destFile, "") // No destination as not formatted
 	if err != nil {
-		// TODO Rollback
+		return err
 	}
 
 	logrus.Debugf("hcsshim::CreateLCOWScratch: %s at C=%d L=%d", destFile, controller, lun)
 
 	// Validate /sys/bus/scsi/devices/C:0:0:L exists as a directory
 	testdCommand := []string{"test", "-d", fmt.Sprintf("/sys/bus/scsi/devices/%d:0:0:%d", controller, lun)}
-	testdProc, _, err := uvmc.CreateProcessEx(&CreateProcessEx{
-		OCISpecification: &specs.Spec{
-			Process: &specs.Process{Args: testdCommand},
-			Linux:   &specs.Linux{},
-		},
-		CreateInUtilityVm: true,
-	})
+	testdProc, _, err := uvm.CreateProcess(&UVMProcessOptions{Process: &specs.Process{Args: testdCommand}})
 	if err != nil {
-		removeSCSI(uvm, destFile, controller, lun)
+		uvm.removeSCSI(destFile, controller, lun)
 		return fmt.Errorf("failed to run %+v following hot-add %s to utility VM: %s", testdCommand, destFile, err)
 	}
 	defer testdProc.Close()
@@ -467,38 +467,34 @@ func CreateLCOWScratchv1(uvm Container, destFile string, sizeGB uint32, cacheFil
 	testdProc.WaitTimeout(defaultTimeoutSeconds)
 	testdExitCode, err := testdProc.ExitCode()
 	if err != nil {
-		removeSCSI(uvm, destFile, controller, lun)
+		uvm.removeSCSI(destFile, controller, lun)
 		return fmt.Errorf("failed to get exit code from from %+v following hot-add %s to utility VM: %s", testdCommand, destFile, err)
 	}
 	if testdExitCode != 0 {
-		removeSCSI(uvm, destFile, controller, lun)
+		uvm.removeSCSI(destFile, controller, lun)
 		return fmt.Errorf("`%+v` return non-zero exit code (%d) following hot-add %s to utility VM", testdCommand, testdExitCode, destFile)
 	}
 
 	// Get the device from under the block subdirectory by doing a simple ls. This will come back as (eg) `sda`
 	var lsOutput bytes.Buffer
 	lsCommand := []string{"ls", fmt.Sprintf("/sys/bus/scsi/devices/%d:0:0:%d/block", controller, lun)}
-	lsProc, _, err := uvmc.CreateProcessEx(&CreateProcessEx{
-		OCISpecification: &specs.Spec{
-			Process: &specs.Process{Args: lsCommand},
-			Linux:   &specs.Linux{},
-		},
-		CreateInUtilityVm: true,
-		Stdout:            &lsOutput,
+	lsProc, _, err := uvm.CreateProcess(&UVMProcessOptions{
+		Process: &specs.Process{Args: lsCommand},
+		Stdout:  &lsOutput,
 	})
 	if err != nil {
-		removeSCSI(uvm, destFile, controller, lun)
+		uvm.removeSCSI(destFile, controller, lun)
 		return fmt.Errorf("failed to `%+v` following hot-add %s to utility VM: %s", lsCommand, destFile, err)
 	}
 	defer lsProc.Close()
 	lsProc.WaitTimeout(defaultTimeoutSeconds)
 	lsExitCode, err := lsProc.ExitCode()
 	if err != nil {
-		removeSCSI(uvm, destFile, controller, lun)
+		uvm.removeSCSI(destFile, controller, lun)
 		return fmt.Errorf("failed to get exit code from `%+v` following hot-add %s to utility VM: %s", lsCommand, destFile, err)
 	}
 	if lsExitCode != 0 {
-		removeSCSI(uvm, destFile, controller, lun)
+		uvm.removeSCSI(destFile, controller, lun)
 		return fmt.Errorf("`%+v` return non-zero exit code (%d) following hot-add %s to utility VM", lsCommand, lsExitCode, destFile)
 	}
 	device := fmt.Sprintf(`/dev/%s`, strings.TrimSpace(lsOutput.String()))
@@ -507,32 +503,28 @@ func CreateLCOWScratchv1(uvm Container, destFile string, sizeGB uint32, cacheFil
 	// Format it ext4
 	mkfsCommand := []string{"mkfs.ext4", "-q", "-E", "lazy_itable_init=1", "-O", `^has_journal,sparse_super2,uninit_bg,^resize_inode`, device}
 	var mkfsStderr bytes.Buffer
-	mkfsProc, _, err := uvmc.CreateProcessEx(&CreateProcessEx{
-		OCISpecification: &specs.Spec{
-			Process: &specs.Process{Args: mkfsCommand},
-			Linux:   &specs.Linux{},
-		},
-		CreateInUtilityVm: true,
-		Stderr:            &mkfsStderr,
+	mkfsProc, _, err := uvm.CreateProcess(&UVMProcessOptions{
+		Process: &specs.Process{Args: mkfsCommand},
+		Stderr:  &mkfsStderr,
 	})
 	if err != nil {
-		removeSCSI(uvm, destFile, controller, lun)
+		uvm.removeSCSI(destFile, controller, lun)
 		return fmt.Errorf("failed to `%+v` following hot-add %s to utility VM: %s", mkfsCommand, destFile, err)
 	}
 	defer mkfsProc.Close()
 	mkfsProc.WaitTimeout(defaultTimeoutSeconds)
 	mkfsExitCode, err := mkfsProc.ExitCode()
 	if err != nil {
-		removeSCSI(uvm, destFile, controller, lun)
+		uvm.removeSCSI(destFile, controller, lun)
 		return fmt.Errorf("failed to get exit code from `%+v` following hot-add %s to utility VM: %s", mkfsCommand, destFile, err)
 	}
 	if mkfsExitCode != 0 {
-		removeSCSI(uvm, destFile, controller, lun)
+		uvm.removeSCSI(destFile, controller, lun)
 		return fmt.Errorf("`%+v` return non-zero exit code (%d) following hot-add %s to utility VM: %s", mkfsCommand, mkfsExitCode, destFile, strings.TrimSpace(mkfsStderr.String()))
 	}
 
 	// Hot-Remove before we copy it
-	if err := removeSCSI(uvm, destFile, controller, lun); err != nil {
+	if err := uvm.removeSCSI(destFile, controller, lun); err != nil {
 		return fmt.Errorf("failed to hot-remove: %s", err)
 	}
 
@@ -547,39 +539,39 @@ func CreateLCOWScratchv1(uvm Container, destFile string, sizeGB uint32, cacheFil
 	return nil
 }
 
-// TarToVhd streams a tarstream contained in an io.Reader to a fixed vhd file
-func TarToVhd(uvm Container, targetVHDFile string, reader io.Reader) (int64, error) {
-	logrus.Debugf("hcsshim: TarToVhd: %s", targetVHDFile)
+//// TarToVhd streams a tarstream contained in an io.Reader to a fixed vhd file
+//func TarToVhd(uvm Container, targetVHDFile string, reader io.Reader) (int64, error) {
+//	logrus.Debugf("hcsshim: TarToVhd: %s", targetVHDFile)
 
-	if uvm == nil {
-		return 0, fmt.Errorf("cannot Tar2Vhd as no utility VM supplied")
-	}
-	defer uvm.DebugLCOWGCS()
+//	if uvm == nil {
+//		return 0, fmt.Errorf("cannot Tar2Vhd as no utility VM supplied")
+//	}
+//	defer uvm.DebugLCOWGCS()
 
-	outFile, err := os.Create(targetVHDFile)
-	if err != nil {
-		return 0, fmt.Errorf("tar2vhd failed to create %s: %s", targetVHDFile, err)
-	}
-	defer outFile.Close()
-	// BUGBUG Delete the file on failure
+//	outFile, err := os.Create(targetVHDFile)
+//	if err != nil {
+//		return 0, fmt.Errorf("tar2vhd failed to create %s: %s", targetVHDFile, err)
+//	}
+//	defer outFile.Close()
+//	// BUGBUG Delete the file on failure
 
-	tar2vhd, byteCounts, err := uvm.CreateProcessEx(&CreateProcessEx{
-		OCISpecification: &specs.Spec{
-			Process: &specs.Process{Args: []string{"tar2vhd"}},
-			Linux:   &specs.Linux{},
-		},
-		CreateInUtilityVm: true,
-		Stdin:             reader,
-		Stdout:            outFile,
-	})
-	if err != nil {
-		return 0, fmt.Errorf("failed to start tar2vhd for %s: %s", targetVHDFile, err)
-	}
-	defer tar2vhd.Close()
+//	tar2vhd, byteCounts, err := uvm.CreateProcessEx(&CreateProcessEx{
+//		OCISpecification: &specs.Spec{
+//			Process: &specs.Process{Args: []string{"tar2vhd"}},
+//			Linux:   &specs.Linux{},
+//		},
+//		CreateInUtilityVm: true,
+//		Stdin:             reader,
+//		Stdout:            outFile,
+//	})
+//	if err != nil {
+//		return 0, fmt.Errorf("failed to start tar2vhd for %s: %s", targetVHDFile, err)
+//	}
+//	defer tar2vhd.Close()
 
-	logrus.Debugf("hcsshim: TarToVhd: %s created, %d bytes", targetVHDFile, byteCounts.Out)
-	return byteCounts.Out, err
-}
+//	logrus.Debugf("hcsshim: TarToVhd: %s created, %d bytes", targetVHDFile, byteCounts.Out)
+//	return byteCounts.Out, err
+//}
 
 //// VhdToTar does what is says - it exports a VHD in a specified
 //// folder (either a read-only layer.vhd, or a read-write sandbox.vhd) to a

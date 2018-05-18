@@ -181,10 +181,6 @@ func (e *ProcessError) Error() string {
 
 	s := fmt.Sprintf("process %d", e.Process.processID)
 
-	if e.Process.container != nil {
-		s += " in container " + e.Process.container.id
-	}
-
 	if e.Operation != "" {
 		s += " encountered an error during " + e.Operation
 	}

@@ -7,8 +7,10 @@ package hcsshim
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -68,9 +70,11 @@ type UtilityVM struct {
 //   - If the sandbox folder does not contain `sandbox.vhdx` it will be created based on the system template located in the layer folders.
 //   - The sandbox is always attached to SCSI 0:0
 func (uvm *UtilityVM) Create() error {
-	logrus.Debugf("uvm::Create option: %+v", uvm)
+	logrus.Debugf("uvm::Create option: %+v", uvm) // TODO Tidy this up whatis printed.
 
 	if uvm.OperatingSystem != "linux" && uvm.OperatingSystem != "windows" {
+		panic("JJH")
+		logrus.Debugf("uvm::Create Unsupported OS")
 		return fmt.Errorf("unsupported operating system %q", uvm.OperatingSystem)
 	}
 
@@ -117,10 +121,15 @@ func (uvm *UtilityVM) Create() error {
 		//		}
 
 	}
+	if uvm.SchemaVersion == nil {
+		uvm.SchemaVersion = schemaversion.SchemaV20()
+	}
 
 	if uvm.OperatingSystem == "windows" {
+		logrus.Debugf("uvm::Create Windows utility VM")
 		return uvm.createWCOW()
 	}
+	logrus.Debugf("uvm::Create Linux utility VM")
 	return uvm.createLCOW()
 }
 
@@ -160,10 +169,12 @@ func (uvm *UtilityVM) createLCOW() error {
 	//		err = nil
 	//	}
 
+	//
+	// We need to build the v1 version here too.
+
 	scsi := make(map[string]hcsschemav2.VirtualMachinesResourcesStorageScsiV2)
 	scsi["0"] = hcsschemav2.VirtualMachinesResourcesStorageScsiV2{Attachments: make(map[string]hcsschemav2.VirtualMachinesResourcesStorageAttachmentV2)}
-
-	hcsDocument := &hcsschemav2.ComputeSystemV2{
+	hcsDocumentV2 := &hcsschemav2.ComputeSystemV2{
 		Owner:         uvm.Owner,
 		SchemaVersion: schemaversion.SchemaV20(),
 		VirtualMachine: &hcsschemav2.VirtualMachineV2{
@@ -207,23 +218,23 @@ func (uvm *UtilityVM) createLCOW() error {
 	}
 
 	if uvm.KernelDebugMode {
-		hcsDocument.VirtualMachine.Chipset.UEFI.BootThis.OptionalData += " console=ttyS0,115200"
-		hcsDocument.VirtualMachine.Devices.COMPorts = &hcsschemav2.VirtualMachinesResourcesComPortsV2{Port1: uvm.KernelDebugComPortPipe}
-		hcsDocument.VirtualMachine.Devices.Keyboard = &hcsschemav2.VirtualMachinesResourcesKeyboardV2{}
-		hcsDocument.VirtualMachine.Devices.Mouse = &hcsschemav2.VirtualMachinesResourcesMouseV2{}
-		hcsDocument.VirtualMachine.Devices.Rdp = &hcsschemav2.VirtualMachinesResourcesRdpV2{}
-		hcsDocument.VirtualMachine.Devices.VideoMonitor = &hcsschemav2.VirtualMachinesResourcesVideoMonitorV2{}
+		hcsDocumentV2.VirtualMachine.Chipset.UEFI.BootThis.OptionalData += " console=ttyS0,115200"
+		hcsDocumentV2.VirtualMachine.Devices.COMPorts = &hcsschemav2.VirtualMachinesResourcesComPortsV2{Port1: uvm.KernelDebugComPortPipe}
+		hcsDocumentV2.VirtualMachine.Devices.Keyboard = &hcsschemav2.VirtualMachinesResourcesKeyboardV2{}
+		hcsDocumentV2.VirtualMachine.Devices.Mouse = &hcsschemav2.VirtualMachinesResourcesMouseV2{}
+		hcsDocumentV2.VirtualMachine.Devices.Rdp = &hcsschemav2.VirtualMachinesResourcesRdpV2{}
+		hcsDocumentV2.VirtualMachine.Devices.VideoMonitor = &hcsschemav2.VirtualMachinesResourcesVideoMonitorV2{}
 	}
 
 	if uvm.KernelBootOptions != "" {
-		hcsDocument.VirtualMachine.Chipset.UEFI.BootThis.OptionalData = hcsDocument.VirtualMachine.Chipset.UEFI.BootThis.OptionalData + fmt.Sprintf(" %s", uvm.KernelBootOptions)
+		hcsDocumentV2.VirtualMachine.Chipset.UEFI.BootThis.OptionalData = hcsDocumentV2.VirtualMachine.Chipset.UEFI.BootThis.OptionalData + fmt.Sprintf(" %s", uvm.KernelBootOptions)
 	}
 
-	hcsDocumentB, err := json.Marshal(hcsDocument)
+	hcsDocumentV2B, err := json.Marshal(hcsDocumentV2)
 	if err != nil {
 		return err
 	}
-	if err := uvm.createHCSComputeSystem(string(hcsDocumentB)); err != nil {
+	if err := uvm.createHCSComputeSystem(string(hcsDocumentV2B)); err != nil {
 		logrus.Debugln("failed to create UVM: ", err)
 		return err
 	}
@@ -691,4 +702,152 @@ func (uvm *UtilityVM) Start() error {
 
 	logrus.Debugf(title+" succeeded id=%s", uvm.Id)
 	return nil
+}
+
+// CreateProcessExParams is the structure used for calling CreateProcessEx
+type UVMProcessOptions struct {
+	Process    *specs.Process
+	Stdin      io.Reader  // Optional reader for sending on to the processes stdin stream
+	Stdout     io.Writer  // Optional writer for returning the processes stdout stream
+	Stderr     io.Writer  // Optional writer for returning the processes stderr stream
+	ByteCounts ByteCounts // How much data to copy on each stream if they are supplied. 0 means to io.EOF.
+}
+
+// TODO UPDATE THIS COMMENT NOW
+// CreateProcessEx is a wrapper for CreateProcess that creates an arbirary process
+// (most usefully inside a utility VM) and optionally performs IO copies
+// with timeout between the pipes provided as input, and the pipes in the process.
+// In the parameter structure, if byte-counts are non-zero, a maximum of those
+// bytes are copied to the appropriate standard IO reader/writer. When zero,
+// it copies until EOF. It also returns byte-counts indicating how much data
+// was sent/received from the process. It is the responsibility of the caller
+// to call Close() on the process returned.
+func (uvm *UtilityVM) CreateProcess(opts *UVMProcessOptions) (Process, *ByteCounts, error) {
+	operation := "CreateProcess"
+	if opts.Process == nil {
+		return nil, nil, fmt.Errorf("no Process passed to CreateProcessEx")
+	}
+
+	copiedByteCounts := &ByteCounts{}
+	commandLine := strings.Join(opts.Process.Args, " ")
+	environment := make(map[string]string)
+	for _, v := range opts.Process.Env {
+		s := strings.SplitN(v, "=", 2)
+		if len(s) == 2 && len(s[1]) > 0 {
+			environment[s[0]] = s[1]
+		}
+	}
+
+	if uvm.OperatingSystem == "linux" {
+		if _, ok := environment["PATH"]; !ok {
+			environment["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:"
+		}
+	}
+
+	processConfig := &ProcessConfig{
+		EmulateConsole:    false,
+		CreateStdInPipe:   (opts.Stdin != nil),
+		CreateStdOutPipe:  (opts.Stdout != nil),
+		CreateStdErrPipe:  (opts.Stderr != nil),
+		CreateInUtilityVm: true,
+		WorkingDirectory:  opts.Process.Cwd,
+		Environment:       environment,
+		CommandLine:       commandLine,
+	}
+
+	uvm.handleLock.RLock()
+	defer uvm.handleLock.RUnlock()
+	var (
+		processInfo   hcsProcessInformation
+		processHandle hcsProcess
+		resultp       *uint16
+	)
+
+	if uvm.hcsHandle == 0 {
+		return nil, nil, uvm.makeError(operation, nil, "", ErrAlreadyClosed)
+	}
+
+	// If we are not emulating a console, ignore any console size passed to us
+	if !processConfig.EmulateConsole {
+		processConfig.ConsoleSize[0] = 0
+		processConfig.ConsoleSize[1] = 0
+	}
+
+	processConfigB, err := json.Marshal(processConfig)
+	if err != nil {
+		return nil, nil, uvm.makeError(operation, nil, "", err)
+	}
+
+	configuration := string(processConfigB)
+	logrus.Debugf("uvm::CreateProcessEx id=%s config=%s", uvm.Id, configuration)
+
+	err = hcsCreateProcess(uvm.hcsHandle, configuration, &processInfo, &processHandle, &resultp)
+	re := processHcsResult(resultp)
+	if err != nil {
+		return nil, nil, uvm.makeError(operation, re, configuration, err)
+	}
+
+	proc := &process{
+		handle:    processHandle,
+		processID: int(processInfo.ProcessId),
+		cachedPipes: &cachedPipes{
+			stdIn:  processInfo.StdInput,
+			stdOut: processInfo.StdOutput,
+			stdErr: processInfo.StdError,
+		},
+	}
+
+	if err := proc.registerCallback(); err != nil {
+		return nil, nil, uvm.makeError(operation, nil, "", err)
+	}
+
+	processStdin, processStdout, processStderr, err := proc.Stdio()
+	if err != nil {
+		proc.Kill() // Should this have a timeout?
+		proc.Close()
+		return nil, nil, fmt.Errorf("failed to get stdio pipes for process %+v: %s", processConfig, err)
+	}
+
+	// Send the data into the process's stdin
+	if opts.Stdin != nil {
+		if copiedByteCounts.In, err = copyWithTimeout(processStdin,
+			opts.Stdin,
+			opts.ByteCounts.In,
+			fmt.Sprintf("CreateProcessEx: to stdin of %q", commandLine)); err != nil {
+			return nil, nil, err
+		}
+
+		// Don't need stdin now we've sent everything. This signals GCS that we are finished sending data.
+		if err := proc.CloseStdin(); err != nil && !IsNotExist(err) && !IsAlreadyClosed(err) {
+			// This error will occur if the compute system is currently shutting down
+			if perr, ok := err.(*ProcessError); ok && perr.Err != ErrVmcomputeOperationInvalidState {
+				return nil, nil, err
+			}
+		}
+	}
+
+	// Copy the data back from stdout
+	if opts.Stdout != nil {
+		// Copy the data over to the writer.
+		if copiedByteCounts.Out, err = copyWithTimeout(opts.Stdout,
+			processStdout,
+			opts.ByteCounts.Out,
+			fmt.Sprintf("CreateProcessEx: from stdout from %q", commandLine)); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	// Copy the data back from stderr
+	if opts.Stderr != nil {
+		// Copy the data over to the writer.
+		if copiedByteCounts.Err, err = copyWithTimeout(opts.Stderr,
+			processStderr,
+			opts.ByteCounts.Err,
+			fmt.Sprintf("CreateProcessEx: from stderr of %s", commandLine)); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	logrus.Debugf("hcsshim: CreateProcessEx success: %q", commandLine)
+	return proc, copiedByteCounts, nil
 }

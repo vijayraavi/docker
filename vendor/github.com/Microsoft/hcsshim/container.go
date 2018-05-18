@@ -576,7 +576,6 @@ func (container *container) CreateProcess(c *ProcessConfig) (Process, error) {
 	process := &process{
 		handle:    processHandle,
 		processID: int(processInfo.ProcessId),
-		container: container,
 		cachedPipes: &cachedPipes{
 			stdIn:  processInfo.StdInput,
 			stdOut: processInfo.StdOutput,
@@ -617,7 +616,6 @@ func (container *container) OpenProcess(pid int) (Process, error) {
 	process := &process{
 		handle:    processHandle,
 		processID: pid,
-		container: container,
 	}
 
 	if err := process.registerCallback(); err != nil {

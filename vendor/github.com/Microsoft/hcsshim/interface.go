@@ -89,7 +89,7 @@ type Container interface {
 	// arbirary process (most usefully inside a utility VM) and performs IO copies with
 	// timeout between the pipes optionally provided as input, and the pipes in the process.
 	// It is the responsibility of the caller to call Close() on the process returned.
-	CreateProcessEx(opts *CreateProcessEx) (Process, *ByteCounts, error)
+	//CreateProcessEx(opts *CreateProcessEx) (Process, *ByteCounts, error)
 
 	// DebugLCOWGCS is a debugging feature for LCOW to extract logs for diagnosis
 	// TODO Remove This from here.

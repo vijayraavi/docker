@@ -14,10 +14,10 @@ import (
 
 // ContainerError is an error encountered in HCS
 type process struct {
-	handleLock     sync.RWMutex
-	handle         hcsProcess
-	processID      int
-	container      *container
+	handleLock sync.RWMutex
+	handle     hcsProcess
+	processID  int
+	//container      *container
 	cachedPipes    *cachedPipes
 	callbackNumber uintptr
 }

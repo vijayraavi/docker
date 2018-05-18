@@ -59,18 +59,34 @@ func MountContainerLayers(layerFolders []string, uvm *UtilityVM) (interface{}, e
 	}
 
 	// V2 UVM
+	logrus.Debugf("hcsshim::MountContainerLayers Is a %s V2 UVM", uvm.OperatingSystem)
 
-	// 	Add each read-only layers as a VSMB share. In each case, the ResourceUri will end in a GUID based on the folder path.
-	//  Each VSMB share is ref-counted so that multiple containers in the same utility VM can share them.
+	// 	Add each read-only layers. For Windows, this is a VSMB share with the ResourceUri ending in
+	// a GUID based on the folder path. For Linux, this is a VPMEM device.
+	//
+	//  Each layer is ref-counted so that multiple containers in the same utility VM can share them.
 	var vsmbAdded []string
-	if uvm.OperatingSystem == "windows" {
-		for _, layerPath := range layerFolders[:len(layerFolders)-1] {
-			err := uvm.AddVSMB(layerPath, hcsschemav2.VsmbFlagReadOnly|hcsschemav2.VsmbFlagPseudoOplocks|hcsschemav2.VsmbFlagTakeBackupPrivilege|hcsschemav2.VsmbFlagCacheIO|hcsschemav2.VsmbFlagShareRead)
-			if err != nil {
-				uvm.removeVSMBOnMountFailure(vsmbAdded)
+	var vpmemAdded []string
+
+	for _, layerPath := range layerFolders[:len(layerFolders)-1] {
+		var err error
+		if uvm.OperatingSystem == "windows" {
+			err = uvm.AddVSMB(layerPath, hcsschemav2.VsmbFlagReadOnly|hcsschemav2.VsmbFlagPseudoOplocks|hcsschemav2.VsmbFlagTakeBackupPrivilege|hcsschemav2.VsmbFlagCacheIO|hcsschemav2.VsmbFlagShareRead)
+			if err == nil {
+				vsmbAdded = append(vsmbAdded, layerPath)
 			}
-			vsmbAdded = append(vsmbAdded, layerPath)
+		} else {
+			_, _, err = uvm.AddVPMEM(filepath.Join(layerPath, "layer.vhd"), "", true) // ContainerPath calculated. Will be /tmp/vpmemN/
+			if err == nil {
+				vpmemAdded = append(vpmemAdded, layerPath)
+			}
 		}
+		if err != nil {
+			// TODO Remove VPMEM too now. And in all call sites below
+			uvm.removeVSMBOnMountFailure(vsmbAdded)
+			return nil, err
+		}
+
 	}
 
 	// 	Add the sandbox at an unused SCSI location. The container path inside the utility VM will be C:\<GUID> where
@@ -83,6 +99,8 @@ func MountContainerLayers(layerFolders []string, uvm *UtilityVM) (interface{}, e
 		return nil, err
 	}
 	hostPath := filepath.Join(layerFolders[len(layerFolders)-1], "sandbox.vhdx")
+
+	// TODO: Different container path for linux
 	containerPath := fmt.Sprintf(`C:\%s`, containerPathGUID.ToString())
 	controller, lun, err := uvm.AddSCSI(hostPath, containerPath)
 	if err != nil {

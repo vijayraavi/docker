@@ -104,7 +104,7 @@ func CreateContainerEx(createOptions *CreateOptionsEx) (Container, error) {
 
 	if coi.HostingSystem != nil {
 		// By definition, a hosting system can only be supplied for a v2 Xenon.
-		if !coi.HostingSystem.SchemaVersion.IsV20() {
+		if coi.HostingSystem.SchemaVersion != nil && !coi.HostingSystem.SchemaVersion.IsV20() {
 			return nil, fmt.Errorf("supplied hosting system must be a v2 schema container")
 		}
 		coi.actualSchemaVersion = schemaversion.SchemaV20() //coi.HostingSystem.SchemaVersion()
@@ -425,6 +425,6 @@ func LocateWCOWUVMFolderFromLayerFolders(layerFolders []string) (string, error) 
 	if uvmFolder == "" {
 		return "", fmt.Errorf("utility VM folder could not be found in layers")
 	}
-	logrus.Debugf("uvm::LocateWCOWUVMFolderFromLayerFolders Index %d of %d possibles (%s)", index, len(layerFolders), uvmFolder)
+	logrus.Debugf("hcsshim::LocateWCOWUVMFolderFromLayerFolders Index %d of %d possibles (%s)", index, len(layerFolders), uvmFolder)
 	return uvmFolder, nil
 }

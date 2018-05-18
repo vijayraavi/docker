@@ -14,27 +14,29 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
-// createLCOWTempDirWithSandboxv1 uses a v1 LCOW utility VM to create a blank
+// createLCOWTempDirWithSandboxv2 uses a v2 LCOW utility VM to create a blank
 // VHDX and format it ext4.
-func createLCOWTempDirWithSandboxv1(t *testing.T) (string, string) {
-	dls := getDefaultLinuxSpec(t)
-	if lcowServiceContainerV1 == nil {
+func createLCOWTempDirWithSandboxv2(t *testing.T) (string, string) {
+	if lcowServiceContainerV2 == nil {
 		cacheSandboxDir = createTempDir(t)
-		var err error
-		lcowServiceContainerV1, err = CreateContainerEx(&CreateOptionsEx{
-			Id:   "global",
-			Spec: dls,
-		})
-		if err != nil {
+
+		lcowServiceContainerV2 = &UtilityVM{
+			Id:              "v2global",
+			OperatingSystem: "linux",
+			SchemaVersion:   schemaversion.SchemaV20(),
+		}
+
+		if err := lcowServiceContainerV2.Create(); err != nil {
 			t.Fatalf("Failed create: %s", err)
 		}
-		if err := lcowServiceContainerV1.Start(); err != nil {
+
+		if err := lcowServiceContainerV2.Start(); err != nil {
 			t.Fatalf("Failed to start service container: %s", err)
 		}
 	}
 	tempDir := createTempDir(t)
 	cacheSandboxFile = filepath.Join(cacheSandboxDir, "sandbox.vhdx")
-	if err := CreateLCOWScratchv1(lcowServiceContainerV1, filepath.Join(tempDir, "sandbox.vhdx"), DefaultLCOWScratchSizeGB, cacheSandboxFile); err != nil {
+	if err := lcowServiceContainerV2.CreateLCOWScratch(filepath.Join(tempDir, "sandbox.vhdx"), DefaultLCOWScratchSizeGB, cacheSandboxFile); err != nil {
 		t.Fatalf("failed to create EXT4 sandbox for LCOW test cases: %s", err)
 	}
 	return tempDir, filepath.Base(tempDir)
@@ -52,70 +54,70 @@ func getDefaultLinuxSpec(t *testing.T) *specs.Spec {
 	return &spec
 }
 
-// createLCOWTempDirWithSandbox uses an LCOW utility VM to create a blank
-// VHDX and format it ext4.
-func TestCreateLCOWScratch(t *testing.T) {
-	t.Skip("for now")
-	cacheDir := createTempDir(t)
-	cacheFile := filepath.Join(cacheDir, "cache.vhdx")
-	uvm, err := CreateContainerEx(&CreateOptionsEx{Spec: getDefaultLinuxSpec(t)})
-	if err != nil {
-		t.Fatalf("Failed create: %s", err)
-	}
-	defer uvm.Terminate()
-	if err := uvm.Start(); err != nil {
-		t.Fatalf("Failed to start service container: %s", err)
-	}
+//// createLCOWTempDirWithSandbox uses an LCOW utility VM to create a blank
+//// VHDX and format it ext4.
+//func TestCreateLCOWScratch(t *testing.T) {
+//	t.Skip("for now")
+//	cacheDir := createTempDir(t)
+//	cacheFile := filepath.Join(cacheDir, "cache.vhdx")
+//	uvm, err := CreateContainerEx(&CreateOptionsEx{Spec: getDefaultLinuxSpec(t)})
+//	if err != nil {
+//		t.Fatalf("Failed create: %s", err)
+//	}
+//	defer uvm.Terminate()
+//	if err := uvm.Start(); err != nil {
+//		t.Fatalf("Failed to start service container: %s", err)
+//	}
 
-	// 1: Default size, cache doesn't exist, but no UVM passed. Cannot be created
-	err = CreateLCOWScratch(nil, filepath.Join(cacheDir, "default.vhdx"), DefaultLCOWScratchSizeGB, cacheFile)
-	if err == nil {
-		t.Fatalf("expected an error creating LCOW scratch")
-	}
-	if err.Error() != "cannot create scratch disk as cache is not present and no utility VM supplied" {
-		t.Fatalf("Not expecting error %s", err)
-	}
+//	// 1: Default size, cache doesn't exist, but no UVM passed. Cannot be created
+//	err = CreateLCOWScratch(nil, filepath.Join(cacheDir, "default.vhdx"), DefaultLCOWScratchSizeGB, cacheFile)
+//	if err == nil {
+//		t.Fatalf("expected an error creating LCOW scratch")
+//	}
+//	if err.Error() != "cannot create scratch disk as cache is not present and no utility VM supplied" {
+//		t.Fatalf("Not expecting error %s", err)
+//	}
 
-	// 2: Default size, no cache supplied and no UVM
-	err = CreateLCOWScratch(nil, filepath.Join(cacheDir, "default.vhdx"), DefaultLCOWScratchSizeGB, "")
-	if err == nil {
-		t.Fatalf("expected an error creating LCOW scratch")
-	}
-	if err.Error() != "cannot create scratch disk as cache is not present and no utility VM supplied" {
-		t.Fatalf("Not expecting error %s", err)
-	}
+//	// 2: Default size, no cache supplied and no UVM
+//	err = CreateLCOWScratch(nil, filepath.Join(cacheDir, "default.vhdx"), DefaultLCOWScratchSizeGB, "")
+//	if err == nil {
+//		t.Fatalf("expected an error creating LCOW scratch")
+//	}
+//	if err.Error() != "cannot create scratch disk as cache is not present and no utility VM supplied" {
+//		t.Fatalf("Not expecting error %s", err)
+//	}
 
-	// 3: Default size. This should work and the cache should be created.
-	err = CreateLCOWScratch(uvm, filepath.Join(cacheDir, "default.vhdx"), DefaultLCOWScratchSizeGB, cacheFile)
-	if err != nil {
-		t.Fatalf("should succeed creating default size cache file: %s", err)
-	}
-	if _, err = os.Stat(cacheFile); err != nil {
-		t.Fatalf("failed to stat cache file after created: %s", err)
-	}
-	if _, err = os.Stat(filepath.Join(cacheDir, "default.vhdx")); err != nil {
-		t.Fatalf("failed to stat default.vhdx after created: %s", err)
-	}
+//	// 3: Default size. This should work and the cache should be created.
+//	err = CreateLCOWScratch(uvm, filepath.Join(cacheDir, "default.vhdx"), DefaultLCOWScratchSizeGB, cacheFile)
+//	if err != nil {
+//		t.Fatalf("should succeed creating default size cache file: %s", err)
+//	}
+//	if _, err = os.Stat(cacheFile); err != nil {
+//		t.Fatalf("failed to stat cache file after created: %s", err)
+//	}
+//	if _, err = os.Stat(filepath.Join(cacheDir, "default.vhdx")); err != nil {
+//		t.Fatalf("failed to stat default.vhdx after created: %s", err)
+//	}
 
-	// 4: Non-defaultsize. This should work and the cache should be created.
-	err = CreateLCOWScratch(uvm, filepath.Join(cacheDir, "nondefault.vhdx"), DefaultLCOWScratchSizeGB+1, cacheFile)
-	if err != nil {
-		t.Fatalf("should succeed creating default size cache file: %s", err)
-	}
-	if _, err = os.Stat(cacheFile); err != nil {
-		t.Fatalf("failed to stat cache file after created: %s", err)
-	}
-	if _, err = os.Stat(filepath.Join(cacheDir, "nondefault.vhdx")); err != nil {
-		t.Fatalf("failed to stat default.vhdx after created: %s", err)
-	}
+//	// 4: Non-defaultsize. This should work and the cache should be created.
+//	err = CreateLCOWScratch(uvm, filepath.Join(cacheDir, "nondefault.vhdx"), DefaultLCOWScratchSizeGB+1, cacheFile)
+//	if err != nil {
+//		t.Fatalf("should succeed creating default size cache file: %s", err)
+//	}
+//	if _, err = os.Stat(cacheFile); err != nil {
+//		t.Fatalf("failed to stat cache file after created: %s", err)
+//	}
+//	if _, err = os.Stat(filepath.Join(cacheDir, "nondefault.vhdx")); err != nil {
+//		t.Fatalf("failed to stat default.vhdx after created: %s", err)
+//	}
 
-}
+//}
 
 // A v1 LCOW
 // TODO LCOW doesn't work currently
 func TestV1XenonLCOW(t *testing.T) {
 	t.Skip("for now")
-	tempDir, _ := createLCOWTempDirWithSandboxv1(t)
+	tempDir, _ := createLCOWTempDirWithSandboxv2(t)
 	defer os.RemoveAll(tempDir)
 
 	spec := getDefaultLinuxSpec(t)
@@ -140,11 +142,14 @@ func TestV1XenonLCOW(t *testing.T) {
 // - Container object
 // - Containers scratch file host-path (added on SCSI - use RemoveSCSI to remove)
 func createV2LCOWUvm(t *testing.T, addScratch bool) (*UtilityVM, string) {
-	uvmScratchDir, _ := createLCOWTempDirWithSandboxv1(t)
-	scratchFile := ""
-	defer os.RemoveAll(uvmScratchDir)
+	uvmScratchDir, _ := createLCOWTempDirWithSandboxv2(t)
+	//defer os.RemoveAll(uvmScratchDir)
 
-	v2uvm := UtilityVM{Id: "uvm"}
+	scratchFile := ""
+	v2uvm := UtilityVM{
+		Id:              "v2LCOWuvm",
+		OperatingSystem: "linux",
+	}
 	if err := v2uvm.Create(); err != nil {
 		t.Fatalf("Failed create: %s", err)
 	}
@@ -174,10 +179,10 @@ func TestV2XenonLCOW(t *testing.T) {
 	if v2uvmScratchFile != "" {
 		defer v2uvm.RemoveSCSI(v2uvmScratchFile)
 		defer os.RemoveAll(filepath.Dir(v2uvmScratchFile))
-		defer v2uvm.Terminate()
 	}
+	defer v2uvm.Terminate()
 
-	containerScratchDir, _ := createLCOWTempDirWithSandboxv1(t)
+	containerScratchDir, _ := createLCOWTempDirWithSandboxv2(t)
 	defer os.RemoveAll(containerScratchDir)
 	if err := GrantVmAccess(v2uvm.Id, filepath.Join(containerScratchDir, "sandbox.vhdx")); err != nil {
 		t.Fatalf("Failed GrantVmAccess on sandbox.vhdx: %s", err)
