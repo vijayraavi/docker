@@ -1,5 +1,6 @@
 # escape=`
 
+# TEST ONLY
 # -----------------------------------------------------------------------------------------
 # This file describes the standard way to build Docker in a container on Windows
 # Server 2016 or Windows 10.
