@@ -479,10 +479,13 @@ func hostConfigFromOptions(options *types.ImageBuildOptions, isWCOW bool) *conta
 	return hc
 }
 
-// fromSlash works like filepath.FromSlash but with a given OS platform field
-func fromSlash(path, platform string) string {
-	if platform == "windows" {
+// fromSlash works like filepath.FromSlash but with a given target operating system
+func fromSlash(path, targetOS string) string {
+	if targetOS == "windows" { // WCOW force Windows slashes
 		return strings.Replace(path, "/", "\\", -1)
+	}
+	if targetOS == "linux" && runtime.GOOS == "windows" { // LCOW, force Linux slashes
+		return strings.Replace(path, "\\", "/", -1)
 	}
 	return path
 }
