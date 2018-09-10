@@ -190,7 +190,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	// hold a lock at the same time) otherwise (options.ReadOnly is set).
 	if err := flock(db, mode, !db.readOnly, options.Timeout); err != nil {
 
-		log.Printf("JJH flock failed: Timeout %s Err %s Thread %s", options.Timeout, err, getGID())
+		log.Printf("JJH flock failed: Timeout %s Err %s Thread %d", options.Timeout, err, getGID())
 		log.Printf(string(Stack()[:]))
 		panic("JJHflockfailed")
 
