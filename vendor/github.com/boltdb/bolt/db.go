@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	grt "runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -120,6 +121,10 @@ type DB struct {
 	mmaplock sync.RWMutex // Protects mmap access during remapping.
 	statlock sync.RWMutex // Protects stats access.
 
+	// Allow only one synchronized file-access on Windows where we have
+	// a race between os.OpenFile() and os.Remove() in flock() and funlock()
+	winFileLock sync.Mutex
+
 	ops struct {
 		writeAt func(b []byte, off int64) (n int, err error)
 	}
@@ -184,6 +189,11 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	// The database file is locked using the shared lock (more than one process may
 	// hold a lock at the same time) otherwise (options.ReadOnly is set).
 	if err := flock(db, mode, !db.readOnly, options.Timeout); err != nil {
+
+		log.Printf("JJH flock failed: Timeout %s Err %s Thread %s", options.Timeout, err, getGID())
+		log.Printf(string(Stack()[:]))
+		panic("JJHflockfailed")
+
 		_ = db.close()
 		return nil, err
 	}
@@ -401,6 +411,17 @@ func (db *DB) Close() error {
 	return db.close()
 }
 
+func Stack() []byte {
+	buf := make([]byte, 1024)
+	for {
+		n := grt.Stack(buf, false)
+		if n < len(buf) {
+			return buf[:n]
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+}
+
 func (db *DB) close() error {
 	if !db.opened {
 		return nil
@@ -424,6 +445,12 @@ func (db *DB) close() error {
 		if !db.readOnly {
 			// Unlock the file.
 			if err := funlock(db); err != nil {
+
+				log.Printf("JJH: unlock failed: %s", db.path+lockExt)
+
+				log.Printf(string(Stack()[:]))
+
+				panic("JJH")
 				log.Printf("bolt.Close(): funlock error: %s", err)
 			}
 		}

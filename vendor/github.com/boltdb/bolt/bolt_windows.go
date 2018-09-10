@@ -1,8 +1,12 @@
 package bolt
 
 import (
+	"bytes"
 	"fmt"
+	"log"
 	"os"
+	"runtime"
+	"strconv"
 	"syscall"
 	"time"
 	"unsafe"
@@ -47,24 +51,43 @@ func fdatasync(db *DB) error {
 	return db.file.Sync()
 }
 
+func getGID() uint64 {
+	b := make([]byte, 64)
+	b = b[:runtime.Stack(b, false)]
+	b = bytes.TrimPrefix(b, []byte("goroutine "))
+	b = b[:bytes.IndexByte(b, ' ')]
+	n, _ := strconv.ParseUint(string(b), 10, 64)
+	return n
+}
+
 // flock acquires an advisory lock on a file descriptor.
 func flock(db *DB, mode os.FileMode, exclusive bool, timeout time.Duration) error {
+
+	// Make sure we are synchonized between flock and funlock when creating/
+	// removing the lock file
+	db.winFileLock.Lock()
+
 	// Create a separate lock file on windows because a process
 	// cannot share an exclusive lock on the same file. This is
 	// needed during Tx.WriteTo().
 	f, err := os.OpenFile(db.path+lockExt, os.O_CREATE, mode)
 	if err != nil {
+		log.Printf("JJH the os.OpenFile failed in flock %s", err)
+		db.winFileLock.Unlock()
 		return err
 	}
 	db.lockfile = f
+	db.winFileLock.Unlock()
 
 	var t time.Time
+	attempt := 0
 	for {
 		// If we're beyond our timeout then return an error.
 		// This can only occur after we've attempted a flock once.
 		if t.IsZero() {
 			t = time.Now()
 		} else if timeout > 0 && time.Since(t) > timeout {
+			log.Printf("JJH got a timeout in flock")
 			return ErrTimeout
 		}
 
@@ -73,10 +96,13 @@ func flock(db *DB, mode os.FileMode, exclusive bool, timeout time.Duration) erro
 			flag |= flagLockExclusive
 		}
 
+		attempt++
+		log.Printf("JOHNDEBUG-%d-locking %s Attempt %d", getGID(), f.Name(), attempt)
 		err := lockFileEx(syscall.Handle(db.lockfile.Fd()), flag, 0, 1, 0, &syscall.Overlapped{})
 		if err == nil {
 			return nil
 		} else if err != errLockViolation {
+			log.Printf("JJH got an error on lockFileEx which wasn't errLockViolation: %s", err)
 			return err
 		}
 
@@ -87,9 +113,16 @@ func flock(db *DB, mode os.FileMode, exclusive bool, timeout time.Duration) erro
 
 // funlock releases an advisory lock on a file descriptor.
 func funlock(db *DB) error {
+	log.Printf("JOHNDEBUG-%d-unlocking %s", getGID(), db.path+lockExt)
 	err := unlockFileEx(syscall.Handle(db.lockfile.Fd()), 0, 1, 0, &syscall.Overlapped{})
+
+	// Make sure we are synchronized with flock to ensure another goroutine
+	// doesn't attempt to create the lockfile through os.OpenFile in-between
+	// the Close() and Remove() calls below.
+	db.winFileLock.Lock()
 	db.lockfile.Close()
-	os.Remove(db.path+lockExt)
+	os.Remove(db.path + lockExt)
+	db.winFileLock.Unlock()
 	return err
 }
 
