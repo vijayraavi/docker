@@ -3,6 +3,7 @@ package server // import "github.com/docker/docker/api/server"
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/docker/docker/api/server/router"
 	"github.com/docker/docker/api/server/router/debug"
 	"github.com/docker/docker/dockerversion"
+	"github.com/docker/docker/pkg/hackhack"
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 )
@@ -137,12 +139,17 @@ func (s *Server) makeHTTPHandler(handler httputils.APIFunc) http.HandlerFunc {
 			vars = make(map[string]string)
 		}
 
-		if err := handlerFunc(ctx, w, r, vars); err != nil {
-			statusCode := httputils.GetHTTPErrorStatusCode(err)
-			if statusCode >= 500 {
-				logrus.Errorf("Handler for %s %s returned error: %v", r.Method, r.URL.Path, err)
+		if hack.ShouldStall() {
+			httputils.MakeErrorHandler(fmt.Errorf("System stalled (John hack for debugging)"))(w, r)
+		} else {
+
+			if err := handlerFunc(ctx, w, r, vars); err != nil {
+				statusCode := httputils.GetHTTPErrorStatusCode(err)
+				if statusCode >= 500 {
+					logrus.Errorf("Handler for %s %s returned error: %v", r.Method, r.URL.Path, err)
+				}
+				httputils.MakeErrorHandler(err)(w, r)
 			}
-			httputils.MakeErrorHandler(err)(w, r)
 		}
 	}
 }

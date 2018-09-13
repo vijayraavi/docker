@@ -22,11 +22,12 @@ import (
 	"github.com/Microsoft/go-winio"
 	"github.com/Microsoft/go-winio/archive/tar"
 	"github.com/Microsoft/go-winio/backuptar"
-	"github.com/Microsoft/go-winio/vhd"
+	//"github.com/Microsoft/go-winio/vhd"
 	"github.com/Microsoft/hcsshim"
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/containerfs"
+	"github.com/docker/docker/pkg/hackhack"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/longpath"
@@ -262,6 +263,11 @@ func (d *Driver) dir(id string) string {
 
 // Remove unmounts and removes the dir information.
 func (d *Driver) Remove(id string) error {
+	if hack.ShouldStall() {
+		logrus.Warnf("graphdriver: Remove: Stalled due to previous error")
+		time.Sleep(24 * 7 * time.Hour)
+	}
+
 	rID, err := d.resolveID(id)
 	if err != nil {
 		return err
@@ -338,10 +344,14 @@ func (d *Driver) Remove(id string) error {
 		// If permission denied, it's possible that the scratch is still mounted, an
 		// artifact after a hard daemon crash for example. Worth a shot to try detaching it
 		// before retrying the rename.
-		if detachErr := vhd.DetachVhd(filepath.Join(layerPath, "sandbox.vhdx")); detachErr != nil {
-			return errors.Wrapf(err, "failed to detach VHD: %s", detachErr)
-		}
+		// HACK HACK
+		//if detachErr := vhd.DetachVhd(filepath.Join(layerPath, "sandbox.vhdx")); detachErr != nil {
+		//	return errors.Wrapf(err, "failed to detach VHD: %s", detachErr)
+		//}
 		if renameErr := os.Rename(layerPath, tmpLayerPath); renameErr != nil && !os.IsNotExist(renameErr) {
+			logrus.Warnf("graphdriver - stalling here (hack)")
+			hack.Stall()
+			time.Sleep(24 * 7 * time.Hour)
 			return errors.Wrapf(err, "second rename attempt following detach failed: %s", renameErr)
 		}
 	}
@@ -360,6 +370,12 @@ func (d *Driver) GetLayerPath(id string) (string, error) {
 // Get returns the rootfs path for the id. This will mount the dir at its given path.
 func (d *Driver) Get(id, mountLabel string) (containerfs.ContainerFS, error) {
 	logrus.Debugf("WindowsGraphDriver Get() id %s mountLabel %s", id, mountLabel)
+
+	if hack.ShouldStall() {
+		logrus.Warnf("graphdriver: Get: Stalled due to previous error")
+		time.Sleep(24 * 7 * time.Hour)
+	}
+
 	var dir string
 
 	rID, err := d.resolveID(id)
@@ -378,10 +394,18 @@ func (d *Driver) Get(id, mountLabel string) (containerfs.ContainerFS, error) {
 	}
 
 	if err := hcsshim.ActivateLayer(d.info, rID); err != nil {
+		logrus.Debugf("ActivateLayer failed: Stalling")
+		hack.Stall()
+		time.Sleep(24 * 7 * time.Hour)
+
 		d.ctr.Decrement(rID)
 		return nil, err
 	}
 	if err := hcsshim.PrepareLayer(d.info, rID, layerChain); err != nil {
+		logrus.Debugf("PrepareLayer failed: Stalling")
+		hack.Stall()
+		time.Sleep(24 * 7 * time.Hour)
+
 		d.ctr.Decrement(rID)
 		if err2 := hcsshim.DeactivateLayer(d.info, rID); err2 != nil {
 			logrus.Warnf("Failed to Deactivate %s: %s", id, err)
@@ -391,6 +415,10 @@ func (d *Driver) Get(id, mountLabel string) (containerfs.ContainerFS, error) {
 
 	mountPath, err := hcsshim.GetLayerMountPath(d.info, rID)
 	if err != nil {
+		logrus.Debugf("GetLayerMountPath failed: Stalling")
+		hack.Stall()
+		time.Sleep(24 * 7 * time.Hour)
+
 		d.ctr.Decrement(rID)
 		if err := hcsshim.UnprepareLayer(d.info, rID); err != nil {
 			logrus.Warnf("Failed to Unprepare %s: %s", id, err)
@@ -419,6 +447,11 @@ func (d *Driver) Get(id, mountLabel string) (containerfs.ContainerFS, error) {
 func (d *Driver) Put(id string) error {
 	logrus.Debugf("WindowsGraphDriver Put() id %s", id)
 
+	if hack.ShouldStall() {
+		logrus.Warnf("graphdriver: Put: Stalled due to previous error")
+		time.Sleep(24 * 7 * time.Hour)
+	}
+
 	rID, err := d.resolveID(id)
 	if err != nil {
 		return err
@@ -437,9 +470,18 @@ func (d *Driver) Put(id string) error {
 	}
 
 	if err := hcsshim.UnprepareLayer(d.info, rID); err != nil {
+		logrus.Debugf("UnprepareLayer failed: Stalling")
+		hack.Stall()
+		time.Sleep(24 * 7 * time.Hour)
+
 		return err
 	}
-	return hcsshim.DeactivateLayer(d.info, rID)
+	if err := hcsshim.DeactivateLayer(d.info, rID); err != nil {
+		logrus.Debugf("DeactivateLayer failed: Stalling")
+		hack.Stall()
+		time.Sleep(24 * 7 * time.Hour)
+	}
+	return nil
 }
 
 // Cleanup ensures the information the driver stores is properly removed.
