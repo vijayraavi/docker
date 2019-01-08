@@ -100,6 +100,7 @@ func (cli *DaemonCli) start(opts *daemonOptions) (err error) {
 	}
 
 	system.InitLCOW(cli.Config.Experimental)
+	system.InitContainerd(cli.Config.Experimental, cli.Config.ContainerdAddr)
 
 	if err := setDefaultUmask(); err != nil {
 		return err

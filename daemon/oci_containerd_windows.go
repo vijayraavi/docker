@@ -1,18 +1,16 @@
 package daemon // import "github.com/docker/docker/daemon"
 
-// @jhowardmsft Eventually this file will be replaced with oci_containerd_windows.go.
+// Note: Eventually this file will replace oci_windows.go.
 // For now, rather than having lots of "if containerd <foo> else <bar>", the
 // files are largely duplicated.
 
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"path/filepath"
 	"runtime"
 	"strings"
 
-	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/container"
 	"github.com/docker/docker/oci"
 	"github.com/docker/docker/pkg/sysinfo"
@@ -20,20 +18,12 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/sys/windows"
-	"golang.org/x/sys/windows/registry"
 )
 
-const (
-	credentialSpecRegistryLocation = `SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\Containers\CredentialSpecs`
-	credentialSpecFileLocation     = "CredentialSpecs"
-)
+func (daemon *Daemon) createSpecContainerd(c *container.Container) (*specs.Spec, error) {
 
-func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
-
-	if system.ContainerdSupported() {
-		return daemon.createSpecContainerd(c)
-	}
+	// @jhowardmsft TODO: revisit this - can re-use much of the containerd oci package.
+	// See containerd/containerd/ctr/commands/run/run_windows.go as an example.
 
 	img, err := daemon.imageService.GetImage(string(c.ImageID))
 	if err != nil {
@@ -215,14 +205,14 @@ func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
 
 	switch img.OS {
 	case "windows":
-		if err := daemon.createSpecWindowsFields(c, &s, isHyperV); err != nil {
+		if err := daemon.createSpecContainerdWindowsFields(c, &s, isHyperV); err != nil {
 			return nil, err
 		}
 	case "linux":
 		if !system.LCOWSupported() {
 			return nil, fmt.Errorf("Linux containers on Windows are not supported")
 		}
-		if err := daemon.createSpecLinuxFields(c, &s); err != nil {
+		if err := daemon.createSpecContainerdLinuxFields(c, &s); err != nil {
 			return nil, err
 		}
 	default:
@@ -237,7 +227,7 @@ func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
 }
 
 // Sets the Windows-specific fields of the OCI spec
-func (daemon *Daemon) createSpecWindowsFields(c *container.Container, s *specs.Spec, isHyperV bool) error {
+func (daemon *Daemon) createSpecContainerdWindowsFields(c *container.Container, s *specs.Spec, isHyperV bool) error {
 
 	if len(s.Process.Cwd) == 0 {
 		// We default to C:\ to workaround the oddity of the case that the
@@ -289,21 +279,36 @@ func (daemon *Daemon) createSpecWindowsFields(c *container.Container, s *specs.S
 			}
 		}
 	}
-	memoryLimit := uint64(c.HostConfig.Memory)
 
-	s.Windows.Resources = &specs.WindowsResources{
-		CPU: &specs.WindowsCPUResources{
+	if cpuMaximum != 0 || cpuShares != 0 || cpuCount != 0 {
+		if s.Windows.Resources == nil {
+			s.Windows.Resources = &specs.WindowsResources{}
+		}
+		s.Windows.Resources.CPU = &specs.WindowsCPUResources{
 			Maximum: &cpuMaximum,
 			Shares:  &cpuShares,
 			Count:   &cpuCount,
-		},
-		Memory: &specs.WindowsMemoryResources{
+		}
+	}
+
+	memoryLimit := uint64(c.HostConfig.Memory)
+	if memoryLimit != 0 {
+		if s.Windows.Resources == nil {
+			s.Windows.Resources = &specs.WindowsResources{}
+		}
+		s.Windows.Resources.Memory = &specs.WindowsMemoryResources{
 			Limit: &memoryLimit,
-		},
-		Storage: &specs.WindowsStorageResources{
+		}
+	}
+
+	if c.HostConfig.IOMaximumBandwidth != 0 || c.HostConfig.IOMaximumIOps != 0 {
+		if s.Windows.Resources == nil {
+			s.Windows.Resources = &specs.WindowsResources{}
+		}
+		s.Windows.Resources.Storage = &specs.WindowsStorageResources{
 			Bps:  &c.HostConfig.IOMaximumBandwidth,
 			Iops: &c.HostConfig.IOMaximumIOps,
-		},
+		}
 	}
 
 	// Read and add credentials from the security options if a credential spec has been provided.
@@ -379,7 +384,7 @@ func (daemon *Daemon) createSpecWindowsFields(c *container.Container, s *specs.S
 // Sets the Linux-specific fields of the OCI spec
 // TODO: @jhowardmsft LCOW Support. We need to do a lot more pulling in what can
 // be pulled in from oci_linux.go.
-func (daemon *Daemon) createSpecLinuxFields(c *container.Container, s *specs.Spec) error {
+func (daemon *Daemon) createSpecContainerdLinuxFields(c *container.Container, s *specs.Spec) error {
 	if len(s.Process.Cwd) == 0 {
 		s.Process.Cwd = `/`
 	}
@@ -394,67 +399,4 @@ func (daemon *Daemon) createSpecLinuxFields(c *container.Container, s *specs.Spe
 	}
 	s.Linux.Resources.Devices = devPermissions
 	return nil
-}
-
-func escapeArgs(args []string) []string {
-	escapedArgs := make([]string, len(args))
-	for i, a := range args {
-		escapedArgs[i] = windows.EscapeArg(a)
-	}
-	return escapedArgs
-}
-
-// mergeUlimits merge the Ulimits from HostConfig with daemon defaults, and update HostConfig
-// It will do nothing on non-Linux platform
-func (daemon *Daemon) mergeUlimits(c *containertypes.HostConfig) {
-	return
-}
-
-// getCredentialSpec is a helper function to get the value of a credential spec supplied
-// on the CLI, stripping the prefix
-func getCredentialSpec(prefix, value string) (bool, string) {
-	if strings.HasPrefix(value, prefix) {
-		return true, strings.TrimPrefix(value, prefix)
-	}
-	return false, ""
-}
-
-// readCredentialSpecRegistry is a helper function to read a credential spec from
-// the registry. If not found, we return an empty string and warn in the log.
-// This allows for staging on machines which do not have the necessary components.
-func readCredentialSpecRegistry(id, name string) (string, error) {
-	var (
-		k   registry.Key
-		err error
-		val string
-	)
-	if k, err = registry.OpenKey(registry.LOCAL_MACHINE, credentialSpecRegistryLocation, registry.QUERY_VALUE); err != nil {
-		return "", fmt.Errorf("failed handling spec %q for container %s - %s could not be opened", name, id, credentialSpecRegistryLocation)
-	}
-	if val, _, err = k.GetStringValue(name); err != nil {
-		if err == registry.ErrNotExist {
-			return "", fmt.Errorf("credential spec %q for container %s as it was not found", name, id)
-		}
-		return "", fmt.Errorf("error %v reading credential spec %q from registry for container %s", err, name, id)
-	}
-	return val, nil
-}
-
-// readCredentialSpecFile is a helper function to read a credential spec from
-// a file. If not found, we return an empty string and warn in the log.
-// This allows for staging on machines which do not have the necessary components.
-func readCredentialSpecFile(id, root, location string) (string, error) {
-	if filepath.IsAbs(location) {
-		return "", fmt.Errorf("invalid credential spec - file:// path cannot be absolute")
-	}
-	base := filepath.Join(root, credentialSpecFileLocation)
-	full := filepath.Join(base, location)
-	if !strings.HasPrefix(full, base) {
-		return "", fmt.Errorf("invalid credential spec - file:// path must be under %s", base)
-	}
-	bcontents, err := ioutil.ReadFile(full)
-	if err != nil {
-		return "", fmt.Errorf("credential spec '%s' for container %s as the file could not be read: %q", full, id, err)
-	}
-	return string(bcontents[:]), nil
 }

@@ -67,6 +67,7 @@ func (i *rio) Wait() {
 func (c *Config) InitializeStdio(iop *cio.DirectIO) (cio.IO, error) {
 	c.StreamConfig.CopyToPipe(iop)
 
+	// JJH IS THIS CORRECT? (==windows)
 	if c.StreamConfig.Stdin() == nil && !c.Tty && runtime.GOOS == "windows" {
 		if iop.Stdin != nil {
 			if err := iop.Stdin.Close(); err != nil {

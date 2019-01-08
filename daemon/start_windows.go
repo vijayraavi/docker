@@ -2,10 +2,23 @@ package daemon // import "github.com/docker/docker/daemon"
 
 import (
 	"github.com/Microsoft/opengcs/client"
+	"github.com/containerd/containerd/runtime/v2/runhcs/options"
 	"github.com/docker/docker/container"
+	"github.com/docker/docker/pkg/system"
+	"github.com/sirupsen/logrus"
 )
 
 func (daemon *Daemon) getLibcontainerdCreateOptions(container *container.Container) (interface{}, error) {
+
+	// Make sure we set the runhcs options to debug if we are at debug level.
+	if system.ContainerdSupported() && logrus.GetLevel() == logrus.DebugLevel {
+		opts := &options.Options{Debug: true}
+		return opts, nil
+	}
+
+	// TODO @jhowardmsft (containerd) - Probably need to revisit LCOW options here
+	// rather than blindly ignoring them.
+
 	// LCOW options.
 	if container.OS == "linux" {
 		config := &client.Config{}
