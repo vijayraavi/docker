@@ -100,8 +100,9 @@ func normalizeWorkdirWindows(current string, requested string) (string, error) {
 // shell in front of it. If the target operating system is Windows, it will also
 // do Windows-specific argv-style reparsing of the command line.
 func resolveCmdLine(cmd instructions.ShellDependantCmdLine, runConfig *container.Config, os, command, original string) []string {
+	fmt.Printf("os %s command %s original %s\n", os, command, original)
 	result := cmd.CmdLine
-
+	fmt.Println("result 1=", result)
 	// We need to reparse in Windows argv-style handling here if the target
 	// OS is Windows, and the command line is not in JSON (exec) format.
 	// This takes quite some explaining, hence the verbose comment below.
@@ -181,6 +182,7 @@ func resolveCmdLine(cmd instructions.ShellDependantCmdLine, runConfig *container
 	//
 	// Phew :)
 
+	fmt.Println("original=", original)
 	if os == "windows" && cmd.PrependShell {
 		original = original[len(command):] // strip off the relevant command such as run etc.
 		result = commandLineToArgv(original)

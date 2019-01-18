@@ -344,12 +344,27 @@ func dispatchRun(d dispatchRequest, c *instructions.RunCommand) error {
 		return system.ErrNotSupportedOperatingSystem
 	}
 	stateRunConfig := d.state.runConfig
+	fmt.Printf("OS %s Name %s String %s\n", d.state.operatingSystem, c.Name(), c.String())
+	fmt.Printf("c.ShellDependantCmdLine %+v\n", c.ShellDependantCmdLine)
+
+	for i, v := range c.ShellDependantCmdLine.CmdLine {
+		fmt.Printf("c.ShellDependantCmdLine %d %s\n", i, v)
+	}
+
 	cmdFromArgs := resolveCmdLine(c.ShellDependantCmdLine, stateRunConfig, d.state.operatingSystem, c.Name(), c.String())
+	fmt.Println("cmdFromArgs=", cmdFromArgs)
+
+	for i, v := range cmdFromArgs {
+		fmt.Printf("cmdFromArgs %d %s\n", i, v)
+	}
+
 	buildArgs := d.state.buildArgs.FilterAllowed(stateRunConfig.Env)
 
 	saveCmd := cmdFromArgs
 	if len(buildArgs) > 0 {
+		fmt.Println("JJH we have buildArgs (dispatchers.go)", buildArgs)
 		saveCmd = prependEnvOnCmd(d.state.buildArgs, buildArgs, cmdFromArgs)
+		fmt.Println("JJH so saveCmd=", saveCmd)
 	}
 
 	runConfigForCacheProbe := copyRunConfig(stateRunConfig,
@@ -412,6 +427,8 @@ func prependEnvOnCmd(buildArgs *BuildArgs, buildArgVars []string, cmd strslice.S
 
 	sort.Strings(tmpBuildEnv)
 	tmpEnv := append([]string{fmt.Sprintf("|%d", len(tmpBuildEnv))}, tmpBuildEnv...)
+	fmt.Println("JJH prependEnv: tmpEnv=", tmpEnv)
+	fmt.Println("JJH prependEnv: cmd=", cmd)
 	return strslice.StrSlice(append(tmpEnv, cmd...))
 }
 

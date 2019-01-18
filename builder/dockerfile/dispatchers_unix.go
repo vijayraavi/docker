@@ -4,6 +4,7 @@ package dockerfile // import "github.com/docker/docker/builder/dockerfile"
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -27,8 +28,10 @@ func normalizeWorkdir(_ string, current string, requested string) (string, error
 
 // resolveCmdLine takes a command line arg set and optionally prepends a platform-specific
 // shell in front of it.
-func resolveCmdLine(cmd instructions.ShellDependantCmdLine, runConfig *container.Config, os, _, _ string) []string {
+func resolveCmdLine(cmd instructions.ShellDependantCmdLine, runConfig *container.Config, os, command, original string) []string {
+	fmt.Printf("os %s command %s original %s\n", os, command, original)
 	result := cmd.CmdLine
+	fmt.Println("result 1=", result)
 	if cmd.PrependShell && result != nil {
 		result = append(getShell(runConfig, os), result...)
 	}
