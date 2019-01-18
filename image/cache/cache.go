@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
 
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/dockerversion"
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/layer"
+	"github.com/docker/docker/pkg/system"
 	"github.com/pkg/errors"
 )
 
@@ -75,7 +75,7 @@ func (ic *ImageCache) GetCache(parentID string, cfg *containertypes.Config) (str
 	}
 
 	for _, target := range ic.sources {
-		if !isValidParent(target, parent) || !isValidConfig(cfg, target.History[lenHistory]) {
+		if !isValidParent(target, parent) || !isValidConfig(cfg, target.History[lenHistory], target.OS) {
 			continue
 		}
 
@@ -172,9 +172,9 @@ func getLayerForHistoryIndex(image *image.Image, index int) layer.DiffID {
 	return image.RootFS.DiffIDs[layerIndex] // validate?
 }
 
-func isValidConfig(cfg *containertypes.Config, h image.History) bool {
+func isValidConfig(cfg *containertypes.Config, h image.History, os string) bool {
 	// todo: make this format better than join that loses data
-	return strings.Join(cfg.Cmd, " ") == h.CreatedBy
+	return system.CommandLineFromArgSet(cfg.Cmd, os) == h.CreatedBy
 }
 
 func isValidParent(img, parent *image.Image) bool {

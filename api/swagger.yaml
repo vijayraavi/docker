@@ -856,7 +856,7 @@ definitions:
       Healthcheck:
         $ref: "#/definitions/HealthConfig"
       ArgsEscaped:
-        description: "Command is already escaped (Windows only)"
+        description: "Command is already escaped (Windows only). Not used and always ignored."
         type: "boolean"
       Image:
         description: "The name of the image to use when creating the container"

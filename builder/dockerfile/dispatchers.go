@@ -16,7 +16,6 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/docker/docker/api"
-	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/docker/builder"
 	"github.com/docker/docker/errdefs"
@@ -330,14 +329,6 @@ func dispatchWorkdir(d dispatchRequest, c *instructions.WorkdirCommand) error {
 	return d.builder.commitContainer(d.state, containerID, runConfigWithCommentCmd)
 }
 
-func resolveCmdLine(cmd instructions.ShellDependantCmdLine, runConfig *container.Config, os string) []string {
-	result := cmd.CmdLine
-	if cmd.PrependShell && result != nil {
-		result = append(getShell(runConfig, os), result...)
-	}
-	return result
-}
-
 // RUN some command yo
 //
 // run a command and commit the image. Args are automatically prepended with
@@ -353,7 +344,7 @@ func dispatchRun(d dispatchRequest, c *instructions.RunCommand) error {
 		return system.ErrNotSupportedOperatingSystem
 	}
 	stateRunConfig := d.state.runConfig
-	cmdFromArgs := resolveCmdLine(c.ShellDependantCmdLine, stateRunConfig, d.state.operatingSystem)
+	cmdFromArgs := resolveCmdLine(c.ShellDependantCmdLine, stateRunConfig, d.state.operatingSystem, c.Name(), c.String())
 	buildArgs := d.state.buildArgs.FilterAllowed(stateRunConfig.Env)
 
 	saveCmd := cmdFromArgs
@@ -374,9 +365,6 @@ func dispatchRun(d dispatchRequest, c *instructions.RunCommand) error {
 		withEntrypointOverride(saveCmd, strslice.StrSlice{""}),
 		withoutHealthcheck())
 
-	// set config as already being escaped, this prevents double escaping on windows
-	runConfig.ArgsEscaped = true
-
 	cID, err := d.builder.create(runConfig)
 	if err != nil {
 		return err
@@ -387,7 +375,7 @@ func dispatchRun(d dispatchRequest, c *instructions.RunCommand) error {
 			// TODO: change error type, because jsonmessage.JSONError assumes HTTP
 			msg := fmt.Sprintf(
 				"The command '%s' returned a non-zero code: %d",
-				strings.Join(runConfig.Cmd, " "), err.StatusCode())
+				system.CommandLineFromArgSet(runConfig.Cmd, d.state.operatingSystem), err.StatusCode())
 			if err.Error() != "" {
 				msg = fmt.Sprintf("%s: %s", msg, err.Error())
 			}
@@ -434,10 +422,8 @@ func prependEnvOnCmd(buildArgs *BuildArgs, buildArgVars []string, cmd strslice.S
 //
 func dispatchCmd(d dispatchRequest, c *instructions.CmdCommand) error {
 	runConfig := d.state.runConfig
-	cmd := resolveCmdLine(c.ShellDependantCmdLine, runConfig, d.state.operatingSystem)
+	cmd := resolveCmdLine(c.ShellDependantCmdLine, runConfig, d.state.operatingSystem, c.Name(), c.String())
 	runConfig.Cmd = cmd
-	// set config as already being escaped, this prevents double escaping on windows
-	runConfig.ArgsEscaped = true
 
 	if err := d.builder.commit(d.state, fmt.Sprintf("CMD %q", cmd)); err != nil {
 		return err
@@ -477,7 +463,7 @@ func dispatchHealthcheck(d dispatchRequest, c *instructions.HealthCheckCommand) 
 //
 func dispatchEntrypoint(d dispatchRequest, c *instructions.EntrypointCommand) error {
 	runConfig := d.state.runConfig
-	cmd := resolveCmdLine(c.ShellDependantCmdLine, runConfig, d.state.operatingSystem)
+	cmd := resolveCmdLine(c.ShellDependantCmdLine, runConfig, d.state.operatingSystem, c.Name(), c.String())
 	runConfig.Entrypoint = cmd
 	if !d.state.cmdSet {
 		runConfig.Cmd = nil

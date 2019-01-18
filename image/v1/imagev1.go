@@ -9,6 +9,7 @@ import (
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/layer"
 	"github.com/docker/docker/pkg/stringid"
+	"github.com/docker/docker/pkg/system"
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 )
@@ -29,7 +30,7 @@ func HistoryFromConfig(imageJSON []byte, emptyLayer bool) (image.History, error)
 	return image.History{
 		Author:     v1Image.Author,
 		Created:    v1Image.Created,
-		CreatedBy:  strings.Join(v1Image.ContainerConfig.Cmd, " "),
+		CreatedBy:  system.CommandLineFromArgSet(v1Image.ContainerConfig.Cmd, v1Image.OS),
 		Comment:    v1Image.Comment,
 		EmptyLayer: emptyLayer,
 	}, nil

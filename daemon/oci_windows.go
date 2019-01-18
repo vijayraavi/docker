@@ -20,7 +20,6 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -135,10 +134,6 @@ func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
 
 	// In s.Process
 	s.Process.Args = append([]string{c.Path}, c.Args...)
-	if !c.Config.ArgsEscaped && img.OS == "windows" {
-		s.Process.Args = escapeArgs(s.Process.Args)
-	}
-
 	s.Process.Cwd = c.Config.WorkingDir
 	s.Process.Env = c.CreateDaemonEnvironment(c.Config.Tty, linkedEnv)
 	if c.Config.Tty {
@@ -394,14 +389,6 @@ func (daemon *Daemon) createSpecLinuxFields(c *container.Container, s *specs.Spe
 	}
 	s.Linux.Resources.Devices = devPermissions
 	return nil
-}
-
-func escapeArgs(args []string) []string {
-	escapedArgs := make([]string, len(args))
-	for i, a := range args {
-		escapedArgs[i] = windows.EscapeArg(a)
-	}
-	return escapedArgs
 }
 
 // mergeUlimits merge the Ulimits from HostConfig with daemon defaults, and update HostConfig

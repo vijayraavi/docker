@@ -125,10 +125,6 @@ func (daemon *Daemon) createSpecContainerd(c *container.Container) (*specs.Spec,
 
 	// In s.Process
 	s.Process.Args = append([]string{c.Path}, c.Args...)
-	if !c.Config.ArgsEscaped && img.OS == "windows" {
-		s.Process.Args = escapeArgs(s.Process.Args)
-	}
-
 	s.Process.Cwd = c.Config.WorkingDir
 	s.Process.Env = c.CreateDaemonEnvironment(c.Config.Tty, linkedEnv)
 	if c.Config.Tty {

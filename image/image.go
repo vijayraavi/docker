@@ -5,12 +5,12 @@ import (
 	"errors"
 	"io"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/dockerversion"
 	"github.com/docker/docker/layer"
+	"github.com/docker/docker/pkg/system"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -144,7 +144,7 @@ type ChildConfig struct {
 }
 
 // NewChildImage creates a new Image as a child of this image.
-func NewChildImage(img *Image, child ChildConfig, platform string) *Image {
+func NewChildImage(img *Image, child ChildConfig, os string) *Image {
 	isEmptyLayer := layer.IsEmpty(child.DiffID)
 	var rootFS *RootFS
 	if img.RootFS != nil {
@@ -159,7 +159,7 @@ func NewChildImage(img *Image, child ChildConfig, platform string) *Image {
 	imgHistory := NewHistory(
 		child.Author,
 		child.Comment,
-		strings.Join(child.ContainerConfig.Cmd, " "),
+		system.CommandLineFromArgSet(child.ContainerConfig.Cmd, os),
 		isEmptyLayer)
 
 	return &Image{
@@ -167,7 +167,7 @@ func NewChildImage(img *Image, child ChildConfig, platform string) *Image {
 			DockerVersion:   dockerversion.Version,
 			Config:          child.Config,
 			Architecture:    img.BaseImgArch(),
-			OS:              platform,
+			OS:              os,
 			Container:       child.ContainerID,
 			ContainerConfig: *child.ContainerConfig,
 			Author:          child.Author,

@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -643,7 +644,7 @@ func (c *client) Start(_ context.Context, id, _ string, withStdin bool, attachSt
 	// Configure the environment for the process
 	createProcessParms.Environment = setupEnvironmentVariables(ctr.ociSpec.Process.Env)
 	if ctr.isWindows {
-		createProcessParms.CommandLine = strings.Join(ctr.ociSpec.Process.Args, " ")
+		createProcessParms.CommandLine = system.CommandLineFromArgSet(ctr.ociSpec.Process.Args, runtime.GOOS)
 	} else {
 		createProcessParms.CommandArgs = ctr.ociSpec.Process.Args
 	}
@@ -795,7 +796,7 @@ func (c *client) Exec(ctx context.Context, containerID, processID string, spec *
 	// Configure the environment for the process
 	createProcessParms.Environment = setupEnvironmentVariables(spec.Env)
 	if ctr.isWindows {
-		createProcessParms.CommandLine = strings.Join(spec.Args, " ")
+		createProcessParms.CommandLine = system.CommandLineFromArgSet(spec.Args, runtime.GOOS)
 	} else {
 		createProcessParms.CommandArgs = spec.Args
 	}
