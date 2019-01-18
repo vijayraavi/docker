@@ -23,15 +23,21 @@ import (
 
 // CreateManagedContainer creates a container that is managed by a Service
 func (daemon *Daemon) CreateManagedContainer(params types.ContainerCreateConfig) (containertypes.ContainerCreateCreatedBody, error) {
-	return daemon.containerCreate(params, true)
+	return daemon.containerCreate(params, true, false)
 }
 
 // ContainerCreate creates a regular container
 func (daemon *Daemon) ContainerCreate(params types.ContainerCreateConfig) (containertypes.ContainerCreateCreatedBody, error) {
-	return daemon.containerCreate(params, false)
+	return daemon.containerCreate(params, false, false)
 }
 
-func (daemon *Daemon) containerCreate(params types.ContainerCreateConfig, managed bool) (containertypes.ContainerCreateCreatedBody, error) {
+// ContainerCreateIgnoreImagesArgsEscaped creates a regular container. This is called from the builder RUN case
+// and ensures that we do not take the images ArgsEscaped
+func (daemon *Daemon) ContainerCreateIgnoreImagesArgsEscaped(params types.ContainerCreateConfig) (containertypes.ContainerCreateCreatedBody, error) {
+	return daemon.containerCreate(params, false, true)
+}
+
+func (daemon *Daemon) containerCreate(params types.ContainerCreateConfig, managed bool, ignoreImagesArgEscaped bool) (containertypes.ContainerCreateCreatedBody, error) {
 	start := time.Now()
 	if params.Config == nil {
 		return containertypes.ContainerCreateCreatedBody{}, errdefs.InvalidParameter(errors.New("Config cannot be empty in order to create a container"))
@@ -69,7 +75,7 @@ func (daemon *Daemon) containerCreate(params types.ContainerCreateConfig, manage
 		return containertypes.ContainerCreateCreatedBody{Warnings: warnings}, errdefs.InvalidParameter(err)
 	}
 
-	container, err := daemon.create(params, managed)
+	container, err := daemon.create(params, managed, ignoreImagesArgEscaped)
 	if err != nil {
 		return containertypes.ContainerCreateCreatedBody{Warnings: warnings}, err
 	}
@@ -79,7 +85,7 @@ func (daemon *Daemon) containerCreate(params types.ContainerCreateConfig, manage
 }
 
 // Create creates a new container from the given configuration with a given name.
-func (daemon *Daemon) create(params types.ContainerCreateConfig, managed bool) (retC *container.Container, retErr error) {
+func (daemon *Daemon) create(params types.ContainerCreateConfig, managed bool, ignoreImagesArgEscaped bool) (retC *container.Container, retErr error) {
 	var (
 		container *container.Container
 		img       *image.Image
@@ -110,6 +116,14 @@ func (daemon *Daemon) create(params types.ContainerCreateConfig, managed bool) (
 		if runtime.GOOS == "windows" {
 			os = "linux" // 'scratch' case.
 		}
+	}
+
+	// On WCOW, if are not being invoked by the builder to create this container (where
+	// ignoreImagesArgEscaped will be true) - if the image already has its arguments escaped,
+	// ensure that this is replicated across to the created container to avoid double-escaping
+	// of the arguments/command line when the runtime attempts to run the container.
+	if os == "windows" && !ignoreImagesArgEscaped && img != nil && img.RunConfig().ArgsEscaped {
+		params.Config.ArgsEscaped = true
 	}
 
 	if err := daemon.mergeAndVerifyConfig(params.Config, img); err != nil {
