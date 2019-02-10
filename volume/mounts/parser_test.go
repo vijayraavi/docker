@@ -61,13 +61,16 @@ type mockFiProvider struct{}
 
 func (mockFiProvider) fileInfo(path string) (exists, isDir bool, err error) {
 	dirs := map[string]struct{}{
-		`c:\`:                    {},
-		`c:\windows\`:            {},
-		`c:\windows`:             {},
-		`c:\program files`:       {},
-		`c:\Windows`:             {},
-		`c:\Program Files (x86)`: {},
-		`\\?\c:\windows\`:        {},
+		`c:\`:                         {},
+		`c:\windows\`:                 {},
+		`c:\windows`:                  {},
+		`c:\program files`:            {},
+		`c:\Windows`:                  {},
+		`c:\Program Files (x86)`:      {},
+		`\\?\c:\windows\`:             {},
+		`\\unc\path\to\something`:     {},
+		`\\1.2.3.4\path\to\something`: {},
+		`\\server\share`:              {},
 	}
 	files := map[string]struct{}{
 		`c:\windows\system32\ntdll.dll`: {},
@@ -111,6 +114,7 @@ func TestParseMountRaw(t *testing.T) {
 			`c:\windows\:\\?\d:\`,       // Long path handling (target)
 			`\\.\pipe\foo:\\.\pipe\foo`, // named pipe
 			`//./pipe/foo://./pipe/foo`, // named pipe forward slashes
+			`\\server\share:c:\foo`,     // UNC SMB Share
 		},
 		invalid: map[string]string{
 			``:                                 "invalid volume specification: ",
@@ -353,6 +357,8 @@ func TestParseMountRawSplit(t *testing.T) {
 		{`\\.\pipe\foo:\\.\pipe\bar`, "local", mount.TypeNamedPipe, `\\.\pipe\bar`, `\\.\pipe\foo`, "", "", true, false},
 		{`\\.\pipe\foo:c:\foo\bar`, "local", mount.TypeNamedPipe, ``, ``, "", "", true, true},
 		{`c:\foo\bar:\\.\pipe\foo`, "local", mount.TypeNamedPipe, ``, ``, "", "", true, true},
+		{`\\unc\path\to\something:d:\`, "local", mount.TypeBind, `d:\`, `\\unc\path\to\something`, ``, "", true, false},
+		{`\\1.2.3.4\path\to\something:d:\`, "local", mount.TypeBind, `d:\`, `\\1.2.3.4\path\to\something`, ``, "", true, false},
 	}
 	lcowCases := []testParseMountRaw{
 		{`c:\:/foo`, "local", mount.TypeBind, `/foo`, `c:\`, ``, "", true, false},

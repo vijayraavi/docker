@@ -33,20 +33,31 @@ const (
 	// There are three match groups: source, destination and mode.
 	//
 
-	// rxHostDir is the first option of a source
+	// rxHostDir is a source option representing a file or directory on the host
 	rxHostDir = `(?:\\\\\?\\)?[a-z]:[\\/](?:[^\\/:*?"<>|\r\n]+[\\/]?)*`
-	// rxName is the second option of a source
+
+	// rxName is a source option representing a volume name
 	rxName = `[^\\/:*?"<>|\r\n]+`
 
-	// RXReservedNames are reserved names not possible on Windows
+	// rxPipe is a named path pipe (starts with `\\.\pipe\`, possibly with / instead of \).
+	// Used as both a source and a destination option.
+	rxPipe = `[/\\]{2}.[/\\]pipe[/\\][^:*?"<>|\r\n]+`
+
+	// rxUnc is a aource option representing a UNC path.
+	rxUnc = `[\\]{2}[^:?"<>|\r\n]+[\\](?:[^\\/:*?"<>|\r\n]+[\\/]?)*`
+
+	// rxSource is the combined possibilities for a source
+	rxSource = `((?P<source>(` +
+		`(` + rxHostDir + `)` + `|` +
+		`(` + rxName + `)` + `|` +
+		`(` + rxPipe + `)` + `|` +
+		`(` + rxUnc + `)` +
+		`)):)?`
+
+	// rxReservedNames are reserved names not possible on Windows
 	rxReservedNames = `(con)|(prn)|(nul)|(aux)|(com[1-9])|(lpt[1-9])`
 
-	// rxPipe is a named path pipe (starts with `\\.\pipe\`, possibly with / instead of \)
-	rxPipe = `[/\\]{2}.[/\\]pipe[/\\][^:*?"<>|\r\n]+`
-	// rxSource is the combined possibilities for a source
-	rxSource = `((?P<source>((` + rxHostDir + `)|(` + rxName + `)|(` + rxPipe + `))):)?`
-
-	// Source. Can be either a host directory, a name, or omitted:
+	// Source. Can be either a host directory, a name, a pipe, a UNC path or omitted:
 	//  HostDir:
 	//    -  Essentially using the folder solution from
 	//       https://www.safaribooksonline.com/library/view/regular-expressions-cookbook/9781449327453/ch08s18.html
@@ -59,6 +70,12 @@ const (
 	//    -  Must not contain invalid NTFS filename characters (https://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx)
 	//    -  And then followed by a colon which is not in the capture group
 	//    -  And can be optional
+	//  Named Pipe:
+	//    -  In format \\.\pipe\pipename
+	//    -  Alternate //./pipe/pipename
+	//  UNC Path:
+	//    -  As HostDir but prefixed \\server\
+	//    -  eg \\server\share\path\to\something or \\192.168.1.123\share\path\to\something
 
 	// rxDestination is the regex expression for the mount destination
 	rxDestination = `(?P<destination>((?:\\\\\?\\)?([a-z]):((?:[\\/][^\\/:*?"<>\r\n]+)*[\\/]?))|(` + rxPipe + `))`
@@ -166,7 +183,10 @@ func windowsValidateAbsolute(p string) error {
 func windowsDetectMountType(p string) mount.Type {
 	if strings.HasPrefix(p, `\\.\pipe\`) {
 		return mount.TypeNamedPipe
-	} else if regexp.MustCompile(`^` + rxHostDir + `$`).MatchString(p) {
+	} else if regexp.MustCompile(`^`+rxHostDir+`$`).MatchString(p) ||
+		regexp.MustCompile(`^`+rxUnc+`$`).MatchString(p) {
+		// Note rxUnc check must follow pipe check. This is because
+		// the pipe prefix is a form of UNC.
 		return mount.TypeBind
 	} else {
 		return mount.TypeVolume
@@ -243,8 +263,10 @@ func (p *windowsParser) validateMountConfigReg(mnt *mount.Mount, destRegex strin
 			return &errMountConfig{mnt, errExtraField("VolumeOptions")}
 		}
 
-		if err := windowsValidateAbsolute(mnt.Source); err != nil {
-			return &errMountConfig{mnt, err}
+		if !strings.HasPrefix(mnt.Source, `\\`) { // Not UNC
+			if err := windowsValidateAbsolute(mnt.Source); err != nil {
+				return &errMountConfig{mnt, err}
+			}
 		}
 
 		exists, isdir, err := currentFileInfoProvider.fileInfo(mnt.Source)
